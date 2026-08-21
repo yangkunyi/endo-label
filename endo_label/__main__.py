@@ -26,7 +26,7 @@ def main(argv: list[str] | None = None) -> None:
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1) from exc
-    uvicorn.run(create_app(settings), host="127.0.0.1", port=7880)
+    uvicorn.run(create_app(settings), host="127.0.0.1", port=7880, workers=1)
 
 
 if __name__ == "__main__":
