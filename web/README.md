@@ -1,6 +1,6 @@
 # Desk
 
-Vite SPA for listing allowlisted Clips and scrubbing Frames.
+Vite SPA for listing allowlisted Clips, scrubbing Frames, and painting phase on the current Clip.
 
 ```bash
 npm install

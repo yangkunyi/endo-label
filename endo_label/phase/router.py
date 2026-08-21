@@ -31,6 +31,11 @@ def make_router(settings: Settings) -> APIRouter:
         except catalog.ClipNotFound:
             raise HTTPException(status_code=404, detail=f"Clip not found: {clip_id}") from None
 
+    def _require_phase_name(name: str) -> None:
+        phases = labels_store.load_vocab(settings).get("phases") or []
+        if name not in phases:
+            raise HTTPException(status_code=400, detail=f"unknown phase: {name}")
+
     @router.get("/api/phase/{clip_id}")
     def get_clip_phase(clip_id: str) -> dict:
         _meta(clip_id)
@@ -47,6 +52,7 @@ def make_router(settings: Settings) -> APIRouter:
         if body.phase is None:
             doc["frames"].pop(key, None)
         else:
+            _require_phase_name(body.phase)
             doc["frames"][key] = body.phase
         labels_store.save_clip(settings, "phase", clip_id, doc)
         return doc
@@ -60,6 +66,7 @@ def make_router(settings: Settings) -> APIRouter:
             a, b = b, a
         if a < 0 or b >= n:
             raise HTTPException(status_code=400, detail="span out of range")
+        _require_phase_name(body.phase)
         doc = labels_store.load_clip(settings, "phase", clip_id)
         for i in range(a, b + 1):
             doc["frames"][str(i)] = body.phase
