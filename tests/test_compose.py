@@ -264,6 +264,133 @@ def test_phase_write_leaves_class_triplet_and_session_untouched(client: TestClie
     assert client.get("/api/session").json().get("active") is False
 
 
+def test_unknown_class_name_is_rejected(client: TestClient) -> None:
+    put = client.put("/api/class/CLIPA/frames/0", json={"tags": ["NotAClass"]})
+    assert put.status_code == 400
+    assert "NotAClass" in put.json()["detail"]
+    mixed = client.put(
+        "/api/class/CLIPA/frames/0",
+        json={"tags": ["grasper", "NotAClass"]},
+    )
+    assert mixed.status_code == 400
+    assert "NotAClass" in mixed.json()["detail"]
+    assert client.get("/api/class/CLIPA").json()["frames"] == {}
+
+
+def test_class_tags_toggle_on_and_stack(client: TestClient) -> None:
+    on = client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper"]})
+    assert on.status_code == 200
+    assert on.json()["frames"]["0"] == ["grasper"]
+    stacked = client.put(
+        "/api/class/CLIPA/frames/0",
+        json={"tags": ["grasper", "blurred"]},
+    )
+    assert stacked.status_code == 200
+    assert stacked.json()["frames"]["0"] == ["grasper", "blurred"]
+    off = client.put("/api/class/CLIPA/frames/0", json={"tags": ["blurred"]})
+    assert off.status_code == 200
+    assert off.json()["frames"]["0"] == ["blurred"]
+
+
+def test_class_tags_stay_unique_on_a_frame(client: TestClient) -> None:
+    put = client.put(
+        "/api/class/CLIPA/frames/0",
+        json={"tags": ["grasper", "grasper", "blurred", "grasper"]},
+    )
+    assert put.status_code == 200
+    assert put.json()["frames"]["0"] == ["grasper", "blurred"]
+
+
+def test_empty_class_list_is_unlabeled(client: TestClient) -> None:
+    client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper"]})
+    cleared = client.put("/api/class/CLIPA/frames/0", json={"tags": []})
+    assert cleared.status_code == 200
+    assert "0" not in cleared.json()["frames"]
+    assert client.get("/api/class/CLIPA").json()["frames"] == {}
+
+
+def test_class_flags_do_not_copy_to_next_frame(client: TestClient) -> None:
+    put = client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper", "blurred"]})
+    assert put.status_code == 200
+    assert put.json()["frames"] == {"0": ["grasper", "blurred"]}
+    assert "1" not in put.json()["frames"]
+    loaded = client.get("/api/class/CLIPA")
+    assert loaded.json()["frames"] == {"0": ["grasper", "blurred"]}
+    assert "1" not in loaded.json()["frames"]
+
+
+def test_added_class_name_can_be_toggled(client: TestClient) -> None:
+    added = client.post("/api/vocab/class_tags", json={"name": "smoke"})
+    assert added.status_code == 200
+    assert "smoke" in added.json()["class_tags"]
+    put = client.put("/api/class/CLIPA/frames/0", json={"tags": ["smoke"]})
+    assert put.status_code == 200
+    assert put.json()["frames"]["0"] == ["smoke"]
+
+
+def test_add_class_name_rejects_blank_and_duplicate(client: TestClient) -> None:
+    blank = client.post("/api/vocab/class_tags", json={"name": "   "})
+    assert blank.status_code == 400
+    dup = client.post("/api/vocab/class_tags", json={"name": "grasper"})
+    assert dup.status_code == 409
+    assert "grasper" in dup.json()["detail"]
+
+
+def test_class_write_leaves_phase_triplet_and_session_untouched(client: TestClient) -> None:
+    assert client.get("/api/session").json().get("active") is False
+    painted = client.post(
+        "/api/phase/CLIPA/span",
+        json={"phase": "Preparation", "from": 0, "to": 0},
+    )
+    assert painted.status_code == 200
+    tr = client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    assert tr.status_code == 200
+    cl = client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper", "blurred"]})
+    assert cl.status_code == 200
+    assert client.get("/api/phase/CLIPA").json()["frames"] == {"0": "Preparation"}
+    rows = client.get("/api/triplet/CLIPA").json()["frames"]["0"]
+    assert rows == [
+        {
+            "id": 1,
+            "instrument": "grasper",
+            "verb": "retract",
+            "target": "gallbladder",
+        }
+    ]
+    assert client.get("/api/session").json().get("active") is False
+    client.put("/api/class/CLIPA/frames/0", json={"tags": []})
+    assert client.get("/api/phase/CLIPA").json()["frames"] == {"0": "Preparation"}
+    assert client.get("/api/triplet/CLIPA").json()["frames"]["0"][0]["id"] == 1
+    assert client.get("/api/session").json().get("active") is False
+
+
+def test_class_survives_new_app_instance(tmp_path: Path) -> None:
+    frames = tmp_path / "frames"
+    clip_a = frames / "CLIPA"
+    clip_a.mkdir(parents=True)
+    (clip_a / "00001.jpg").write_bytes(b"fake-jpeg-0")
+    (clip_a / "00002.jpg").write_bytes(b"fake-jpeg-1")
+    settings = Settings(
+        frames_root=frames,
+        clip_allowlist=("CLIPA",),
+        annotations_root=tmp_path / "mask",
+        labels_root=tmp_path / "labels",
+        predictor_backend="fake",
+    )
+    first = TestClient(create_app(settings))
+    put = first.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper", "blurred"]})
+    assert put.status_code == 200
+    second = TestClient(create_app(settings))
+    loaded = second.get("/api/class/CLIPA")
+    assert loaded.status_code == 200
+    assert loaded.json()["frames"] == {"0": ["grasper", "blurred"]}
+    assert "1" not in loaded.json()["frames"]
+    assert second.get("/api/session").json().get("active") is False
+
+
 def test_phase_survives_new_app_instance(tmp_path: Path) -> None:
     frames = tmp_path / "frames"
     clip_a = frames / "CLIPA"

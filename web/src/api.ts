@@ -10,8 +10,11 @@ export type ClipMeta = {
 
 export type PhaseDoc = { clip_id: string; frames: Record<string, string> };
 
+export type ClassDoc = { clip_id: string; frames: Record<string, string[]> };
+
 export type Vocab = {
   phases: string[];
+  class_tags: string[];
 };
 
 export function clipDeskPath(clipId: string): string {
@@ -34,6 +37,14 @@ export function phaseFramePath(clipId: string, frameIndex: number): string {
   return `/api/phase/${encodeURIComponent(clipId)}/frames/${frameIndex}`;
 }
 
+export function classClipPath(clipId: string): string {
+  return `/api/class/${encodeURIComponent(clipId)}`;
+}
+
+export function classFramePath(clipId: string, frameIndex: number): string {
+  return `/api/class/${encodeURIComponent(clipId)}/frames/${frameIndex}`;
+}
+
 export function vocabPath(): string {
   return "/api/vocab";
 }
@@ -48,6 +59,21 @@ export function framePhaseName(
 ): string | null {
   const name = frames[String(index)];
   return name ? name : null;
+}
+
+export function frameClassTags(
+  frames: Record<string, string[]>,
+  index: number,
+): string[] {
+  const tags = frames[String(index)];
+  return Array.isArray(tags) ? tags : [];
+}
+
+export function toggleClassTag(tags: string[], name: string): string[] {
+  if (tags.includes(name)) {
+    return tags.filter((tag) => tag !== name);
+  }
+  return [...tags, name];
 }
 
 export function errorDetail(body: unknown, fallback: string): string {

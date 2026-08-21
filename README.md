@@ -44,7 +44,7 @@ npm install
 npm run dev
 ```
 
-Vite is `http://127.0.0.1:5173` and proxies `/api` to `127.0.0.1:7880`. `/` lists allowlisted Clips; `/clips/:clipId` shows Frame 0, a filmstrip (each Frame’s phase or empty), and a phase editor (span paint, clear this Frame, add phase name). Scrub only changes the current Frame (no labels written, no Session).
+Vite is `http://127.0.0.1:5173` and proxies `/api` to `127.0.0.1:7880`. `/` lists allowlisted Clips; `/clips/:clipId` shows Frame 0, a filmstrip (each Frame’s phase or empty), a phase editor (span paint, clear this Frame, add phase name), and class chips next to the JPEG (toggle flags on this Frame, add class name). Scrub only changes the current Frame (no labels written, no Session).
 
 Health: `GET http://127.0.0.1:7880/api/health`
 

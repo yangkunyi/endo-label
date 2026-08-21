@@ -23,6 +23,11 @@ def make_router(settings: Settings) -> APIRouter:
         except catalog.ClipNotFound:
             raise HTTPException(status_code=404, detail=f"Clip not found: {clip_id}") from None
 
+    def _require_class_name(name: str) -> None:
+        tags = labels_store.load_vocab(settings).get("class_tags") or []
+        if name not in tags:
+            raise HTTPException(status_code=400, detail=f"unknown class: {name}")
+
     @router.get("/api/class/{clip_id}")
     def get_clip_class(clip_id: str) -> dict:
         _meta(clip_id)
@@ -40,6 +45,8 @@ def make_router(settings: Settings) -> APIRouter:
         if not tags:
             doc["frames"].pop(key, None)
         else:
+            for name in tags:
+                _require_class_name(name)
             doc["frames"][key] = tags
         labels_store.save_clip(settings, "class", clip_id, doc)
         return doc

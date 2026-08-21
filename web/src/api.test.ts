@@ -1,12 +1,16 @@
 import { expect, test } from "vitest";
 import {
+  classClipPath,
+  classFramePath,
   clipDeskPath,
   errorDetail,
+  frameClassTags,
   frameJpegPath,
   framePhaseName,
   phaseClipPath,
   phaseFramePath,
   phaseSpanPath,
+  toggleClassTag,
   vocabListPath,
 } from "./api";
 
@@ -46,4 +50,27 @@ test("labeled Frame phase is the exclusive name", () => {
   expect(
     framePhaseName({ "0": "Preparation", "1": "Clipping and cutting" }, 1),
   ).toBe("Clipping and cutting");
+});
+
+test("class paths match compose HTTP", () => {
+  expect(classClipPath("CLIPA")).toBe("/api/class/CLIPA");
+  expect(classFramePath("CLIPA", 0)).toBe("/api/class/CLIPA/frames/0");
+  expect(vocabListPath("class_tags")).toBe("/api/vocab/class_tags");
+});
+
+test("missing Frame class is unlabeled", () => {
+  expect(frameClassTags({}, 0)).toEqual([]);
+  expect(frameClassTags({ "1": ["grasper"] }, 0)).toEqual([]);
+});
+
+test("toggle class tag turns a name on then off", () => {
+  expect(toggleClassTag([], "grasper")).toEqual(["grasper"]);
+  expect(toggleClassTag(["grasper"], "blurred")).toEqual(["grasper", "blurred"]);
+  expect(toggleClassTag(["grasper", "blurred"], "grasper")).toEqual(["blurred"]);
+  expect(toggleClassTag(["blurred"], "blurred")).toEqual([]);
+});
+
+test("toggle class tag does not duplicate a name", () => {
+  expect(toggleClassTag(["grasper"], "grasper")).toEqual([]);
+  expect(toggleClassTag(["grasper", "blurred"], "blurred")).toEqual(["grasper"]);
 });

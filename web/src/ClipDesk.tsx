@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
 import {
+  classClipPath,
+  classFramePath,
+  frameClassTags,
   frameJpegPath,
   framePhaseName,
   getJson,
@@ -9,8 +12,10 @@ import {
   phaseFramePath,
   phaseSpanPath,
   sendJson,
+  toggleClassTag,
   vocabListPath,
   vocabPath,
+  type ClassDoc,
   type ClipMeta,
   type PhaseDoc,
   type Vocab,
@@ -26,6 +31,10 @@ export function ClipDesk() {
   const { data: phaseDoc, mutate: mutatePhase } = useSWR(
     clipId ? phaseClipPath(clipId) : null,
     getJson<PhaseDoc>,
+  );
+  const { data: classDoc, mutate: mutateClass } = useSWR(
+    clipId ? classClipPath(clipId) : null,
+    getJson<ClassDoc>,
   );
   const { data: vocab, mutate: mutateVocab } = useSWR(
     vocabPath(),
@@ -95,15 +104,27 @@ export function ClipDesk() {
         Frame {frameIndex}
         {data.frame_count > 0 ? ` of ${data.frame_count}` : ""}
       </p>
-      {data.frame_count > 0 ? (
-        <img
-          className="mb-4 max-h-[70vh] w-auto max-w-full border border-stone-300 bg-black"
-          src={frameJpegPath(data.id, frameIndex)}
-          alt={`Frame ${frameIndex}`}
+      <div className="mb-4 flex flex-wrap items-start gap-4">
+        {data.frame_count > 0 ? (
+          <img
+            className="max-h-[70vh] w-auto max-w-full border border-stone-300 bg-black"
+            src={frameJpegPath(data.id, frameIndex)}
+            alt={`Frame ${frameIndex}`}
+          />
+        ) : (
+          <p>This Clip has no Frames.</p>
+        )}
+        <ClassPanel
+          key={data.id}
+          clipId={data.id}
+          frameIndex={frameIndex}
+          frameCount={data.frame_count}
+          classFrames={classDoc?.frames ?? {}}
+          classTags={vocab?.class_tags ?? []}
+          mutateClass={mutateClass}
+          mutateVocab={mutateVocab}
         />
-      ) : (
-        <p className="mb-4">This Clip has no Frames.</p>
-      )}
+      </div>
       <div className="flex gap-1 overflow-x-auto pb-2">
         {data.frames.map((frame) => {
           const current = frame.index === frameIndex;
@@ -306,6 +327,110 @@ function PhasePanel({
           }
         >
           Add phase name
+        </button>
+      </div>
+      {error ? <p className="mt-2 text-red-800">{error}</p> : null}
+    </section>
+  );
+}
+
+function ClassPanel({
+  clipId,
+  frameIndex,
+  frameCount,
+  classFrames,
+  classTags,
+  mutateClass,
+  mutateVocab,
+}: {
+  clipId: string;
+  frameIndex: number;
+  frameCount: number;
+  classFrames: Record<string, string[]>;
+  classTags: string[];
+  mutateClass: KeyedMutator<ClassDoc>;
+  mutateVocab: KeyedMutator<Vocab>;
+}) {
+  const [newName, setNewName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const current = frameClassTags(classFrames, frameIndex);
+
+  async function run(op: () => Promise<void>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await op();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Write failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="min-w-56 flex-1">
+      <h2 className="mb-2 text-lg font-semibold">class</h2>
+      <p className="mb-3 text-stone-600">
+        This Frame: {current.length ? current.join(", ") : "unlabeled"}
+      </p>
+      <div className="mb-3 flex flex-wrap gap-2">
+        {classTags.map((name) => {
+          const on = current.includes(name);
+          return (
+            <button
+              key={name}
+              type="button"
+              aria-pressed={on}
+              className={`rounded-full border px-3 py-1 text-sm disabled:opacity-50 ${
+                on
+                  ? "border-emerald-700 bg-emerald-800 text-white"
+                  : "border-stone-400 bg-white"
+              }`}
+              disabled={busy || frameCount <= 0}
+              onClick={() =>
+                run(async () => {
+                  const doc = await sendJson<ClassDoc>(
+                    classFramePath(clipId, frameIndex),
+                    "PUT",
+                    { tags: toggleClassTag(current, name) },
+                  );
+                  await mutateClass(doc, { revalidate: false });
+                })
+              }
+            >
+              {name}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-sm">
+          new class name
+          <input
+            className="ml-1 border border-stone-300 bg-white p-1"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            disabled={busy}
+          />
+        </label>
+        <button
+          type="button"
+          className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
+          disabled={busy}
+          onClick={() =>
+            run(async () => {
+              const created = await sendJson<Vocab>(
+                vocabListPath("class_tags"),
+                "POST",
+                { name: newName },
+              );
+              setNewName("");
+              await mutateVocab(created, { revalidate: false });
+            })
+          }
+        >
+          Add class name
         </button>
       </div>
       {error ? <p className="mt-2 text-red-800">{error}</p> : null}
