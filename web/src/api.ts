@@ -12,9 +12,24 @@ export type PhaseDoc = { clip_id: string; frames: Record<string, string> };
 
 export type ClassDoc = { clip_id: string; frames: Record<string, string[]> };
 
+export type TripletRow = {
+  id: number;
+  instrument: string;
+  verb: string;
+  target: string;
+};
+
+export type TripletDoc = {
+  clip_id: string;
+  frames: Record<string, TripletRow[]>;
+};
+
 export type Vocab = {
   phases: string[];
   class_tags: string[];
+  instruments: string[];
+  verbs: string[];
+  targets: string[];
 };
 
 export function clipDeskPath(clipId: string): string {
@@ -43,6 +58,22 @@ export function classClipPath(clipId: string): string {
 
 export function classFramePath(clipId: string, frameIndex: number): string {
   return `/api/class/${encodeURIComponent(clipId)}/frames/${frameIndex}`;
+}
+
+export function tripletClipPath(clipId: string): string {
+  return `/api/triplet/${encodeURIComponent(clipId)}`;
+}
+
+export function tripletFramePath(clipId: string, frameIndex: number): string {
+  return `/api/triplet/${encodeURIComponent(clipId)}/frames/${frameIndex}`;
+}
+
+export function tripletRowPath(
+  clipId: string,
+  frameIndex: number,
+  tripletId: number,
+): string {
+  return `/api/triplet/${encodeURIComponent(clipId)}/frames/${frameIndex}/${tripletId}`;
 }
 
 export function vocabPath(): string {
@@ -76,6 +107,14 @@ export function toggleClassTag(tags: string[], name: string): string[] {
   return [...tags, name];
 }
 
+export function frameTripletRows(
+  frames: Record<string, TripletRow[]>,
+  index: number,
+): TripletRow[] {
+  const rows = frames[String(index)];
+  return Array.isArray(rows) ? rows : [];
+}
+
 export function errorDetail(body: unknown, fallback: string): string {
   if (body && typeof body === "object" && "detail" in body) {
     const detail = (body as { detail: unknown }).detail;
@@ -107,12 +146,13 @@ export async function getJson<T>(url: string): Promise<T> {
 export async function sendJson<T>(
   url: string,
   method: string,
-  body: unknown,
+  body?: unknown,
 ): Promise<T> {
   const response = await fetch(url, {
     method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    headers:
+      body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
     throw new Error(await readError(response));

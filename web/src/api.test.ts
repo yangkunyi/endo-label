@@ -7,10 +7,14 @@ import {
   frameClassTags,
   frameJpegPath,
   framePhaseName,
+  frameTripletRows,
   phaseClipPath,
   phaseFramePath,
   phaseSpanPath,
   toggleClassTag,
+  tripletClipPath,
+  tripletFramePath,
+  tripletRowPath,
   vocabListPath,
 } from "./api";
 
@@ -73,4 +77,69 @@ test("toggle class tag turns a name on then off", () => {
 test("toggle class tag does not duplicate a name", () => {
   expect(toggleClassTag(["grasper"], "grasper")).toEqual([]);
   expect(toggleClassTag(["grasper", "blurred"], "blurred")).toEqual(["grasper"]);
+});
+
+test("triplet paths match compose HTTP", () => {
+  expect(tripletClipPath("CLIPA")).toBe("/api/triplet/CLIPA");
+  expect(tripletFramePath("CLIPA", 0)).toBe("/api/triplet/CLIPA/frames/0");
+  expect(tripletRowPath("CLIPA", 0, 2)).toBe("/api/triplet/CLIPA/frames/0/2");
+  expect(vocabListPath("instruments")).toBe("/api/vocab/instruments");
+  expect(vocabListPath("verbs")).toBe("/api/vocab/verbs");
+  expect(vocabListPath("targets")).toBe("/api/vocab/targets");
+});
+
+test("missing Frame triplet is unlabeled", () => {
+  expect(frameTripletRows({}, 0)).toEqual([]);
+  expect(
+    frameTripletRows(
+      {
+        "1": [
+          {
+            id: 1,
+            instrument: "grasper",
+            verb: "retract",
+            target: "gallbladder",
+          },
+        ],
+      },
+      0,
+    ),
+  ).toEqual([]);
+});
+
+test("labeled Frame triplet lists rows on that Frame", () => {
+  expect(
+    frameTripletRows(
+      {
+        "0": [
+          {
+            id: 1,
+            instrument: "grasper",
+            verb: "retract",
+            target: "gallbladder",
+          },
+          {
+            id: 2,
+            instrument: "grasper",
+            verb: "retract",
+            target: "gallbladder",
+          },
+        ],
+      },
+      0,
+    ),
+  ).toEqual([
+    {
+      id: 1,
+      instrument: "grasper",
+      verb: "retract",
+      target: "gallbladder",
+    },
+    {
+      id: 2,
+      instrument: "grasper",
+      verb: "retract",
+      target: "gallbladder",
+    },
+  ]);
 });

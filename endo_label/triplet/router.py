@@ -41,6 +41,15 @@ def make_router(settings: Settings) -> APIRouter:
         n = int(meta["frame_count"])
         if frame_index < 0 or frame_index >= n:
             raise HTTPException(status_code=404, detail=f"Frame index out of range: {frame_index}")
+        vocab = labels_store.load_vocab(settings)
+        for list_name, value, label in (
+            ("instruments", body.instrument, "instrument"),
+            ("verbs", body.verb, "verb"),
+            ("targets", body.target, "target"),
+        ):
+            names = vocab.get(list_name) or []
+            if value not in names:
+                raise HTTPException(status_code=400, detail=f"unknown {label}: {value}")
         doc = labels_store.load_clip(settings, "triplet", clip_id)
         key = str(frame_index)
         rows = list(doc["frames"].get(key) or [])

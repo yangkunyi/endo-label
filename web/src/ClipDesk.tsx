@@ -7,17 +7,23 @@ import {
   frameClassTags,
   frameJpegPath,
   framePhaseName,
+  frameTripletRows,
   getJson,
   phaseClipPath,
   phaseFramePath,
   phaseSpanPath,
   sendJson,
   toggleClassTag,
+  tripletClipPath,
+  tripletFramePath,
+  tripletRowPath,
   vocabListPath,
   vocabPath,
   type ClassDoc,
   type ClipMeta,
   type PhaseDoc,
+  type TripletDoc,
+  type TripletRow,
   type Vocab,
 } from "./api";
 import { useDeskStore } from "./deskStore";
@@ -35,6 +41,10 @@ export function ClipDesk() {
   const { data: classDoc, mutate: mutateClass } = useSWR(
     clipId ? classClipPath(clipId) : null,
     getJson<ClassDoc>,
+  );
+  const { data: tripletDoc, mutate: mutateTriplet } = useSWR(
+    clipId ? tripletClipPath(clipId) : null,
+    getJson<TripletDoc>,
   );
   const { data: vocab, mutate: mutateVocab } = useSWR(
     vocabPath(),
@@ -122,6 +132,18 @@ export function ClipDesk() {
           classFrames={classDoc?.frames ?? {}}
           classTags={vocab?.class_tags ?? []}
           mutateClass={mutateClass}
+          mutateVocab={mutateVocab}
+        />
+        <TripletPanel
+          key={`${data.id}-triplet`}
+          clipId={data.id}
+          frameIndex={frameIndex}
+          frameCount={data.frame_count}
+          tripletFrames={tripletDoc?.frames ?? {}}
+          instruments={vocab?.instruments ?? []}
+          verbs={vocab?.verbs ?? []}
+          targets={vocab?.targets ?? []}
+          mutateTriplet={mutateTriplet}
           mutateVocab={mutateVocab}
         />
       </div>
@@ -431,6 +453,255 @@ function ClassPanel({
           }
         >
           Add class name
+        </button>
+      </div>
+      {error ? <p className="mt-2 text-red-800">{error}</p> : null}
+    </section>
+  );
+}
+
+function TripletPanel({
+  clipId,
+  frameIndex,
+  frameCount,
+  tripletFrames,
+  instruments,
+  verbs,
+  targets,
+  mutateTriplet,
+  mutateVocab,
+}: {
+  clipId: string;
+  frameIndex: number;
+  frameCount: number;
+  tripletFrames: Record<string, TripletRow[]>;
+  instruments: string[];
+  verbs: string[];
+  targets: string[];
+  mutateTriplet: KeyedMutator<TripletDoc>;
+  mutateVocab: KeyedMutator<Vocab>;
+}) {
+  const [instrument, setInstrument] = useState("");
+  const [verb, setVerb] = useState("");
+  const [target, setTarget] = useState("");
+  const [newInstrument, setNewInstrument] = useState("");
+  const [newVerb, setNewVerb] = useState("");
+  const [newTarget, setNewTarget] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const selectedInstrument = instruments.includes(instrument)
+    ? instrument
+    : (instruments[0] ?? "");
+  const selectedVerb = verbs.includes(verb) ? verb : (verbs[0] ?? "");
+  const selectedTarget = targets.includes(target) ? target : (targets[0] ?? "");
+  const current = frameTripletRows(tripletFrames, frameIndex);
+
+  async function run(op: () => Promise<void>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await op();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Write failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function addVocabName(
+    listName: "instruments" | "verbs" | "targets",
+    name: string,
+    clear: () => void,
+    pick: (added: string) => void,
+  ) {
+    return run(async () => {
+      const created = await sendJson<Vocab>(vocabListPath(listName), "POST", {
+        name,
+      });
+      clear();
+      await mutateVocab(created, { revalidate: false });
+      const added = created[listName][created[listName].length - 1];
+      if (added) {
+        pick(added);
+      }
+    });
+  }
+
+  return (
+    <section className="min-w-56 flex-1">
+      <h2 className="mb-2 text-lg font-semibold">triplet</h2>
+      <p className="mb-3 text-stone-600">
+        This Frame: {current.length ? `${current.length} row(s)` : "unlabeled"}
+      </p>
+      <div className="mb-3 flex flex-wrap items-end gap-2">
+        <label className="text-sm">
+          instrument
+          <select
+            className="ml-1 border border-stone-300 bg-white p-1"
+            value={selectedInstrument}
+            onChange={(e) => setInstrument(e.target.value)}
+            disabled={!instruments.length || busy}
+          >
+            {instruments.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          verb
+          <select
+            className="ml-1 border border-stone-300 bg-white p-1"
+            value={selectedVerb}
+            onChange={(e) => setVerb(e.target.value)}
+            disabled={!verbs.length || busy}
+          >
+            {verbs.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          target
+          <select
+            className="ml-1 border border-stone-300 bg-white p-1"
+            value={selectedTarget}
+            onChange={(e) => setTarget(e.target.value)}
+            disabled={!targets.length || busy}
+          >
+            {targets.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="rounded bg-emerald-800 px-3 py-1 text-sm text-white disabled:opacity-50"
+          disabled={
+            busy ||
+            frameCount <= 0 ||
+            !selectedInstrument ||
+            !selectedVerb ||
+            !selectedTarget
+          }
+          onClick={() =>
+            run(async () => {
+              await sendJson<TripletRow>(
+                tripletFramePath(clipId, frameIndex),
+                "POST",
+                {
+                  instrument: selectedInstrument,
+                  verb: selectedVerb,
+                  target: selectedTarget,
+                },
+              );
+              await mutateTriplet();
+            })
+          }
+        >
+          Add row
+        </button>
+      </div>
+      <ul className="mb-3 space-y-1">
+        {current.map((row) => (
+          <li
+            key={row.id}
+            className="flex flex-wrap items-center gap-2 text-sm"
+          >
+            <span>
+              #{row.id} {row.instrument} / {row.verb} / {row.target}
+            </span>
+            <button
+              type="button"
+              className="rounded border border-stone-400 bg-white px-2 py-0.5 text-sm disabled:opacity-50"
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  const doc = await sendJson<TripletDoc>(
+                    tripletRowPath(clipId, frameIndex, row.id),
+                    "DELETE",
+                  );
+                  await mutateTriplet(doc, { revalidate: false });
+                })
+              }
+            >
+              Delete
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-sm">
+          new instrument
+          <input
+            className="ml-1 border border-stone-300 bg-white p-1"
+            value={newInstrument}
+            onChange={(e) => setNewInstrument(e.target.value)}
+            disabled={busy}
+          />
+        </label>
+        <button
+          type="button"
+          className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
+          disabled={busy}
+          onClick={() =>
+            addVocabName(
+              "instruments",
+              newInstrument,
+              () => setNewInstrument(""),
+              setInstrument,
+            )
+          }
+        >
+          Add instrument
+        </button>
+        <label className="text-sm">
+          new verb
+          <input
+            className="ml-1 border border-stone-300 bg-white p-1"
+            value={newVerb}
+            onChange={(e) => setNewVerb(e.target.value)}
+            disabled={busy}
+          />
+        </label>
+        <button
+          type="button"
+          className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
+          disabled={busy}
+          onClick={() =>
+            addVocabName("verbs", newVerb, () => setNewVerb(""), setVerb)
+          }
+        >
+          Add verb
+        </button>
+        <label className="text-sm">
+          new target
+          <input
+            className="ml-1 border border-stone-300 bg-white p-1"
+            value={newTarget}
+            onChange={(e) => setNewTarget(e.target.value)}
+            disabled={busy}
+          />
+        </label>
+        <button
+          type="button"
+          className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
+          disabled={busy}
+          onClick={() =>
+            addVocabName(
+              "targets",
+              newTarget,
+              () => setNewTarget(""),
+              setTarget,
+            )
+          }
+        >
+          Add target
         </button>
       </div>
       {error ? <p className="mt-2 text-red-800">{error}</p> : null}
