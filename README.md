@@ -36,6 +36,16 @@ PYTHONPATH=. python -m endo_label
 
 Binds `127.0.0.1:7880`. CORS allows only `http://127.0.0.1:5173` and `http://localhost:5173`.
 
+Desk (dev): Vite SPA in `web/`. Start the API first, then:
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Vite is `http://127.0.0.1:5173` and proxies `/api` to `127.0.0.1:7880`. `/` lists allowlisted Clips; `/clips/:clipId` shows Frame 0 and a filmstrip. Scrub only changes the current Frame (no labels written, no Session).
+
 Health: `GET http://127.0.0.1:7880/api/health`
 
 Labels-only (no Session):
