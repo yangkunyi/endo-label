@@ -11,24 +11,30 @@ Four **sibling backends** (run alone or together on the same Clip / Frame):
 | `triplet` | no | `data/labels/triplet/` |
 | `mask` | SAM 3.1 Session when Predict/Propagate runs | `data/mask/` |
 
-Mask worker code was **ported** from `/data3/yky/sam3_1_label_tool/video_label_service`. SAM weights and `sam3/` stay there; set `SAM31_REPO` / `SAM31_CHECKPOINT` / `FRAMES_ROOT`.
+Mask worker code was **ported** from `/data3/yky/sam3_1_label_tool/video_label_service`. SAM weights and `sam3/` stay there. Default predictor is **fake** (no GPU).
 
-Default predictor is **fake** (no GPU).
+Sitting reads **YAML only** (repo-root `config.yaml` or `--config`). No `FRAMES_ROOT` / `CLIP_ALLOWLIST` env. Missing file: process does not start. HTTP tests inject `Settings` in memory.
 
 ## Run
 
+`config.yaml` at the repo root (or pass `--config`):
+
+```yaml
+frames_root: /data3/yky/sam3_1_label_tool/sam31_label_kit/frames
+clip_allowlist:
+  - CASE001_step06_clip002
+labels_root: data/labels
+```
+
+Empty `clip_allowlist` means no Clips.
+
 ```bash
 cd /data3/yky/endo_label
-export PYTHONPATH=.
-export FRAMES_ROOT=/data3/yky/sam3_1_label_tool/sam31_label_kit/frames
-export CLIP_ALLOWLIST=CASE001_step06_clip002
-# optional real SAM:
-# export PREDICTOR_BACKEND=sam31
-# export SAM31_REPO=/data3/yky/sam3_1_label_tool/sam3
-# export SAM31_CHECKPOINT=/data3/yky/sam3_1_label_tool/sam31_label_kit/ckpt/sam3.1_multiplex.pt
-
-python -m uvicorn endo_label.app:app --host 127.0.0.1 --port 7880
+PYTHONPATH=. python -m endo_label
+# PYTHONPATH=. python -m endo_label --config /path/to/config.yaml
 ```
+
+Binds `127.0.0.1:7880`. CORS allows only `http://127.0.0.1:5173` and `http://localhost:5173`.
 
 Health: `GET http://127.0.0.1:7880/api/health`
 

@@ -19,6 +19,3 @@ def create_app(settings: Settings | None = None):
     app.include_router(vocab_router(cfg))
     app.state.backends = ("phase", "class", "triplet", "mask")
     return app
-
-
-app = create_app()
