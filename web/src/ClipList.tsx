@@ -45,7 +45,7 @@ export function ClipList() {
         {data.clips.map((clip) => (
           <li key={clip.id}>
             <Link
-              className="text-emerald-800 underline"
+              className="font-semibold text-emerald-800 underline"
               to={clipDeskPath(clip.id)}
             >
               {clip.id}

@@ -103,28 +103,71 @@ export function ClipDesk() {
   }
 
   return (
-    <main className="mx-auto max-w-7xl p-6">
-      <p>
-        <Link className="text-emerald-800 underline" to="/">
+    <main className="flex h-screen flex-col overflow-hidden bg-stone-100 text-stone-900">
+      <header className="flex shrink-0 items-center gap-3 border-b border-stone-300 px-3 py-2">
+        <Link className="text-sm text-emerald-800 underline" to="/">
           Clips
         </Link>
-      </p>
-      <h1 className="mb-1 mt-3 text-xl font-semibold">{data.id}</h1>
-      <p className="mb-4 text-stone-600">
-        Frame {frameIndex}
-        {data.frame_count > 0 ? ` of ${data.frame_count}` : ""}
-      </p>
-      <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start">
-        {data.frame_count > 0 ? (
-          <img
-            className="max-h-[52vh] w-auto max-w-full border border-stone-300 bg-black lg:max-w-[58%]"
-            src={frameJpegPath(data.id, frameIndex)}
-            alt={`Frame ${frameIndex}`}
-          />
-        ) : (
-          <p>This Clip has no Frames.</p>
-        )}
-        <div className="flex min-w-0 flex-1 flex-col gap-6">
+        <h1 className="text-sm font-semibold">{data.id}</h1>
+        <p className="text-sm text-stone-600">
+          Frame {frameIndex}
+          {data.frame_count > 0 ? ` of ${data.frame_count}` : ""}
+        </p>
+      </header>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <nav
+          aria-label="Frames"
+          className="flex w-28 shrink-0 flex-col gap-1 overflow-y-auto border-r border-stone-300 p-1"
+        >
+          {/* ponytail: every thumb in the rail; virtualize when long Clips jank */}
+          {data.frames.map((frame) => {
+            const current = frame.index === frameIndex;
+            const phaseName = framePhaseName(
+              phaseDoc?.frames ?? {},
+              frame.index,
+            );
+            return (
+              <button
+                key={frame.index}
+                type="button"
+                aria-current={current ? "true" : undefined}
+                aria-label={
+                  phaseName
+                    ? `Frame ${frame.index} ${phaseName}`
+                    : `Frame ${frame.index} unlabeled`
+                }
+                className={`w-full rounded border bg-white p-1 text-left text-xs ${
+                  current
+                    ? "border-emerald-700 ring-2 ring-emerald-700"
+                    : "border-stone-300"
+                }`}
+                onClick={() => scrub(frame.index)}
+              >
+                <img
+                  className="mb-1 h-12 w-full object-cover"
+                  src={frameJpegPath(data.id, frame.index)}
+                  alt=""
+                />
+                <span className="block">{frame.index}</span>
+                <span className="block truncate text-stone-600">
+                  {phaseName ?? ""}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+        <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-black">
+          {data.frame_count > 0 ? (
+            <img
+              className="h-full w-full object-contain"
+              src={frameJpegPath(data.id, frameIndex)}
+              alt={`Frame ${frameIndex}`}
+            />
+          ) : (
+            <p className="text-stone-100">This Clip has no Frames.</p>
+          )}
+        </div>
+        <div className="flex w-[26rem] shrink-0 flex-col gap-4 overflow-y-auto border-l border-stone-300 p-3">
           <ClassPanel
             key={data.id}
             clipId={data.id}
@@ -158,40 +201,6 @@ export function ClipDesk() {
             mutateVocab={mutateVocab}
           />
         </div>
-      </div>
-      <div className="flex gap-1 overflow-x-auto pb-2">
-        {data.frames.map((frame) => {
-          const current = frame.index === frameIndex;
-          const phaseName = framePhaseName(phaseDoc?.frames ?? {}, frame.index);
-          return (
-            <button
-              key={frame.index}
-              type="button"
-              aria-current={current ? "true" : undefined}
-              aria-label={
-                phaseName
-                  ? `Frame ${frame.index} ${phaseName}`
-                  : `Frame ${frame.index} unlabeled`
-              }
-              className={`min-w-20 shrink-0 rounded border bg-white p-1 text-left text-xs ${
-                current
-                  ? "border-emerald-700 ring-2 ring-emerald-700"
-                  : "border-stone-300"
-              }`}
-              onClick={() => scrub(frame.index)}
-            >
-              <img
-                className="mb-1 h-12 w-full object-cover"
-                src={frameJpegPath(data.id, frame.index)}
-                alt=""
-              />
-              <span className="block">{frame.index}</span>
-              <span className="block truncate text-stone-600">
-                {phaseName ?? ""}
-              </span>
-            </button>
-          );
-        })}
       </div>
     </main>
   );
@@ -393,7 +402,7 @@ function ClassPanel({
   }
 
   return (
-    <section className="min-w-56 flex-1">
+    <section>
       <h2 className="mb-2 text-lg font-semibold">class</h2>
       <p className="mb-3 text-stone-600">
         This Frame: {current.length ? current.join(", ") : "unlabeled"}
@@ -530,7 +539,7 @@ function TripletPanel({
   }
 
   return (
-    <section className="min-w-56 flex-1">
+    <section>
       <h2 className="mb-2 text-lg font-semibold">triplet</h2>
       <p className="mb-3 text-stone-600">
         This Frame: {current.length ? `${current.length} row(s)` : "unlabeled"}
