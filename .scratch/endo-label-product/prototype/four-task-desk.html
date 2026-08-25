@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Throwaway: four task types on one Clip</title>
+  <style>
+    :root {
+      --bg: #f6f4ef;
+      --ink: #1c1915;
+      --muted: #5c564c;
+      --line: #d9d3c7;
+      --card: #fffcf7;
+      --accent: #0f6e56;
+      --accent-ink: #fff;
+      --warn: #8a3b12;
+      --ok: #0f6e56;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 15px/1.45 "Source Sans 3", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    header, main { max-width: 1100px; margin: 0 auto; padding: 24px 20px 0; }
+    header h1 { font-size: 1.45rem; margin: 0 0 8px; font-weight: 650; }
+    header p { margin: 0 0 18px; color: var(--muted); max-width: 62ch; }
+    .proto-tag {
+      display: inline-block;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--warn);
+      border: 1px solid var(--warn);
+      padding: 2px 8px;
+      margin-bottom: 10px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 16px;
+      padding-bottom: 40px;
+    }
+    @media (max-width: 840px) { .grid { grid-template-columns: 1fr; } }
+    section {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px 16px 14px;
+    }
+    h2 { font-size: 0.95rem; margin: 0 0 10px; }
+    h3 { font-size: 0.8rem; margin: 14px 0 8px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+    button, select, input {
+      font: inherit;
+      border-radius: 6px;
+    }
+    input {
+      border: 1px solid var(--line);
+      padding: 6px 8px;
+      min-width: 10rem;
+      background: #fff;
+    }
+    button {
+      background: var(--accent);
+      color: var(--accent-ink);
+      border: 0;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    button.ghost {
+      background: transparent;
+      color: var(--ink);
+      border: 1px solid var(--line);
+    }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0; }
+    .state {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12.5px;
+      background: #efebe3;
+      border-radius: 8px;
+      padding: 10px 12px;
+      white-space: pre-wrap;
+      line-height: 1.4;
+    }
+    .changed { outline: 2px solid var(--accent); }
+    .film {
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+      padding: 4px 0 8px;
+    }
+    .cell {
+      min-width: 52px;
+      height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: #e7e1d6;
+      cursor: pointer;
+      font-size: 11px;
+      padding: 4px;
+      text-align: left;
+    }
+    .cell.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(15,110,86,0.25); }
+    .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+    .tabs button { background: #e7e1d6; color: var(--ink); }
+    .tabs button.on { background: var(--accent); color: var(--accent-ink); }
+    .note { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+    label { font-size: 13px; color: var(--muted); }
+    .chip {
+      display: inline-block;
+      background: #e7e1d6;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="proto-tag">Throwaway prototype — not the product</div>
+    <h1>Four kinds on one Clip</h1>
+    <p>
+      Question: can one Session, on one Clip, hold <strong>phase</strong>, <strong>class</strong>
+      (stackable flags: tools, blur, …), <strong>triplet</strong>, and <strong>mask</strong>
+      without those kinds stealing each other’s Frame or identity? Phase is stored per Frame;
+      painting a span writes every Frame inside. There is no umbrella word — the state lists the four names.
+    </p>
+  </header>
+  <main class="grid">
+    <div>
+      <section>
+        <h2>Free play</h2>
+        <div class="row">
+          <button data-act="OPEN">Open Session</button>
+          <button class="ghost" data-act="CLOSE">Close Session</button>
+          <button class="ghost" data-act="SAVE">Save (snapshot)</button>
+          <button class="ghost" data-act="LOAD">Load snapshot into Session</button>
+        </div>
+        <h3>Frames — click a cell to scrub (change the current Frame)</h3>
+        <p class="note">Scrub = move along the Clip. Does not Predict. Does not write phase/class/triplet/mask.</p>
+        <div class="film" id="film"></div>
+        <h3>phase — paint interval (canonical: one value per Frame)</h3>
+        <div class="row">
+          <label>phase</label>
+          <select id="phaseName"></select>
+          <label>from</label>
+          <select id="phaseFrom"></select>
+          <label>to</label>
+          <select id="phaseTo"></select>
+          <button data-act="PAINT_PHASE">Write span</button>
+          <button class="ghost" data-act="CLEAR_PHASE">Clear this Frame’s phase</button>
+        </div>
+        <div class="row">
+          <input id="newPhase" placeholder="new phase name" />
+          <button class="ghost" data-act="ADD_VOCAB" data-list="phases" data-input="newPhase">Add phase name</button>
+        </div>
+        <h3>class — flags on this Frame (stack; click on/off)</h3>
+        <p class="note">Not one exclusive label. Several can be on at once (grasper + blurred). Names are yours to add.</p>
+        <div class="row" id="tools"></div>
+        <div class="row">
+          <input id="newClass" placeholder="new class name (e.g. smoke)" />
+          <button class="ghost" data-act="ADD_VOCAB" data-list="classTags" data-input="newClass">Add class name</button>
+        </div>
+        <h3>triplet — rows on this Frame (no Track required)</h3>
+        <div class="row">
+          <select id="ti"></select>
+          <select id="tv"></select>
+          <select id="tt"></select>
+          <button data-act="ADD_TRIPLET">Add triplet</button>
+        </div>
+        <div class="row">
+          <input id="newInst" placeholder="new instrument" />
+          <button class="ghost" data-act="ADD_VOCAB" data-list="instruments" data-input="newInst">Add instrument</button>
+          <input id="newVerb" placeholder="new verb" />
+          <button class="ghost" data-act="ADD_VOCAB" data-list="verbs" data-input="newVerb">Add verb</button>
+          <input id="newTgt" placeholder="new target" />
+          <button class="ghost" data-act="ADD_VOCAB" data-list="targets" data-input="newTgt">Add target</button>
+        </div>
+        <div id="tripletList"></div>
+        <h3>mask — Predict on this Frame; Propagate with SAM (same as current desk)</h3>
+        <p class="note"><strong>Fake Predict</strong> = stand-in for running SAM on this Frame (points/boxes/scribbles in the real desk). This HTML cannot load the GPU model, so it drops a dummy box on the Active Track. <strong>Propagate</strong> then fills later empty Frames from that seed. Not a drawing tool.</p>
+        <div class="row">
+          <button data-act="ADD_TRACK">New Track</button>
+          <select id="trackSel"></select>
+          <button data-act="STAMP_MASK">Fake Predict on this Frame</button>
+          <button data-act="PROPAGATE_MASK">Propagate mask forward</button>
+          <button class="ghost" data-act="CLEAR_MASK">Clear mask on this Frame</button>
+        </div>
+      </section>
+      <section style="margin-top:16px">
+        <h2>Guided walkthroughs</h2>
+        <div class="tabs" id="tabs"></div>
+        <p class="note" id="walkNote"></p>
+        <div class="row" id="walkBtns"></div>
+      </section>
+    </div>
+    <section>
+      <h2>State</h2>
+      <p class="note" id="delta">Open a Session to edit. Saved snapshot is separate from live Session.</p>
+      <div class="state" id="state"></div>
+    </section>
+  </main>
+<script>
+(function () {
+  // --- liftable module: no DOM ---
+  const FRAME_COUNT = 12;
+
+  function defaultVocab() {
+    return {
+      phases: [
+        "Preparation",
+        "Calot triangle dissection",
+        "Clipping and cutting",
+        "Gallbladder dissection",
+      ],
+      classTags: ["grasper", "hook", "clipper", "scissors", "blurred"],
+      instruments: ["grasper", "hook", "clipper", "bipolar"],
+      verbs: ["grasp", "retract", "dissect", "cut", "clip"],
+      targets: ["gallbladder", "cystic-duct", "cystic-artery", "omentum"],
+    };
+  }
+
+  function emptyFrameMap(fill) {
+    const m = {};
+    for (let i = 0; i < FRAME_COUNT; i++) m[i] = fill(i);
+    return m;
+  }
+
+  function initial() {
+    return {
+      clipId: "CASE001_demo",
+      frameCount: FRAME_COUNT,
+      vocab: defaultVocab(),
+      session: null,
+      saved: null,
+      last: "idle",
+    };
+  }
+
+  function newSession() {
+    return {
+      current: 0,
+      phase: emptyFrameMap(function () { return null; }),
+      class: emptyFrameMap(function () { return []; }),
+      triplet: emptyFrameMap(function () { return []; }),
+      tracks: [],
+      activeTrack: null,
+      nextTrack: 1,
+      nextTriplet: 1,
+    };
+  }
+
+  function clone(x) {
+    return JSON.parse(JSON.stringify(x));
+  }
+
+  function ensureSession(state) {
+    if (!state.session) {
+      return { ok: false, error: "No Session. Open one on this Clip first." };
+    }
+    return { ok: true };
+  }
+
+  function reducer(state, action) {
+    const s = clone(state);
+    s.last = action.type;
+    s.error = null;
+    switch (action.type) {
+      case "OPEN": {
+        s.session = newSession();
+        s.last = "opened empty Session on " + s.clipId;
+        return s;
+      }
+      case "CLOSE": {
+        s.session = null;
+        s.last = "Session closed. Live phase/class/triplet/mask dropped. Saved snapshot kept.";
+        return s;
+      }
+      case "SAVE": {
+        if (!s.session) {
+          s.error = "Nothing to save.";
+          return s;
+        }
+        s.saved = clone(s.session);
+        s.last = "Saved snapshot of phase, class, triplet, mask on " + s.clipId;
+        return s;
+      }
+      case "LOAD": {
+        if (!s.saved) {
+          s.error = "No snapshot.";
+          return s;
+        }
+        s.session = clone(s.saved);
+        s.last = "Loaded snapshot into Session.";
+        return s;
+      }
+      case "ADD_VOCAB": {
+        const list = action.list;
+        const name = (action.name || "").trim();
+        if (!s.vocab[list]) { s.error = "Unknown list."; return s; }
+        if (!name) { s.error = "Name is empty."; return s; }
+        if (s.vocab[list].indexOf(name) >= 0) {
+          s.error = "Already in the list: " + name;
+          return s;
+        }
+        s.vocab[list].push(name);
+        s.last = "Added \"" + name + "\" to " + list + " (custom vocab, not a public dataset lock)";
+        return s;
+      }
+      case "SCRUB": {
+        const g = ensureSession(s);
+        if (!g.ok) { s.error = g.error; return s; }
+        const i = action.frame;
+        if (i < 0 || i >= FRAME_COUNT) { s.error = "Frame out of range."; return s; }
+        s.session.current = i;
+        s.last = "Frame " + i;
+        return s;
+      }
+      case "PAINT_PHASE": {
+        const g = ensureSession(s);
+        if (!g.ok) { s.error = g.error; return s; }
+        let a = action.from;
+        let b = action.to;
+        if (a > b) { const t = a; a = b; b = t; }
+        if (a < 0 || b >= FRAME_COUNT) { s.error = "Span out of range."; return s; }
+        if (s.vocab.phases.indexOf(action.phase) < 0) { s.error = "Unknown phase."; return s; }
+        for (let i = a; i <= b; i++) s.session.phase[i] = action.phase;
+        s.last = "Wrote phase \"" + action.phase + "\" on Frames " + a + "–" + b + " (per-Frame overwrite)";
+        return s;
+      }
+      case "CLEAR_PHASE": {
+        const g = ensureSession(s);
+        if (!g.ok) { s.error = g.error; return s; }
+        const f = s.session.current;
+        s.session.phase[f] = null;
+        s.last = "Cleared phase on Frame " + f;
+        return s;
+      }
+      case "TOGGLE_CLASS": {
+        const g = ensureSession(s);
+        if (!g.ok) { s.error = g.error; return s; }
+        const f = s.session.current;
+        const list = s.session.class[f];
+        const i = list.indexOf(action.tag);
+        if (i >= 0) list.splice(i, 1);
+        else list.push(action.tag);
+        s.last = "class on Frame " + f + ": " + (list.join(", ") || "(none)");
+        return s;
+      }
+      case "ADD_TRIPLET": {
+        const g = ensureSession(s);
+        if (!g.ok) { s.error = g.error; return s; }
+        const f = s.session.current;
+        const row = {
+          id: s.session.nextTriplet++,
+          instrument: action.instrument,
+          verb: action.verb,
+          target: action.target,
+        };
+        s.session.triplet[f].push(row);
+        s.last = "triplet #" + row.id + " on Frame " + f + " (no Track attached)";
+        return s;
+      }
+      case "REMOVE_TRIPLET": {
+        const g = ensureSession(s);
+        if (!g.ok) { s.error = g.error; return s; }
+        const f = s.session.current;
+        s.session.triplet[f] = s.session.triplet[f].filter(function (r) { return r.id !== action.id; });
+        s.last = "Removed triplet #" + action.id + " from Frame " + f;
+        return s;
+      }
+      case "ADD_TRACK": {
+        const g = ensureSession(s);
+        if (!g.ok) { s.error = g.error; return s; }
+        const id = s.session.nextTrack++;
+        s.session.tracks.push({ id: id, name: "track-" + id, masks: {} });
+        s.session.activeTrack = id;
+        s.last = "Track " + id + " created. mask still empty.";
+        return s;
+      }
+      case "SELECT_TRACK": {
+        const g = ensureSession(s);
+        if (!g.ok) { s.error = g.error; return s; }
+        s.session.activeTrack = action.id;
+        s.last = "Active Track " + action.id;
+        return s;
+      }
+      case "STAMP_MASK": {
+        const g = ensureSession(s);
+        if (!g.ok) { s.error = g.error; return s; }
+        if (s.session.activeTrack == null) { s.error = "No Active Track."; return s; }
+        const f = s.session.current;
+        const tr = s.session.tracks.find(function (t) { return t.id === s.session.activeTrack; });
+        tr.masks[f] = { format: "box-stand-in", box: [0.2, 0.2, 0.7, 0.7] };
+        s.last = "Fake Predict: dummy mask on Track " + tr.id + " Frame " + f + " (stand-in for SAM on this Frame; does not create a triplet)";
+        return s;
+      }
+      case "PROPAGATE_MASK": {
+        const g = ensureSession(s);
+        if (!g.ok) { s.error = g.error; return s; }
+        const start = s.session.current;
+        let filled = 0;
+        s.session.tracks.forEach(function (tr) {
+          const seed = tr.masks[start];
+          if (!seed) return;
+          for (let i = start + 1; i < FRAME_COUNT; i++) {
+            if (tr.masks[i]) continue;
+            tr.masks[i] = clone(seed);
+            filled += 1;
+          }
+        });
+        if (filled === 0) {
+          s.error = "No mask seed on this Frame to Propagate (stamp first).";
+          return s;
+        }
+        s.last = "Propagate filled " + filled + " empty Track-on-Frame slots forward from Frame " + start + " (phase/class/triplet not touched; fake SAM)";
+        return s;
+      }
+      case "CLEAR_MASK": {
+        const g = ensureSession(s);
+        if (!g.ok) { s.error = g.error; return s; }
+        if (s.session.activeTrack == null) { s.error = "No Active Track."; return s; }
+        const f = s.session.current;
+        const tr = s.session.tracks.find(function (t) { return t.id === s.session.activeTrack; });
+        delete tr.masks[f];
+        s.last = "Cleared mask on Track " + tr.id + " Frame " + f + " (phase/class/triplet untouched)";
+        return s;
+      }
+      default:
+        s.error = "Unknown action";
+        return s;
+    }
+  }
+
+  function formatState(state) {
+    const lines = [];
+    lines.push("Clip: " + state.clipId + "  Frames: 0.." + (FRAME_COUNT - 1));
+    lines.push("Session: " + (state.session ? "open" : "none"));
+    lines.push("Saved snapshot: " + (state.saved ? "yes" : "no"));
+    if (state.error) lines.push("Error: " + state.error);
+    lines.push("Last: " + state.last);
+    if (!state.session) {
+      lines.push("");
+      lines.push("No live phase / class / triplet / mask.");
+      if (state.saved) {
+        lines.push("Snapshot still has the four kinds (close did not wipe disk).");
+      }
+      return lines.join("\n");
+    }
+    const cur = state.session.current;
+    lines.push("");
+    lines.push("This Frame: " + cur);
+    lines.push("  phase:   " + (state.session.phase[cur] || "(none)"));
+    lines.push("  class:   " + (state.session.class[cur].join(", ") || "(none)"));
+    const trips = state.session.triplet[cur];
+    lines.push("  triplet: " + (trips.length ? trips.map(function (r) {
+      return "#" + r.id + " " + r.instrument + " / " + r.verb + " / " + r.target;
+    }).join(" | ") : "(none)"));
+    const masks = state.session.tracks.map(function (t) {
+      return t.id + (t.masks[cur] ? ":box" : ":—");
+    }).join("  ");
+    lines.push("  mask:    " + (masks || "(no Track)"));
+    lines.push("  Active Track: " + (state.session.activeTrack == null ? "(none)" : state.session.activeTrack));
+    lines.push("");
+    lines.push("Clip phase strip:");
+    let strip = "";
+    for (let i = 0; i < FRAME_COUNT; i++) {
+      const p = state.session.phase[i];
+      strip += i + ":" + (p ? p.slice(0, 3) : "·") + " ";
+    }
+    lines.push("  " + strip);
+    lines.push("Clip mask strip (any Track):");
+    let mstrip = "";
+    for (let i = 0; i < FRAME_COUNT; i++) {
+      const hit = state.session.tracks.some(function (t) { return !!t.masks[i]; });
+      mstrip += i + ":" + (hit ? "M" : "·") + " ";
+    }
+    lines.push("  " + mstrip);
+    return lines.join("\n");
+  }
+
+  // --- page shell ---
+  let state = initial();
+  const $state = document.getElementById("state");
+  const $delta = document.getElementById("delta");
+  const $film = document.getElementById("film");
+  const $tools = document.getElementById("tools");
+  const $phaseName = document.getElementById("phaseName");
+  const $phaseFrom = document.getElementById("phaseFrom");
+  const $phaseTo = document.getElementById("phaseTo");
+  const $ti = document.getElementById("ti");
+  const $tv = document.getElementById("tv");
+  const $tt = document.getElementById("tt");
+  const $trackSel = document.getElementById("trackSel");
+  const $tripletList = document.getElementById("tripletList");
+
+  function fillSelect(el, items, asIndex) {
+    el.innerHTML = "";
+    items.forEach(function (item, i) {
+      const o = document.createElement("option");
+      o.value = asIndex ? String(i) : item;
+      o.textContent = asIndex ? ("F" + i) : item;
+      el.appendChild(o);
+    });
+  }
+
+  fillSelect($phaseFrom, Array.from({ length: FRAME_COUNT }), true);
+  fillSelect($phaseTo, Array.from({ length: FRAME_COUNT }), true);
+
+  for (let i = 0; i < FRAME_COUNT; i++) {
+    const c = document.createElement("button");
+    c.className = "cell";
+    c.dataset.frame = String(i);
+    c.addEventListener("click", function () {
+      dispatch({ type: "SCRUB", frame: i });
+    });
+    $film.appendChild(c);
+  }
+
+  function dispatch(action) {
+    state = reducer(state, action);
+    render();
+  }
+
+  document.querySelectorAll("[data-act]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      const t = b.dataset.act;
+      if (t === "PAINT_PHASE") {
+        dispatch({
+          type: "PAINT_PHASE",
+          phase: $phaseName.value,
+          from: Number($phaseFrom.value),
+          to: Number($phaseTo.value),
+        });
+        return;
+      }
+      if (t === "ADD_TRIPLET") {
+        dispatch({
+          type: "ADD_TRIPLET",
+          instrument: $ti.value,
+          verb: $tv.value,
+          target: $tt.value,
+        });
+        return;
+      }
+      if (t === "SELECT_TRACK") return;
+      if (t === "ADD_TRACK") { dispatch({ type: "ADD_TRACK" }); return; }
+      if (t === "ADD_VOCAB") {
+        const input = document.getElementById(b.dataset.input);
+        dispatch({
+          type: "ADD_VOCAB",
+          list: b.dataset.list,
+          name: input ? input.value : "",
+        });
+        if (input) input.value = "";
+        return;
+      }
+      if (t === "STAMP_MASK") { dispatch({ type: "STAMP_MASK" }); return; }
+      if (t === "PROPAGATE_MASK") { dispatch({ type: "PROPAGATE_MASK" }); return; }
+      if (t === "CLEAR_MASK") { dispatch({ type: "CLEAR_MASK" }); return; }
+      dispatch({ type: t });
+    });
+  });
+
+  $trackSel.addEventListener("change", function () {
+    if ($trackSel.value === "") return;
+    dispatch({ type: "SELECT_TRACK", id: Number($trackSel.value) });
+  });
+
+  const WALK = [
+    {
+      id: "mix",
+      title: "All four on Frame 3",
+      note: "Open Session, go to Frame 3, write a phase span, mark class flags (tools + blurred), add a triplet, stamp a mask. Watch the four fields sit side by side — none replaces the others.",
+      steps: [
+        { type: "OPEN" },
+        { type: "SCRUB", frame: 3 },
+        { type: "PAINT_PHASE", phase: "Calot triangle dissection", from: 2, to: 7 },
+        { type: "TOGGLE_CLASS", tag: "grasper" },
+        { type: "TOGGLE_CLASS", tag: "hook" },
+        { type: "TOGGLE_CLASS", tag: "blurred" },
+        { type: "ADD_TRIPLET", instrument: "grasper", verb: "retract", target: "gallbladder" },
+        { type: "ADD_TRACK" },
+        { type: "STAMP_MASK" },
+      ],
+    },
+    {
+      id: "overwrite",
+      title: "Phase span overwrites",
+      note: "A second span overwrites Frames inside. class / triplet / mask on those Frames stay. Exclusive phase, stacked class.",
+      steps: [
+        { type: "OPEN" },
+        { type: "PAINT_PHASE", phase: "Preparation", from: 0, to: 11 },
+        { type: "PAINT_PHASE", phase: "Clipping and cutting", from: 4, to: 8 },
+        { type: "SCRUB", frame: 5 },
+        { type: "TOGGLE_CLASS", tag: "clipper" },
+      ],
+    },
+    {
+      id: "independent",
+      title: "Clear mask, keep the rest",
+      note: "Triplet does not need a Track. Clearing a mask must not wipe phase, class, or triplet on that Frame.",
+      steps: [
+        { type: "OPEN" },
+        { type: "SCRUB", frame: 1 },
+        { type: "PAINT_PHASE", phase: "Preparation", from: 1, to: 1 },
+        { type: "TOGGLE_CLASS", tag: "hook" },
+        { type: "ADD_TRIPLET", instrument: "hook", verb: "dissect", target: "cystic-duct" },
+        { type: "ADD_TRACK" },
+        { type: "STAMP_MASK" },
+        { type: "CLEAR_MASK" },
+      ],
+    },
+    {
+      id: "session",
+      title: "Close drops live, Save keeps snapshot",
+      note: "Close without Save empties live phase/class/triplet/mask. Snapshot is a separate bag of the four kinds — not one 'Annotation' blob name.",
+      steps: [
+        { type: "OPEN" },
+        { type: "PAINT_PHASE", phase: "Gallbladder dissection", from: 8, to: 11 },
+        { type: "SAVE" },
+        { type: "CLOSE" },
+        { type: "LOAD" },
+      ],
+    },
+    {
+      id: "propagate",
+      title: "Propagate mask, not the others",
+      note: "Stamp a mask on Frame 3, Propagate forward. Frame 8 gets a mask. class/triplet on Frame 8 stay empty. Phase only if you painted a span — SAM does not copy it.",
+      steps: [
+        { type: "OPEN" },
+        { type: "SCRUB", frame: 3 },
+        { type: "TOGGLE_CLASS", tag: "grasper" },
+        { type: "ADD_TRIPLET", instrument: "grasper", verb: "retract", target: "gallbladder" },
+        { type: "ADD_TRACK" },
+        { type: "STAMP_MASK" },
+        { type: "PROPAGATE_MASK" },
+        { type: "SCRUB", frame: 8 },
+      ],
+    },
+  ];
+
+  function walkLabel(step) {
+    switch (step.type) {
+      case "SCRUB": return "Go to Frame " + step.frame;
+      case "TOGGLE_CLASS": return "class on/off: " + step.tag;
+      case "PAINT_PHASE": return "Write phase span";
+      case "ADD_TRIPLET": return "Add triplet";
+      case "ADD_TRACK": return "New Track";
+      case "STAMP_MASK": return "Fake Predict on this Frame";
+      case "PROPAGATE_MASK": return "Propagate mask forward";
+      case "CLEAR_MASK": return "Clear mask";
+      case "OPEN": return "Open Session";
+      case "CLOSE": return "Close Session";
+      case "SAVE": return "Save snapshot";
+      case "LOAD": return "Load snapshot";
+      default: return step.type;
+    }
+  }
+
+  let walkId = "mix";
+  let walkStep = 0;
+
+  function renderWalk() {
+    const tabs = document.getElementById("tabs");
+    tabs.innerHTML = "";
+    WALK.forEach(function (w) {
+      const b = document.createElement("button");
+      b.textContent = w.title;
+      if (w.id === walkId) b.classList.add("on");
+      b.addEventListener("click", function () {
+        walkId = w.id;
+        walkStep = 0;
+        state = initial();
+        render();
+      });
+      tabs.appendChild(b);
+    });
+    const w = WALK.find(function (x) { return x.id === walkId; });
+    document.getElementById("walkNote").textContent = w.note;
+    const box = document.getElementById("walkBtns");
+    box.innerHTML = "";
+    w.steps.forEach(function (step, i) {
+      const b = document.createElement("button");
+      b.className = i === walkStep ? "" : "ghost";
+      b.textContent = (i + 1) + ". " + walkLabel(step);
+      b.disabled = i !== walkStep;
+      b.addEventListener("click", function () {
+        dispatch(step);
+        walkStep = Math.min(walkStep + 1, w.steps.length);
+        renderWalk();
+      });
+      box.appendChild(b);
+    });
+  }
+
+  function render() {
+    $state.textContent = formatState(state);
+    $state.classList.remove("changed");
+    void $state.offsetWidth;
+    $state.classList.add("changed");
+    $delta.textContent = state.error
+      ? state.error
+      : state.last;
+    const keepPhase = $phaseName.value;
+    const keepI = $ti.value;
+    const keepV = $tv.value;
+    const keepT = $tt.value;
+    fillSelect($phaseName, state.vocab.phases, false);
+    fillSelect($ti, state.vocab.instruments, false);
+    fillSelect($tv, state.vocab.verbs, false);
+    fillSelect($tt, state.vocab.targets, false);
+    if (state.vocab.phases.indexOf(keepPhase) >= 0) $phaseName.value = keepPhase;
+    if (state.vocab.instruments.indexOf(keepI) >= 0) $ti.value = keepI;
+    if (state.vocab.verbs.indexOf(keepV) >= 0) $tv.value = keepV;
+    if (state.vocab.targets.indexOf(keepT) >= 0) $tt.value = keepT;
+    $tools.innerHTML = "";
+    state.vocab.classTags.forEach(function (tag) {
+      const b = document.createElement("button");
+      b.className = "ghost";
+      b.textContent = tag;
+      b.dataset.tag = tag;
+      b.addEventListener("click", function () {
+        dispatch({ type: "TOGGLE_CLASS", tag: tag });
+      });
+      $tools.appendChild(b);
+    });
+    const sess = state.session;
+    $film.querySelectorAll(".cell").forEach(function (c) {
+      const i = Number(c.dataset.frame);
+      c.classList.toggle("on", !!(sess && sess.current === i));
+      const ph = sess ? (sess.phase[i] ? sess.phase[i].slice(0, 3) : "·") : "·";
+      c.textContent = i + "\n" + ph;
+    });
+    if (sess) {
+      $phaseFrom.value = String(sess.current);
+      $phaseTo.value = String(sess.current);
+      $tools.querySelectorAll("button").forEach(function (b) {
+        const on = sess.class[sess.current].indexOf(b.dataset.tag) >= 0;
+        b.style.background = on ? "var(--accent)" : "transparent";
+        b.style.color = on ? "var(--accent-ink)" : "var(--ink)";
+      });
+      $trackSel.innerHTML = "";
+      sess.tracks.forEach(function (t) {
+        const o = document.createElement("option");
+        o.value = String(t.id);
+        o.textContent = t.name + (t.masks[sess.current] ? " (mask here)" : "");
+        $trackSel.appendChild(o);
+      });
+      if (sess.activeTrack != null) $trackSel.value = String(sess.activeTrack);
+      const trips = sess.triplet[sess.current];
+      $tripletList.innerHTML = "";
+      trips.forEach(function (r) {
+        const row = document.createElement("div");
+        row.className = "row";
+        const span = document.createElement("span");
+        span.className = "chip";
+        span.textContent = "#" + r.id + " " + r.instrument + " / " + r.verb + " / " + r.target;
+        const rm = document.createElement("button");
+        rm.className = "ghost";
+        rm.textContent = "Remove";
+        rm.addEventListener("click", function () {
+          dispatch({ type: "REMOVE_TRIPLET", id: r.id });
+        });
+        row.appendChild(span);
+        row.appendChild(rm);
+        $tripletList.appendChild(row);
+      });
+    } else {
+      $tripletList.innerHTML = "";
+      $trackSel.innerHTML = "";
+    }
+    renderWalk();
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
