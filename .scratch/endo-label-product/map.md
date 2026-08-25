@@ -30,14 +30,14 @@ A spec for a local endoscopic surgical-video labeling product (one labeler): whi
 - [Which task types belong in v1](issues/07-v1-task-list.md) — v1 is phase, class, triplet, mask.
 - [One Session per Clip for all task types, or not](issues/08-session-across-tasks.md) — Session = mask/SAM only, lazy-open on Predict/Propagate. All four editors usable at once on the same Frame. No Task-focus switch.
 - [What to reuse from the current mask desk](issues/09-reuse-mask-desk.md) — **New repo** `/data3/yky/endo_label`. Port a thin mask module from this desk. Four sibling backends. Do not grow `video_label_service.app`. Do not copy `.scratch` / superseded ADRs.
+- phase / class / triplet product slice — spec + tickets 01–07 resolved: [../phase-class-triplet/spec.md](../phase-class-triplet/spec.md). Desk-wide vocab. Triplet has no Track. Sitting is YAML + FastAPI `:7880` serving `web/dist`. Local Playwright is `cd web && npm run test:e2e` (isolated `:7881` / Vite `:5174`), not CI.
 
 ## Not yet specified
 
-- Where those name lists live (one desk-wide vocab vs per Clip vs per operator). Default until decided: one editable list on the desk.
-- Whether a Triplet later points at a Track (chart said not required; prototype may reopen).
 - Review / Protected Mask rules for non-mask records.
 - Export / interchange formats.
 - Role of Concept Prompt / Geometric Prompt for mask (keep current desk?) vs other task types.
+- mask / Track / SAM product spec (later `/to-spec`; Session stays lazy and mask-only).
 
 ## Out of scope
 

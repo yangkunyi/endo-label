@@ -20,13 +20,22 @@ def main(argv: list[str] | None = None) -> None:
         default=None,
         help="YAML sitting config (default: repo-root config.yaml)",
     )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=7880,
+        help="Bind port (default: 7880). Playwright e2e uses 7881.",
+    )
     args = parser.parse_args(argv)
+    if args.port <= 0 or args.port > 65535:
+        print(f"invalid --port {args.port}", file=sys.stderr)
+        raise SystemExit(2)
     try:
         settings = load_settings(args.config)
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1) from exc
-    uvicorn.run(create_app(settings), host="127.0.0.1", port=7880, workers=1)
+    uvicorn.run(create_app(settings), host="127.0.0.1", port=args.port, workers=1)
 
 
 if __name__ == "__main__":

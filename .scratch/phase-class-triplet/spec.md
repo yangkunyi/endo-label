@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: resolved
 
 # Spec: phase, class, and triplet on one Clip
 
@@ -103,7 +103,7 @@ The three stores stay independent: writing phase never changes class or triplet 
 ## Implementation Decisions
 
 - **Seam:** the compose HTTP is the product interface for this spec. Callers and tests use phase / class / triplet / vocab routes plus the shared Clip catalog (Clip list, Clip meta, Frame JPEG). They do not open a Session.
-- **Process (ADR 0002).** Bind `127.0.0.1:7880`, no auth. One uvicorn worker, no JSON flock. CORS: Vite `5173` origins only. Empty clip allowlist → no Clips. One compose app (fake predictor idle). Sitting: serve `web/dist` at `/`; unknown GET → `index.html`; `/api/*` unchanged. Dev without `dist` is fine.
+- **Process (ADR 0002).** Bind `127.0.0.1:7880` by default (`--port` overrides; Playwright uses 7881), no auth. One uvicorn worker, no JSON flock. CORS: Vite `5173` origins only. Empty clip allowlist → no Clips. One compose app (fake predictor idle). Sitting: serve `web/dist` at `/`; unknown GET → `index.html`; `/api/*` unchanged. Dev without `dist` is fine. After desk source changes, rebuild `web/dist` or sitting still serves the old JS/CSS. Repo-root `config.yaml` is local (gitignored); missing file still refuses to start.
 - **Config (ADR 0003).** Sitting reads repo-root `config.yaml` or `--config path`. No env (`FRAMES_ROOT`, `CLIP_ALLOWLIST`, …). Missing file: refuse to start. Tests construct `Settings` in memory.
 - **Three sibling backends.** Each Task type has its own store and its own HTTP. They compose on one process. They do not share a live working state. Session stays mask-only and stays inactive for every story above.
 - **Catalog is shared, read-only Frame Pool.** Clip must be on the allowlist. Frame index is `0..N-1` with a stable stem. JPEG bytes come from the pool. These three backends never write into the pool.
@@ -120,7 +120,7 @@ The three stores stay independent: writing phase never changes class or triplet 
 - **Independence invariant.** A write to one kind loads and saves only that kind’s Clip document. It does not read or write the other two stores. It does not call Predict, Propagate, or Session save.
 - **Desk UI (ADR 0001).** New Vite SPA at `web/` — React, TypeScript, Tailwind only (no shadcn), SWR, Zustand, React Router, npm. Do not copy the old `video_label_service/web` sources.
   - Routes: `/` Clip list; `/clips/:clipId` desk. Current Frame index lives in Zustand (scrub does not write history).
-  - Dev: Vite `:5173`, proxy `/api` → FastAPI `:7880`. Sitting: `vite build`; FastAPI serves `web/dist` (one process).
+  - Dev: Vite `:5173`, proxy `/api` → FastAPI `:7880` (override proxy target with `ENDO_LABEL_API` for Playwright’s Vite `:5174`). Sitting: `vite build`; FastAPI serves `web/dist` (one process).
   - Page: filmstrip + current JPEG + three editor panels always shown. Phase: name picker, from/to, write span, clear this Frame, add phase name. class: one chip per class name, click toggles, add class name. triplet: three pickers, add row, list with delete, add names to the three lists. No Task-focus switch. No “Open Session” to edit these three. mask tools are omitted on this page; a later spec may add them beside these panels, not behind a mode.
 - **Throwaway HTML** (`four-task-desk.html`) is the primary source for gestures (span overwrite, class toggle, triplet rows without Track). It is not the product. Its Session open/save/load and Fake Predict/Propagate are not part of this spec.
 - **Words.** UI and HTTP speak phase, class, triplet. **Annotation** remains the mask disk store. Do not add a Track field “for later.”
@@ -140,7 +140,8 @@ The three stores stay independent: writing phase never changes class or triplet 
   - Duplicate vocab name rejected; custom name then usable on a write.
 - **Do not test:** mask Predict/Propagate, Protected Mask, review, export, Triplet→Track, per-Clip vocab, vocab delete.
 - **Config tests:** sitting entry refuses to start with no yaml; `--config` temp file loads allowlist/roots. HTTP tests keep injecting `Settings` (no yaml required).
-- **Desk page:** Vitest may cover pure front logic (URL → Clip id, Frame index in Zustand, toggle math). Product behaviour stays on compose HTTP. No Playwright CI.
+- **Desk page:** Vitest covers pure front logic (URL → Clip id, Frame index in Zustand, toggle math). Product HTTP behaviour stays on compose TestClient.
+- **Local Playwright (not CI).** `cd web && npm run test:e2e` drives Chromium against isolated FastAPI `127.0.0.1:7881` (`--config web/e2e/config.yaml`, labels under `web/e2e/.work/`) and Vite `5174`. It does not use sitting `:7880` or the operator Frame Pool. `npm run test:e2e:ui` opens the runner. Needs repo `.venv` (FastAPI). Uses system Google Chrome (`channel: "chrome"`). `npx playwright install chromium` only if Chrome is missing. No Playwright in pytest CI / GitHub Actions.
 
 ## Out of Scope
 
@@ -163,5 +164,5 @@ The three stores stay independent: writing phase never changes class or triplet 
 
 - UI: [ADR 0001](../../docs/adr/0001-frontend-stack.md). Process: [ADR 0002](../../docs/adr/0002-local-fastapi-process.md). Config: [ADR 0003](../../docs/adr/0003-yaml-config.md). Multi-user: [ADR 0004](../../docs/adr/0004-multi-user-later.md). Canvas library waits for the mask spec.
 - Map leftovers parked as **later** (not a new wayfinder): export, review for non-mask, triplet→Track, vocab delete/rename, logins / assignments / per-labeler vocab / concurrent Predict.
-- Next: `/to-tickets` on this spec, then `/implement` per ticket with `/tdd` and `/code-review`. Do not start `/wayfinder` again.
+- Tickets 01–07 for this spec are resolved. Next product slice is a **mask** spec (`/to-spec` for mask / Track / SAM). Do not re-run `/to-tickets` or `/wayfinder` on this spec.
 - A later mask spec must keep Session lazy and mask-only, and must keep all four editors usable on one Frame without a focus switch.

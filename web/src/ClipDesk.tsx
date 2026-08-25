@@ -103,7 +103,7 @@ export function ClipDesk() {
   }
 
   return (
-    <main className="mx-auto max-w-5xl p-6">
+    <main className="mx-auto max-w-7xl p-6">
       <p>
         <Link className="text-emerald-800 underline" to="/">
           Clips
@@ -114,38 +114,50 @@ export function ClipDesk() {
         Frame {frameIndex}
         {data.frame_count > 0 ? ` of ${data.frame_count}` : ""}
       </p>
-      <div className="mb-4 flex flex-wrap items-start gap-4">
+      <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-start">
         {data.frame_count > 0 ? (
           <img
-            className="max-h-[70vh] w-auto max-w-full border border-stone-300 bg-black"
+            className="max-h-[52vh] w-auto max-w-full border border-stone-300 bg-black lg:max-w-[58%]"
             src={frameJpegPath(data.id, frameIndex)}
             alt={`Frame ${frameIndex}`}
           />
         ) : (
           <p>This Clip has no Frames.</p>
         )}
-        <ClassPanel
-          key={data.id}
-          clipId={data.id}
-          frameIndex={frameIndex}
-          frameCount={data.frame_count}
-          classFrames={classDoc?.frames ?? {}}
-          classTags={vocab?.class_tags ?? []}
-          mutateClass={mutateClass}
-          mutateVocab={mutateVocab}
-        />
-        <TripletPanel
-          key={`${data.id}-triplet`}
-          clipId={data.id}
-          frameIndex={frameIndex}
-          frameCount={data.frame_count}
-          tripletFrames={tripletDoc?.frames ?? {}}
-          instruments={vocab?.instruments ?? []}
-          verbs={vocab?.verbs ?? []}
-          targets={vocab?.targets ?? []}
-          mutateTriplet={mutateTriplet}
-          mutateVocab={mutateVocab}
-        />
+        <div className="flex min-w-0 flex-1 flex-col gap-6">
+          <ClassPanel
+            key={data.id}
+            clipId={data.id}
+            frameIndex={frameIndex}
+            frameCount={data.frame_count}
+            classFrames={classDoc?.frames ?? {}}
+            classTags={vocab?.class_tags ?? []}
+            mutateClass={mutateClass}
+            mutateVocab={mutateVocab}
+          />
+          <TripletPanel
+            key={`${data.id}-triplet`}
+            clipId={data.id}
+            frameIndex={frameIndex}
+            frameCount={data.frame_count}
+            tripletFrames={tripletDoc?.frames ?? {}}
+            instruments={vocab?.instruments ?? []}
+            verbs={vocab?.verbs ?? []}
+            targets={vocab?.targets ?? []}
+            mutateTriplet={mutateTriplet}
+            mutateVocab={mutateVocab}
+          />
+          <PhasePanel
+            key={`${data.id}-phase`}
+            clipId={data.id}
+            frameIndex={frameIndex}
+            frameCount={data.frame_count}
+            phaseFrames={phaseDoc?.frames ?? {}}
+            phases={vocab?.phases ?? []}
+            mutatePhase={mutatePhase}
+            mutateVocab={mutateVocab}
+          />
+        </div>
       </div>
       <div className="flex gap-1 overflow-x-auto pb-2">
         {data.frames.map((frame) => {
@@ -181,16 +193,6 @@ export function ClipDesk() {
           );
         })}
       </div>
-      <PhasePanel
-        key={data.id}
-        clipId={data.id}
-        frameIndex={frameIndex}
-        frameCount={data.frame_count}
-        phaseFrames={phaseDoc?.frames ?? {}}
-        phases={vocab?.phases ?? []}
-        mutatePhase={mutatePhase}
-        mutateVocab={mutateVocab}
-      />
     </main>
   );
 }
@@ -234,7 +236,7 @@ function PhasePanel({
   }
 
   return (
-    <section className="mt-6">
+    <section>
       <h2 className="mb-2 text-lg font-semibold">phase</h2>
       <p className="mb-3 text-stone-600">
         This Frame: {currentPhase ?? "unlabeled"}
@@ -331,7 +333,7 @@ function PhasePanel({
         <button
           type="button"
           className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-          disabled={busy}
+          disabled={busy || !newName.trim()}
           onClick={() =>
             run(async () => {
               const created = await sendJson<Vocab>(
@@ -439,7 +441,7 @@ function ClassPanel({
         <button
           type="button"
           className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-          disabled={busy}
+          disabled={busy || !newName.trim()}
           onClick={() =>
             run(async () => {
               const created = await sendJson<Vocab>(
@@ -648,7 +650,7 @@ function TripletPanel({
         <button
           type="button"
           className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-          disabled={busy}
+          disabled={busy || !newInstrument.trim()}
           onClick={() =>
             addVocabName(
               "instruments",
@@ -672,7 +674,7 @@ function TripletPanel({
         <button
           type="button"
           className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-          disabled={busy}
+          disabled={busy || !newVerb.trim()}
           onClick={() =>
             addVocabName("verbs", newVerb, () => setNewVerb(""), setVerb)
           }
@@ -691,7 +693,7 @@ function TripletPanel({
         <button
           type="button"
           className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-          disabled={busy}
+          disabled={busy || !newTarget.trim()}
           onClick={() =>
             addVocabName(
               "targets",

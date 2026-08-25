@@ -16,4 +16,8 @@
 
 Sitting is still `python -m endo_label` (YAML config). After `cd web && npm run build`, FastAPI serves `web/dist` at `/` on `127.0.0.1:7880` (one uvicorn worker). `/api` stays compose HTTP. Unknown GET that is not `/api/*` returns `index.html`, so refresh on `/clips/:clipId` loads the desk. Phase / class / triplet and Frame JPEGs work on that origin with Session inactive. Missing `web/dist`: `/api` still runs (no crash). Vite is only for dev.
 
-Tests: `tests/test_sitting_desk.py` (compose HTTP).
+Tests: `tests/test_sitting_desk.py` (compose HTTP). Browser sitting is ticket 07 (Playwright uses Vite `:5174` + API `:7881`, not this process). After desk source changes, `cd web && npm run build` or `:7880` still serves the old `web/dist`.
+
+## Comments
+
+Sitting served a stale `web/dist` (Clip list + JPEG + filmstrip only). Phase / class / triplet were in `web/src` and invisible in the built JS; Tailwind preflight then stripped native button chrome. Rebuild `web/dist` after desk edits. Playwright (ticket 07) hits Vite source so that miss is caught without relying on dist.

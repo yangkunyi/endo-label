@@ -29,6 +29,12 @@ def _sitting(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def test_invalid_port_refuses_to_start() -> None:
+    result = _sitting("--port", "0")
+    assert result.returncode == 2
+    assert "invalid --port" in result.stderr
+
+
 def test_missing_config_file_refuses_to_start(tmp_path: Path) -> None:
     missing = tmp_path / "no-such-config.yaml"
     result = _sitting("--config", str(missing))

@@ -6,6 +6,7 @@ venv/
 *.egg-info/
 .DS_Store
 data/
+/config.yaml
 *.log
 .runtime/
 node_modules/

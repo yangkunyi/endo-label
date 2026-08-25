@@ -21,7 +21,7 @@ New Vite SPA at `web/` (React, TypeScript, Tailwind, SWR, Zustand, React Router,
 - `/` loads `GET /api/clips` and lists allowlisted Clip id + Frame count.
 - `/clips/:clipId` loads catalog meta, shows Frame 0 JPEG, filmstrip highlights the Zustand Frame index. Scrub only calls `scrub()` in `deskStore` — no phase/class/triplet writes, no Session fetch.
 - Missing / non-allowlisted Clip: catalog 404; desk shows the FastAPI `detail` string.
-- Dev: Vite `127.0.0.1:5173`, `strictPort`, proxy `/api` → `127.0.0.1:7880`.
+- Dev: Vite `127.0.0.1:5173`, `strictPort`, proxy `/api` → `127.0.0.1:7880` (Playwright sets `ENDO_LABEL_API` and Vite `:5174`).
 
 Phase / class / triplet editors are tickets 03–05. Sitting `web/dist` is ticket 06.
 

@@ -38,6 +38,9 @@ export function ClipList() {
   return (
     <main className="mx-auto max-w-5xl p-6">
       <h1 className="mb-3 text-xl font-semibold">Clips</h1>
+      <p className="mb-4 text-stone-600">
+        Open a Clip to label phase, class, and triplet on the same Frame.
+      </p>
       <ul className="space-y-2">
         {data.clips.map((clip) => (
           <li key={clip.id}>

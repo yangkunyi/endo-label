@@ -34,7 +34,7 @@ PYTHONPATH=. python -m endo_label
 # PYTHONPATH=. python -m endo_label --config /path/to/config.yaml
 ```
 
-Binds `127.0.0.1:7880`, one uvicorn worker. CORS allows only `http://127.0.0.1:5173` and `http://localhost:5173`.
+Binds `127.0.0.1:7880` (override with `--port`), one uvicorn worker. CORS allows only `http://127.0.0.1:5173` and `http://localhost:5173`.
 
 Sitting (one process, after a frontend build): `cd web && npm run build`, then `PYTHONPATH=. python -m endo_label`. Desk is `http://127.0.0.1:7880/` (same origin as `/api`). Refresh on `/clips/<clipId>` still shows the desk. Vite is not required. Missing `web/dist`: `/api` still runs.
 
@@ -63,4 +63,7 @@ Mask (existing Session API): `/api/session`, `/api/session/predict`, `/api/sessi
 
 ```bash
 PYTHONPATH=. python -m pytest tests -q
+cd web && npm test && npm run test:e2e
 ```
+
+`npm run test:e2e` is local Chromium against `127.0.0.1:7881` + Vite `5174`. Needs repo `.venv` (`python3 -m venv .venv && .venv/bin/pip install fastapi uvicorn pyyaml`). Uses system Google Chrome. Not CI. Sitting on `7880` can stay up. `npm run test:e2e:ui` opens the Playwright runner.
