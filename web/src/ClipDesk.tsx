@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
 import {
@@ -56,7 +56,7 @@ export function ClipDesk() {
   const scrub = useDeskStore((s) => s.scrub);
   const frameIndex = storedClipId === clipId ? storedIndex : 0;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (data) {
       openClip(data.id, data.frame_count);
     }
@@ -206,6 +206,38 @@ export function ClipDesk() {
   );
 }
 
+function EditorCard({
+  title,
+  open,
+  onToggle,
+  summary,
+  children,
+}: {
+  title: string;
+  open: boolean;
+  onToggle: () => void;
+  summary: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <section className="rounded border border-stone-300 bg-white p-2">
+      <h2 className="mb-2 text-lg font-semibold">
+        <button
+          type="button"
+          aria-expanded={open}
+          className="flex items-center gap-1"
+          onClick={onToggle}
+        >
+          <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+          {title}
+        </button>
+      </h2>
+      {summary}
+      {open ? <div className="mt-2">{children}</div> : null}
+    </section>
+  );
+}
+
 function PhasePanel({
   clipId,
   frameIndex,
@@ -231,6 +263,8 @@ function PhasePanel({
   const [busy, setBusy] = useState(false);
   const selected = phases.includes(phaseName) ? phaseName : (phases[0] ?? "");
   const currentPhase = framePhaseName(phaseFrames, frameIndex);
+  const phaseForm = useDeskStore((s) => s.phaseForm);
+  const togglePhaseForm = useDeskStore((s) => s.togglePhaseForm);
 
   async function run(op: () => Promise<void>) {
     setBusy(true);
@@ -245,11 +279,36 @@ function PhasePanel({
   }
 
   return (
-    <section>
-      <h2 className="mb-2 text-lg font-semibold">phase</h2>
-      <p className="mb-3 text-stone-600">
-        This Frame: {currentPhase ?? "unlabeled"}
-      </p>
+    <EditorCard
+      title="phase"
+      open={phaseForm}
+      onToggle={togglePhaseForm}
+      summary={
+        <>
+          <p className="mb-2 text-stone-600">
+            This Frame: {currentPhase ?? "unlabeled"}
+          </p>
+          <button
+            type="button"
+            className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
+            disabled={busy || frameCount <= 0}
+            onClick={() =>
+              run(async () => {
+                const doc = await sendJson<PhaseDoc>(
+                  phaseFramePath(clipId, frameIndex),
+                  "PUT",
+                  { phase: null },
+                );
+                await mutatePhase(doc, { revalidate: false });
+              })
+            }
+          >
+            Clear this Frame&apos;s phase
+          </button>
+          {error ? <p className="mt-2 text-red-800">{error}</p> : null}
+        </>
+      }
+    >
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <label className="text-sm">
           phase
@@ -311,59 +370,44 @@ function PhasePanel({
         >
           Write span
         </button>
-        <button
-          type="button"
-          className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-          disabled={busy || frameCount <= 0}
-          onClick={() =>
-            run(async () => {
-              const doc = await sendJson<PhaseDoc>(
-                phaseFramePath(clipId, frameIndex),
-                "PUT",
-                { phase: null },
-              );
-              await mutatePhase(doc, { revalidate: false });
-            })
-          }
-        >
-          Clear this Frame&apos;s phase
-        </button>
       </div>
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="text-sm">
-          new phase name
-          <input
-            className="ml-1 border border-stone-300 bg-white p-1"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            disabled={busy}
-          />
-        </label>
-        <button
-          type="button"
-          className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-          disabled={busy || !newName.trim()}
-          onClick={() =>
-            run(async () => {
-              const created = await sendJson<Vocab>(
-                vocabListPath("phases"),
-                "POST",
-                { name: newName },
-              );
-              setNewName("");
-              await mutateVocab(created, { revalidate: false });
-              const added = created.phases[created.phases.length - 1];
-              if (added) {
-                setPhaseName(added);
-              }
-            })
-          }
-        >
-          Add phase name
-        </button>
-      </div>
-      {error ? <p className="mt-2 text-red-800">{error}</p> : null}
-    </section>
+      <details>
+        <summary className="cursor-pointer text-sm">new phase name</summary>
+        <div className="mt-2 flex flex-wrap items-end gap-2">
+          <label className="text-sm">
+            new phase name
+            <input
+              className="ml-1 border border-stone-300 bg-white p-1"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <button
+            type="button"
+            className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
+            disabled={busy || !newName.trim()}
+            onClick={() =>
+              run(async () => {
+                const created = await sendJson<Vocab>(
+                  vocabListPath("phases"),
+                  "POST",
+                  { name: newName },
+                );
+                setNewName("");
+                await mutateVocab(created, { revalidate: false });
+                const added = created.phases[created.phases.length - 1];
+                if (added) {
+                  setPhaseName(added);
+                }
+              })
+            }
+          >
+            Add phase name
+          </button>
+        </div>
+      </details>
+    </EditorCard>
   );
 }
 
@@ -388,6 +432,8 @@ function ClassPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const current = frameClassTags(classFrames, frameIndex);
+  const classBody = useDeskStore((s) => s.classBody);
+  const toggleClassBody = useDeskStore((s) => s.toggleClassBody);
 
   async function run(op: () => Promise<void>) {
     setBusy(true);
@@ -402,72 +448,82 @@ function ClassPanel({
   }
 
   return (
-    <section>
-      <h2 className="mb-2 text-lg font-semibold">class</h2>
-      <p className="mb-3 text-stone-600">
-        This Frame: {current.length ? current.join(", ") : "unlabeled"}
-      </p>
-      <div className="mb-3 flex flex-wrap gap-2">
-        {classTags.map((name) => {
-          const on = current.includes(name);
-          return (
-            <button
-              key={name}
-              type="button"
-              aria-pressed={on}
-              className={`rounded-full border px-3 py-1 text-sm disabled:opacity-50 ${
-                on
-                  ? "border-emerald-700 bg-emerald-800 text-white"
-                  : "border-stone-400 bg-white"
-              }`}
-              disabled={busy || frameCount <= 0}
-              onClick={() =>
-                run(async () => {
-                  const doc = await sendJson<ClassDoc>(
-                    classFramePath(clipId, frameIndex),
-                    "PUT",
-                    { tags: toggleClassTag(current, name) },
-                  );
-                  await mutateClass(doc, { revalidate: false });
-                })
-              }
-            >
-              {name}
-            </button>
-          );
-        })}
-      </div>
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="text-sm">
-          new class name
-          <input
-            className="ml-1 border border-stone-300 bg-white p-1"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            disabled={busy}
-          />
-        </label>
-        <button
-          type="button"
-          className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-          disabled={busy || !newName.trim()}
-          onClick={() =>
-            run(async () => {
-              const created = await sendJson<Vocab>(
-                vocabListPath("class_tags"),
-                "POST",
-                { name: newName },
+    <EditorCard
+      title="class"
+      open={classBody}
+      onToggle={toggleClassBody}
+      summary={
+        <>
+          <p className="mb-2 text-stone-600">
+            This Frame: {current.length ? current.join(", ") : "unlabeled"}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {classTags.map((name) => {
+              const on = current.includes(name);
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  aria-pressed={on}
+                  className={`rounded-full border px-3 py-1 text-sm disabled:opacity-50 ${
+                    on
+                      ? "border-emerald-700 bg-emerald-800 text-white"
+                      : "border-stone-400 bg-white"
+                  }`}
+                  disabled={busy || frameCount <= 0}
+                  onClick={() =>
+                    run(async () => {
+                      const doc = await sendJson<ClassDoc>(
+                        classFramePath(clipId, frameIndex),
+                        "PUT",
+                        { tags: toggleClassTag(current, name) },
+                      );
+                      await mutateClass(doc, { revalidate: false });
+                    })
+                  }
+                >
+                  {name}
+                </button>
               );
-              setNewName("");
-              await mutateVocab(created, { revalidate: false });
-            })
-          }
-        >
-          Add class name
-        </button>
-      </div>
-      {error ? <p className="mt-2 text-red-800">{error}</p> : null}
-    </section>
+            })}
+          </div>
+          {error ? <p className="mt-2 text-red-800">{error}</p> : null}
+        </>
+      }
+    >
+      <details>
+        <summary className="cursor-pointer text-sm">new class name</summary>
+        <div className="mt-2 flex flex-wrap items-end gap-2">
+          <label className="text-sm">
+            new class name
+            <input
+              className="ml-1 border border-stone-300 bg-white p-1"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <button
+            type="button"
+            className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
+            disabled={busy || !newName.trim()}
+            onClick={() =>
+              run(async () => {
+                const created = await sendJson<Vocab>(
+                  vocabListPath("class_tags"),
+                  "POST",
+                  { name: newName },
+                );
+                setNewName("");
+                await mutateVocab(created, { revalidate: false });
+              })
+            }
+          >
+            Add class name
+          </button>
+        </div>
+      </details>
+    </EditorCard>
   );
 }
 
@@ -506,6 +562,8 @@ function TripletPanel({
   const selectedVerb = verbs.includes(verb) ? verb : (verbs[0] ?? "");
   const selectedTarget = targets.includes(target) ? target : (targets[0] ?? "");
   const current = frameTripletRows(tripletFrames, frameIndex);
+  const tripletForm = useDeskStore((s) => s.tripletForm);
+  const toggleTripletForm = useDeskStore((s) => s.toggleTripletForm);
 
   async function run(op: () => Promise<void>) {
     setBusy(true);
@@ -539,11 +597,48 @@ function TripletPanel({
   }
 
   return (
-    <section>
-      <h2 className="mb-2 text-lg font-semibold">triplet</h2>
-      <p className="mb-3 text-stone-600">
-        This Frame: {current.length ? `${current.length} row(s)` : "unlabeled"}
-      </p>
+    <EditorCard
+      title="triplet"
+      open={tripletForm}
+      onToggle={toggleTripletForm}
+      summary={
+        <>
+          <p className="mb-2 text-stone-600">
+            This Frame:{" "}
+            {current.length ? `${current.length} row(s)` : "unlabeled"}
+          </p>
+          <ul className="space-y-1">
+            {current.map((row) => (
+              <li
+                key={row.id}
+                className="flex flex-wrap items-center gap-2 text-sm"
+              >
+                <span>
+                  #{row.id} {row.instrument} / {row.verb} / {row.target}
+                </span>
+                <button
+                  type="button"
+                  className="rounded border border-stone-400 bg-white px-2 py-0.5 text-sm disabled:opacity-50"
+                  disabled={busy}
+                  onClick={() =>
+                    run(async () => {
+                      const doc = await sendJson<TripletDoc>(
+                        tripletRowPath(clipId, frameIndex, row.id),
+                        "DELETE",
+                      );
+                      await mutateTriplet(doc, { revalidate: false });
+                    })
+                  }
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
+          </ul>
+          {error ? <p className="mt-2 text-red-800">{error}</p> : null}
+        </>
+      }
+    >
       <div className="mb-3 flex flex-wrap items-end gap-2">
         <label className="text-sm">
           instrument
@@ -618,104 +713,78 @@ function TripletPanel({
           Add row
         </button>
       </div>
-      <ul className="mb-3 space-y-1">
-        {current.map((row) => (
-          <li
-            key={row.id}
-            className="flex flex-wrap items-center gap-2 text-sm"
-          >
-            <span>
-              #{row.id} {row.instrument} / {row.verb} / {row.target}
-            </span>
-            <button
-              type="button"
-              className="rounded border border-stone-400 bg-white px-2 py-0.5 text-sm disabled:opacity-50"
+      <details>
+        <summary className="cursor-pointer text-sm">new names</summary>
+        <div className="mt-2 flex flex-wrap items-end gap-2">
+          <label className="text-sm">
+            new instrument
+            <input
+              className="ml-1 border border-stone-300 bg-white p-1"
+              value={newInstrument}
+              onChange={(e) => setNewInstrument(e.target.value)}
               disabled={busy}
-              onClick={() =>
-                run(async () => {
-                  const doc = await sendJson<TripletDoc>(
-                    tripletRowPath(clipId, frameIndex, row.id),
-                    "DELETE",
-                  );
-                  await mutateTriplet(doc, { revalidate: false });
-                })
-              }
-            >
-              Delete
-            </button>
-          </li>
-        ))}
-      </ul>
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="text-sm">
-          new instrument
-          <input
-            className="ml-1 border border-stone-300 bg-white p-1"
-            value={newInstrument}
-            onChange={(e) => setNewInstrument(e.target.value)}
-            disabled={busy}
-          />
-        </label>
-        <button
-          type="button"
-          className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-          disabled={busy || !newInstrument.trim()}
-          onClick={() =>
-            addVocabName(
-              "instruments",
-              newInstrument,
-              () => setNewInstrument(""),
-              setInstrument,
-            )
-          }
-        >
-          Add instrument
-        </button>
-        <label className="text-sm">
-          new verb
-          <input
-            className="ml-1 border border-stone-300 bg-white p-1"
-            value={newVerb}
-            onChange={(e) => setNewVerb(e.target.value)}
-            disabled={busy}
-          />
-        </label>
-        <button
-          type="button"
-          className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-          disabled={busy || !newVerb.trim()}
-          onClick={() =>
-            addVocabName("verbs", newVerb, () => setNewVerb(""), setVerb)
-          }
-        >
-          Add verb
-        </button>
-        <label className="text-sm">
-          new target
-          <input
-            className="ml-1 border border-stone-300 bg-white p-1"
-            value={newTarget}
-            onChange={(e) => setNewTarget(e.target.value)}
-            disabled={busy}
-          />
-        </label>
-        <button
-          type="button"
-          className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-          disabled={busy || !newTarget.trim()}
-          onClick={() =>
-            addVocabName(
-              "targets",
-              newTarget,
-              () => setNewTarget(""),
-              setTarget,
-            )
-          }
-        >
-          Add target
-        </button>
-      </div>
-      {error ? <p className="mt-2 text-red-800">{error}</p> : null}
-    </section>
+            />
+          </label>
+          <button
+            type="button"
+            className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
+            disabled={busy || !newInstrument.trim()}
+            onClick={() =>
+              addVocabName(
+                "instruments",
+                newInstrument,
+                () => setNewInstrument(""),
+                setInstrument,
+              )
+            }
+          >
+            Add instrument
+          </button>
+          <label className="text-sm">
+            new verb
+            <input
+              className="ml-1 border border-stone-300 bg-white p-1"
+              value={newVerb}
+              onChange={(e) => setNewVerb(e.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <button
+            type="button"
+            className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
+            disabled={busy || !newVerb.trim()}
+            onClick={() =>
+              addVocabName("verbs", newVerb, () => setNewVerb(""), setVerb)
+            }
+          >
+            Add verb
+          </button>
+          <label className="text-sm">
+            new target
+            <input
+              className="ml-1 border border-stone-300 bg-white p-1"
+              value={newTarget}
+              onChange={(e) => setNewTarget(e.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <button
+            type="button"
+            className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
+            disabled={busy || !newTarget.trim()}
+            onClick={() =>
+              addVocabName(
+                "targets",
+                newTarget,
+                () => setNewTarget(""),
+                setTarget,
+              )
+            }
+          >
+            Add target
+          </button>
+        </div>
+      </details>
+    </EditorCard>
   );
 }

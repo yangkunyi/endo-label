@@ -10,7 +10,7 @@ test("clip list then desk shows phase, class, and triplet together", async ({
   await expect(
     page.getByText("Open a Clip to label phase, class, and triplet"),
   ).toBeVisible();
-  await page.getByRole("link", { name: "CLIP_E2E" }).click();
+  await page.getByRole("link", { name: "CLIP_E2E", exact: true }).click();
 
   await expect(page.getByRole("heading", { name: "CLIP_E2E" })).toBeVisible();
   await expect(page.getByText("Frame 0 of 2")).toBeVisible();
@@ -101,6 +101,47 @@ test("class chip, phase span, and triplet row write on this Frame", async ({
   await page.getByRole("button", { name: "Write span" }).click();
   await expect(page.getByText("This Frame: Preparation")).toBeVisible();
 
+  await page.getByRole("button", { name: "triplet" }).click();
   await page.getByRole("button", { name: "Add row" }).click();
   await expect(page.getByText("#1 grasper / grasp / gallbladder")).toBeVisible();
+});
+
+test("forms fold independently with always-on summaries", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await expect(page.getByRole("heading", { name: "CLIP_E2E" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "class" })).toBeInViewport();
+  await expect(page.getByRole("heading", { name: "triplet" })).toBeInViewport();
+  await expect(page.getByRole("heading", { name: "phase" })).toBeInViewport();
+
+  await expect(page.getByRole("button", { name: "Write span" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add row" })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Clear this Frame's phase" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "grasper", exact: true }),
+  ).toHaveCount(1);
+
+  await page.getByRole("button", { name: "triplet" }).click();
+  await expect(page.getByRole("button", { name: "Add row" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Write span" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "grasper", exact: true }),
+  ).toHaveCount(1);
+
+  await page.getByRole("button", { name: "class" }).click();
+  await expect(
+    page.getByRole("button", { name: "grasper", exact: true }),
+  ).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Add row" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Frame 1 unlabeled" }).click();
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add row" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Write span" })).toBeVisible();
+
+  await page.goto("/clips/CLIP_E2E_B");
+  await expect(page.getByRole("heading", { name: "CLIP_E2E_B" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add row" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Write span" })).toBeVisible();
 });

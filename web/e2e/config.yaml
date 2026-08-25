@@ -1,5 +1,6 @@
 frames_root: fixtures/frames
 clip_allowlist:
   - CLIP_E2E
+  - CLIP_E2E_B
 labels_root: .work/labels
 annotations_root: .work/mask

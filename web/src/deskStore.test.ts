@@ -2,7 +2,14 @@ import { beforeEach, expect, test } from "vitest";
 import { useDeskStore } from "./deskStore";
 
 beforeEach(() => {
-  useDeskStore.setState({ clipId: null, frameIndex: 0, frameCount: 0 });
+  useDeskStore.setState({
+    clipId: null,
+    frameIndex: 0,
+    frameCount: 0,
+    phaseForm: true,
+    classBody: false,
+    tripletForm: false,
+  });
 });
 
 test("opening a clip starts at Frame 0", () => {
@@ -48,4 +55,50 @@ test("opening the same clip again keeps the current Frame", () => {
   useDeskStore.getState().scrub(2);
   useDeskStore.getState().openClip("CLIPA", 4);
   expect(useDeskStore.getState().frameIndex).toBe(2);
+});
+
+test("opening a clip uses fold defaults", () => {
+  useDeskStore.getState().toggleTripletForm();
+  useDeskStore.getState().toggleClassBody();
+  useDeskStore.getState().togglePhaseForm();
+  useDeskStore.getState().openClip("CLIPA", 4);
+  const s = useDeskStore.getState();
+  expect(s.phaseForm).toBe(true);
+  expect(s.classBody).toBe(false);
+  expect(s.tripletForm).toBe(false);
+});
+
+test("opening another clip resets folds", () => {
+  useDeskStore.getState().openClip("CLIPA", 3);
+  useDeskStore.getState().toggleTripletForm();
+  useDeskStore.getState().toggleClassBody();
+  useDeskStore.getState().togglePhaseForm();
+  useDeskStore.getState().openClip("CLIPB", 8);
+  const s = useDeskStore.getState();
+  expect(s.clipId).toBe("CLIPB");
+  expect(s.phaseForm).toBe(true);
+  expect(s.classBody).toBe(false);
+  expect(s.tripletForm).toBe(false);
+});
+
+test("opening the same clip again keeps folds", () => {
+  useDeskStore.getState().openClip("CLIPA", 4);
+  useDeskStore.getState().toggleTripletForm();
+  useDeskStore.getState().toggleClassBody();
+  useDeskStore.getState().openClip("CLIPA", 4);
+  const s = useDeskStore.getState();
+  expect(s.tripletForm).toBe(true);
+  expect(s.classBody).toBe(true);
+  expect(s.phaseForm).toBe(true);
+});
+
+test("scrub does not reset folds", () => {
+  useDeskStore.getState().openClip("CLIPA", 4);
+  useDeskStore.getState().toggleTripletForm();
+  useDeskStore.getState().scrub(2);
+  const s = useDeskStore.getState();
+  expect(s.frameIndex).toBe(2);
+  expect(s.tripletForm).toBe(true);
+  expect(s.phaseForm).toBe(true);
+  expect(s.classBody).toBe(false);
 });

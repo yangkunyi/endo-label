@@ -1,4 +1,4 @@
-Status: specified — ticket 01 resolved; ticket 02 not started
+Status: specified — ticket 01 resolved; ticket 02 resolved
 
 # Spec: desk appearance (phase / class / triplet bench)
 
