@@ -17,6 +17,7 @@ import {
   tripletFramePath,
   tripletRowPath,
   tripletSpanPath,
+  vocabDeletePath,
   vocabListPath,
   vocabRenamePath,
 } from "./api";
@@ -48,6 +49,8 @@ test("phase and vocab paths match compose HTTP", () => {
   expect(vocabListPath("phases")).toBe("/api/vocab/phases");
   expect(vocabRenamePath("phases")).toBe("/api/vocab/phases/rename");
   expect(vocabRenamePath("class_tags")).toBe("/api/vocab/class_tags/rename");
+  expect(vocabDeletePath("phases", "Preparation")).toBe("/api/vocab/phases/Preparation");
+  expect(vocabDeletePath("class_tags", "grasper")).toBe("/api/vocab/class_tags/grasper");
 });
 
 test("missing Frame phase is unlabeled", () => {
@@ -93,6 +96,7 @@ test("triplet paths match compose HTTP", () => {
   expect(vocabListPath("instruments")).toBe("/api/vocab/instruments");
   expect(vocabListPath("verbs")).toBe("/api/vocab/verbs");
   expect(vocabListPath("targets")).toBe("/api/vocab/targets");
+  expect(vocabDeletePath("instruments", "grasper")).toBe("/api/vocab/instruments/grasper");
 });
 
 test("missing Frame triplet is unlabeled", () => {

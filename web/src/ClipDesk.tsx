@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent, type ReactNode } from "react";
 import { Button, Checkbox, Input, Label, ListBox, Select, Slider, Table } from "@heroui/react";
 import type { Selection } from "@heroui/react";
-import { Check, GripVertical, Pause, Play, Plus, X } from "lucide-react";
+import { Check, GripVertical, Pause, Play, Plus, Trash2, X } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
 import {
@@ -22,6 +22,7 @@ import {
   tripletFramePath,
   tripletRowPath,
   tripletSpanPath,
+  vocabDeletePath,
   vocabListPath,
   vocabPath,
   vocabRenamePath,
@@ -740,7 +741,15 @@ function SelectionCheck({ label }: { label: string }) {
   );
 }
 
-function RowRemoveButton({ label, onPress }: { label: string; onPress: () => void }) {
+function RowRemoveButton({
+  label,
+  onPress,
+  icon = "x",
+}: {
+  label: string;
+  onPress: () => void;
+  icon?: "x" | "trash";
+}) {
   return (
     <Button
       isIconOnly
@@ -750,7 +759,7 @@ function RowRemoveButton({ label, onPress }: { label: string; onPress: () => voi
       onPointerDown={(event) => event.stopPropagation()}
       onPress={onPress}
     >
-      <X size={14} />
+      {icon === "trash" ? <Trash2 size={14} /> : <X size={14} />}
     </Button>
   );
 }
@@ -1014,18 +1023,34 @@ function PhaseTable({
                     </span>
                   </Table.Cell>
                   <Table.Cell>
-                    <RowRemoveButton
-                      label={`Clear ${name}`}
-                      onPress={() => {
-                        if (busy || frameCount <= 0) {
-                          return;
-                        }
-                        void run(async () => {
-                          const doc = await sendJson<PhaseDoc>(phaseFramePath(clipId, frameIndex), "PUT", { phase: null });
-                          await mutatePhase(doc, { revalidate: false });
-                        });
-                      }}
-                    />
+                    <span className="flex justify-end">
+                      <RowRemoveButton
+                        label={`Clear ${name}`}
+                        onPress={() => {
+                          if (busy || frameCount <= 0) {
+                            return;
+                          }
+                          void run(async () => {
+                            const doc = await sendJson<PhaseDoc>(phaseFramePath(clipId, frameIndex), "PUT", { phase: null });
+                            await mutatePhase(doc, { revalidate: false });
+                          });
+                        }}
+                      />
+                      <RowRemoveButton
+                        icon="trash"
+                        label={`Delete phase ${name}`}
+                        onPress={() => {
+                          if (busy) {
+                            return;
+                          }
+                          void run(async () => {
+                            const next = await sendJson<Vocab>(vocabDeletePath("phases", name), "DELETE");
+                            await mutateVocab(next, { revalidate: false });
+                            await mutatePhase();
+                          });
+                        }}
+                      />
+                    </span>
                   </Table.Cell>
                 </Table.Row>
               ))}
@@ -1183,22 +1208,39 @@ function ClassTable({
                     </span>
                   </Table.Cell>
                   <Table.Cell>
-                    <RowRemoveButton
-                      label={`Turn off ${name}`}
-                      onPress={() => {
-                        if (busy || frameCount <= 0 || !current.includes(name)) {
-                          return;
-                        }
-                        void run(async () => {
-                          const doc = await sendJson<ClassDoc>(
-                            classFramePath(clipId, frameIndex),
-                            "PUT",
-                            { tags: current.filter((tag) => tag !== name) },
-                          );
-                          await mutateClass(doc, { revalidate: false });
-                        });
-                      }}
-                    />
+                    <span className="flex justify-end">
+                      <RowRemoveButton
+                        label={`Turn off ${name}`}
+                        onPress={() => {
+                          if (busy || frameCount <= 0 || !current.includes(name)) {
+                            return;
+                          }
+                          void run(async () => {
+                            const doc = await sendJson<ClassDoc>(
+                              classFramePath(clipId, frameIndex),
+                              "PUT",
+                              { tags: current.filter((tag) => tag !== name) },
+                            );
+                            await mutateClass(doc, { revalidate: false });
+                          });
+                        }}
+                      />
+                      <RowRemoveButton
+                        icon="trash"
+                        label={`Delete class tag ${name}`}
+                        onPress={() => {
+                          if (busy) {
+                            return;
+                          }
+                          cancel();
+                          void run(async () => {
+                            const next = await sendJson<Vocab>(vocabDeletePath("class_tags", name), "DELETE");
+                            await mutateVocab(next, { revalidate: false });
+                            await mutateClass();
+                          });
+                        }}
+                      />
+                    </span>
                   </Table.Cell>
                 </Table.Row>
               ))}
@@ -1490,7 +1532,66 @@ function TripletTable({
           </Table.Content>
         </Table.ScrollContainer>
       </Table>
+      <TripletVocabLists
+        instruments={instruments}
+        verbs={verbs}
+        targets={targets}
+        mutateVocab={mutateVocab}
+        onError={setError}
+      />
       {error ? <p className="text-sm text-danger">{error}</p> : null}
     </EditorShell>
+  );
+}
+
+function TripletVocabLists({
+  instruments,
+  verbs,
+  targets,
+  mutateVocab,
+  onError,
+}: {
+  instruments: string[];
+  verbs: string[];
+  targets: string[];
+  mutateVocab: KeyedMutator<Vocab>;
+  onError: (message: string | null) => void;
+}) {
+  const lists: { title: string; listName: "instruments" | "verbs" | "targets"; names: string[] }[] = [
+    { title: "instrument", listName: "instruments", names: instruments },
+    { title: "verb", listName: "verbs", names: verbs },
+    { title: "target", listName: "targets", names: targets },
+  ];
+
+  async function trash(listName: "instruments" | "verbs" | "targets", name: string) {
+    onError(null);
+    try {
+      const next = await sendJson<Vocab>(vocabDeletePath(listName, name), "DELETE");
+      await mutateVocab(next, { revalidate: false });
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Write failed");
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {lists.map((list) => (
+        <div key={list.listName}>
+          <p className="text-xs font-semibold text-muted">{list.title}</p>
+          <ul aria-label={`${list.title} names`} className="flex flex-col">
+            {list.names.map((name) => (
+              <li key={name} className="flex items-center justify-between gap-1 text-xs">
+                <span className="min-w-0 truncate">{name}</span>
+                <RowRemoveButton
+                  icon="trash"
+                  label={`Delete ${list.title} ${name}`}
+                  onPress={() => void trash(list.listName, name)}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
   );
 }

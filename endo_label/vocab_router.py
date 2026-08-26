@@ -64,4 +64,17 @@ def make_router(settings: Settings) -> APIRouter:
             raise HTTPException(status_code=409, detail=f"already present: {new}")
         return labels_store.rename_vocab_name(settings, list_name, old, new)
 
+    @router.delete("/api/vocab/{list_name}/{name}")
+    def delete_name(list_name: str, name: str) -> dict:
+        if list_name not in _LISTS:
+            raise HTTPException(status_code=404, detail=f"unknown list: {list_name}")
+        vocab = labels_store.load_vocab(settings)
+        bucket = list(vocab.get(list_name) or [])
+        if name not in bucket:
+            raise HTTPException(status_code=400, detail=f"unknown name: {name}")
+        try:
+            return labels_store.delete_vocab_name(settings, list_name, name)
+        except labels_store.VocabNameInUse:
+            raise HTTPException(status_code=409, detail=f"in use: {name}") from None
+
     return router

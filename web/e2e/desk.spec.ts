@@ -530,3 +530,86 @@ test("triplet cell edit changes this row on this Frame only", async ({ page }) =
     return (frames["0"] ?? []).some((row) => row.instrument === "DeskRenameTool");
   }).toBe(true);
 });
+
+test("trash vs x: x is this Frame, trash removes the desk name", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await page.getByRole("button", { name: "Add phase" }).click();
+  const newPhase = page.getByLabel("New phase name");
+  await newPhase.fill("DeskTrashP");
+  await newPhase.press("Enter");
+  await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("DeskTrashP");
+
+  await scrubToFrame(page, 1);
+  await page.getByRole("grid", { name: "phase" }).getByText("DeskTrashP", { exact: true }).click();
+  await expect.poll(async () => (await clipFrames(page, "phase"))["1"]).toBe("DeskTrashP");
+
+  await scrubToFrame(page, 0);
+  await page.getByRole("button", { name: "Clear DeskTrashP" }).click();
+  await expect.poll(async () => await clipFrames(page, "phase")).toEqual({ "1": "DeskTrashP" });
+  await expect(page.getByRole("grid", { name: "phase" }).getByText("DeskTrashP", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Add class tag" }).click();
+  const newTag = page.getByRole("textbox", { name: "New class tag" });
+  await newTag.fill("DeskTrashC");
+  await newTag.press("Enter");
+  await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("DeskTrashC");
+  await scrubToFrame(page, 1);
+  await page.getByRole("grid", { name: "class" }).getByText("DeskTrashC", { exact: true }).click();
+  await expect.poll(async () => ((await clipFrames(page, "class"))["1"] as string[]) ?? []).toContain("DeskTrashC");
+  await scrubToFrame(page, 0);
+  await page.getByRole("button", { name: "Turn off DeskTrashC" }).click();
+  await expect.poll(async () => (((await clipFrames(page, "class"))["0"] as string[]) ?? []).includes("DeskTrashC")).toBe(false);
+  await expect.poll(async () => ((await clipFrames(page, "class"))["1"] as string[]) ?? []).toContain("DeskTrashC");
+  await expect(page.getByRole("grid", { name: "class" }).getByText("DeskTrashC", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete phase DeskTrashP" }).click();
+  await expect(page.getByRole("grid", { name: "phase" }).getByText("DeskTrashP", { exact: true })).toHaveCount(0);
+  await expect.poll(async () => await clipFrames(page, "phase")).not.toMatchObject({ "1": "DeskTrashP" });
+
+  await page.getByRole("button", { name: "Delete class tag DeskTrashC" }).click();
+  await expect(page.getByRole("grid", { name: "class" }).getByText("DeskTrashC", { exact: true })).toHaveCount(0);
+  await expect.poll(async () => (((await clipFrames(page, "class"))["1"] as string[]) ?? []).includes("DeskTrashC")).toBe(false);
+
+  await expect(page.getByRole("grid", { name: "triplet" }).getByRole("button", { name: /Delete instrument/ })).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "instrument names" }).getByRole("button", { name: /Delete instrument/ })).not.toHaveCount(0);
+});
+
+test("trashing an instrument in use is refused until the row is gone", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await fillTripletDraft(page, "DeskTrashTool", "grasp", "gallbladder");
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string }[]>;
+    return (frames["0"] ?? []).some((row) => row.instrument === "DeskTrashTool");
+  }).toBe(true);
+
+  await page.getByRole("button", { name: "Delete instrument DeskTrashTool" }).click();
+  await expect(page.getByText("in use: DeskTrashTool")).toBeVisible();
+  const vocabBefore = await (await page.request.get("/api/vocab")).json();
+  expect(vocabBefore.instruments).toContain("DeskTrashTool");
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string }[]>;
+    return (frames["0"] ?? []).some((row) => row.instrument === "DeskTrashTool");
+  }).toBe(true);
+
+  const rows = page.getByRole("grid", { name: "triplet" }).getByRole("row");
+  const count = await rows.count();
+  let removed = false;
+  for (let i = 0; i < count; i++) {
+    const instrument = rows.nth(i).getByLabel("instrument");
+    if ((await instrument.count()) > 0 && (await instrument.inputValue()) === "DeskTrashTool") {
+      await rows.nth(i).getByRole("button", { name: "Delete row" }).click();
+      removed = true;
+      break;
+    }
+  }
+  expect(removed).toBe(true);
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string }[]>;
+    return (frames["0"] ?? []).some((row) => row.instrument === "DeskTrashTool");
+  }).toBe(false);
+
+  await page.getByRole("button", { name: "Delete instrument DeskTrashTool" }).click();
+  await expect(page.getByRole("list", { name: "instrument names" }).getByText("DeskTrashTool", { exact: true })).toHaveCount(0);
+  const vocabAfter = await (await page.request.get("/api/vocab")).json();
+  expect(vocabAfter.instruments).not.toContain("DeskTrashTool");
+});

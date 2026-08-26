@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,11 @@ from endo_label.config import Settings
 
 KINDS = ("phase", "class", "triplet")
 RENAME_LISTS = {"phases": "phase", "class_tags": "class"}
+TRIPLET_SLOTS = {"instruments": "instrument", "verbs": "verb", "targets": "target"}
+
+
+class VocabNameInUse(Exception):
+    """Instrument, verb, or target still appears on a triplet row."""
 
 _DEFAULT_VOCAB = {
     "phases": [],
@@ -102,30 +108,30 @@ def _rewrite_frames(kind: str, frames: dict[str, Any], old: str, new: str) -> di
     return rewritten
 
 
-def rename_vocab_name(settings: Settings, list_name: str, old: str, new: str) -> dict[str, Any]:
-    """Rename one list entry and rewrite every Clip document of that kind.
-
-    Clip files are written first, then vocab. On failure, already-replaced
-    Clip files are restored so no Clip is left partially renamed.
-    """
-    kind = RENAME_LISTS[list_name]
-    vocab = load_vocab(settings)
-    bucket = list(vocab.get(list_name) or [])
-    bucket[bucket.index(old)] = new
-    vocab[list_name] = bucket
-
+def _pending_clip_rewrites(
+    settings: Settings,
+    kind: str,
+    rewrite: Callable[[dict[str, Any]], dict[str, Any]],
+) -> list[tuple[Path, dict[str, Any]]]:
     pending: list[tuple[Path, dict[str, Any]]] = []
     for path in _kind_json_paths(settings, kind):
         data = _read(path, {"clip_id": path.stem, "frames": {}})
         frames = data.get("frames") or {}
-        rewritten = _rewrite_frames(kind, frames, old, new)
+        rewritten = rewrite(frames)
         if rewritten == frames:
             continue
         data = dict(data)
         data.setdefault("clip_id", path.stem)
         data["frames"] = rewritten
         pending.append((path, data))
+    return pending
 
+
+def _commit_rewritten_clips_and_vocab(
+    settings: Settings,
+    pending: list[tuple[Path, dict[str, Any]]],
+    vocab: dict[str, Any],
+) -> dict[str, Any]:
     backups: list[tuple[Path, bytes | None]] = []
     try:
         for path, data in pending:
@@ -140,3 +146,74 @@ def rename_vocab_name(settings: Settings, list_name: str, old: str, new: str) ->
                 path.write_bytes(blob)
         raise
     return vocab
+
+
+def rename_vocab_name(settings: Settings, list_name: str, old: str, new: str) -> dict[str, Any]:
+    """Rename one list entry and rewrite every Clip document of that kind.
+
+    Clip files are written first, then vocab. On failure, already-replaced
+    Clip files are restored so no Clip is left partially renamed.
+    """
+    kind = RENAME_LISTS[list_name]
+    vocab = load_vocab(settings)
+    bucket = list(vocab.get(list_name) or [])
+    bucket[bucket.index(old)] = new
+    vocab[list_name] = bucket
+    pending = _pending_clip_rewrites(
+        settings,
+        kind,
+        lambda frames: _rewrite_frames(kind, frames, old, new),
+    )
+    return _commit_rewritten_clips_and_vocab(settings, pending, vocab)
+
+
+def _drop_name_from_frames(kind: str, frames: dict[str, Any], name: str) -> dict[str, Any]:
+    rewritten: dict[str, Any] = {}
+    for key, value in frames.items():
+        if kind == "phase":
+            if value != name:
+                rewritten[key] = value
+            continue
+        tags = [tag for tag in (value or []) if tag != name]
+        if tags:
+            rewritten[key] = tags
+    return rewritten
+
+
+def _triplet_slot_in_use(settings: Settings, slot: str, name: str) -> bool:
+    for path in _kind_json_paths(settings, "triplet"):
+        data = _read(path, {"clip_id": path.stem, "frames": {}})
+        for rows in (data.get("frames") or {}).values():
+            for row in rows or []:
+                if row.get(slot) == name:
+                    return True
+    return False
+
+
+def delete_vocab_name(settings: Settings, list_name: str, name: str) -> dict[str, Any]:
+    """Remove one list entry. Phase/class rewrite every Clip of that kind.
+
+    Instrument, verb, and target names are refused while any triplet row
+    still uses that string in that slot. Clip files are written first, then
+    vocab. On failure, already-replaced Clip files are restored.
+    """
+    vocab = load_vocab(settings)
+    bucket = list(vocab.get(list_name) or [])
+    if list_name in TRIPLET_SLOTS:
+        if _triplet_slot_in_use(settings, TRIPLET_SLOTS[list_name], name):
+            raise VocabNameInUse(name)
+        bucket.remove(name)
+        vocab[list_name] = bucket
+        save_vocab(settings, vocab)
+        return vocab
+
+    bucket.remove(name)
+    vocab[list_name] = bucket
+
+    kind = RENAME_LISTS[list_name]
+    pending = _pending_clip_rewrites(
+        settings,
+        kind,
+        lambda frames: _drop_name_from_frames(kind, frames, name),
+    )
+    return _commit_rewritten_clips_and_vocab(settings, pending, vocab)
