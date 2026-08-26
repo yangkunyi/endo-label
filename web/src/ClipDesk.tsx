@@ -58,6 +58,8 @@ type SpanTarget =
   | { kind: "class"; name: string }
   | { kind: "triplet"; instrument: string; verb: string; target: string };
 
+type SpanDirection = "write" | "remove";
+
 const PLAYBACK_STORAGE_KEY = "endo_label:desk-playback";
 const DEFAULT_PLAYBACK_SETTINGS: PlaybackSettings = { fps: 1, skip: 1 };
 
@@ -211,6 +213,7 @@ export function ClipDesk() {
   const [playback, setPlayback] = useState<PlaybackSettings>(() => readPlaybackSettings());
   const [tripletSpanRows, setTripletSpanRows] = useState<TripletSpanRow[]>([]);
   const [spanPayload, setSpanPayload] = useState<SpanTarget[]>([]);
+  const [spanDirection, setSpanDirection] = useState<SpanDirection>("write");
   const spanBusy = useRef(false);
   const frameIndex = storedClipId === clipId ? storedIndex : 0;
   const currentPhase = data ? framePhaseName(phaseDoc?.frames ?? {}, frameIndex) : null;
@@ -236,6 +239,7 @@ export function ClipDesk() {
     setPlaying(false);
     setTripletSpanRows([]);
     setSpanPayload([]);
+    setSpanDirection("write");
   }, [clipId]);
 
   useEffect(() => {
@@ -308,12 +312,13 @@ export function ClipDesk() {
       }
       const start = spanStart?.clipId === clipId ? spanStart.frameIndex : frameIndex;
       spanBusy.current = true;
+      const remove = spanDirection === "remove";
       void (async () => {
         try {
           for (const target of payload) {
             if (target.kind === "phase") {
               const doc = await sendJson<PhaseDoc>(phaseSpanPath(clipId), "POST", {
-                phase: target.name,
+                phase: remove ? null : target.name,
                 from: start,
                 to: frameIndex,
               });
@@ -325,7 +330,7 @@ export function ClipDesk() {
                 tag: target.name,
                 from: start,
                 to: frameIndex,
-                on: true,
+                on: !remove,
               });
               await mutateClass(doc, { revalidate: false });
               continue;
@@ -336,7 +341,7 @@ export function ClipDesk() {
               target: target.target,
               from: start,
               to: frameIndex,
-              op: "add",
+              op: remove ? "remove" : "add",
             });
             await mutateTriplet(doc, { revalidate: false });
           }
@@ -353,7 +358,7 @@ export function ClipDesk() {
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [clipId, data, frameIndex, mutateClass, mutatePhase, mutateTriplet, setSpanStart, spanPayload, spanStart, spanTargets, togglePlayback]);
+  }, [clipId, data, frameIndex, mutateClass, mutatePhase, mutateTriplet, setSpanStart, spanDirection, spanPayload, spanStart, spanTargets, togglePlayback]);
 
   function moveEditor(target: EditorKind) {
     if (!draggedEditor || draggedEditor === target) {
@@ -577,7 +582,23 @@ export function ClipDesk() {
           </Slider.Track>
         </Slider>
         <output className="w-24 shrink-0 text-right text-sm text-stone-600">{data ? `Frame ${frameIndex} of ${data.frame_count}` : "No Clip"}</output>
-        <div role="region" aria-label="Span HUD" className="min-w-64 max-w-[34rem] text-xs text-stone-600">
+        <div role="region" aria-label="Span HUD" className="flex min-w-64 max-w-[42rem] items-center gap-2 text-xs text-stone-600">
+          <Button
+            size="sm"
+            variant={spanDirection === "write" ? "primary" : "ghost"}
+            aria-pressed={spanDirection === "write"}
+            onPress={() => setSpanDirection("write")}
+          >
+            Write to span
+          </Button>
+          <Button
+            size="sm"
+            variant={spanDirection === "remove" ? "primary" : "ghost"}
+            aria-pressed={spanDirection === "remove"}
+            onPress={() => setSpanDirection("remove")}
+          >
+            Remove from span
+          </Button>
           {hudTargets.length ? (
             <>
               <span className="font-medium text-stone-800">
@@ -587,7 +608,9 @@ export function ClipDesk() {
                     ? `phase: ${target.name}`
                     : `triplet: ${target.instrument} / ${target.verb} / ${target.target}`).join(" · ")}
               </span>
-              {spanStart && spanStart.clipId === clipId ? ` · from Frame ${spanStart.frameIndex} · press ] or O to write` : " · ] or O writes this Frame"}
+              {spanStart && spanStart.clipId === clipId
+                ? ` · from Frame ${spanStart.frameIndex} · press ] or O to ${spanDirection === "remove" ? "remove" : "write"}`
+                : ` · ] or O ${spanDirection === "remove" ? "removes" : "writes"} this Frame`}
             </>
           ) : "No span target"}
           {spanError ? <span className="ml-2 text-red-800">{spanError}</span> : null}

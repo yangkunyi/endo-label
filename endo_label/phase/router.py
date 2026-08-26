@@ -11,7 +11,7 @@ from endo_label import labels_store
 
 
 class PhaseSpanBody(BaseModel):
-    phase: str = Field(..., min_length=1)
+    phase: str | None = Field(...)
     from_frame: int = Field(..., ge=0, alias="from")
     to_frame: int = Field(..., ge=0, alias="to")
 
@@ -66,10 +66,15 @@ def make_router(settings: Settings) -> APIRouter:
             a, b = b, a
         if a < 0 or b >= n:
             raise HTTPException(status_code=400, detail="span out of range")
-        _require_phase_name(body.phase)
+        if body.phase is not None:
+            _require_phase_name(body.phase)
         doc = labels_store.load_clip(settings, "phase", clip_id)
         for i in range(a, b + 1):
-            doc["frames"][str(i)] = body.phase
+            key = str(i)
+            if body.phase is None:
+                doc["frames"].pop(key, None)
+            else:
+                doc["frames"][key] = body.phase
         labels_store.save_clip(settings, "phase", clip_id, doc)
         return doc
 

@@ -187,6 +187,100 @@ def test_phase_span_outside_clip_is_rejected(client: TestClient) -> None:
     assert client.get("/api/phase/CLIPA").json()["frames"] == {}
 
 
+def test_phase_span_null_clears_every_frame_from_through_to(client: TestClient) -> None:
+    painted = client.post(
+        "/api/phase/CLIPA/span",
+        json={"phase": "Preparation", "from": 0, "to": 1},
+    )
+    assert painted.status_code == 200
+    cleared = client.post(
+        "/api/phase/CLIPA/span",
+        json={"phase": None, "from": 0, "to": 1},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["frames"] == {}
+    loaded = client.get("/api/phase/CLIPA")
+    assert loaded.status_code == 200
+    assert loaded.json()["frames"] == {}
+
+
+def test_phase_span_null_swaps_when_from_is_after_to(client: TestClient) -> None:
+    painted = client.post(
+        "/api/phase/CLIPA/span",
+        json={"phase": "Preparation", "from": 0, "to": 1},
+    )
+    assert painted.status_code == 200
+    cleared = client.post(
+        "/api/phase/CLIPA/span",
+        json={"phase": None, "from": 1, "to": 0},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["frames"] == {}
+
+
+def test_phase_span_null_equal_from_to_clears_one_frame(client: TestClient) -> None:
+    painted = client.post(
+        "/api/phase/CLIPA/span",
+        json={"phase": "Preparation", "from": 0, "to": 1},
+    )
+    assert painted.status_code == 200
+    cleared = client.post(
+        "/api/phase/CLIPA/span",
+        json={"phase": None, "from": 0, "to": 0},
+    )
+    assert cleared.status_code == 200
+    assert "0" not in cleared.json()["frames"]
+    assert cleared.json()["frames"]["1"] == "Preparation"
+
+
+def test_phase_span_null_outside_clip_is_rejected(client: TestClient) -> None:
+    painted = client.post(
+        "/api/phase/CLIPA/span",
+        json={"phase": "Preparation", "from": 0, "to": 1},
+    )
+    assert painted.status_code == 200
+    rejected = client.post(
+        "/api/phase/CLIPA/span",
+        json={"phase": None, "from": 0, "to": 2},
+    )
+    assert rejected.status_code == 400
+    assert client.get("/api/phase/CLIPA").json()["frames"] == {
+        "0": "Preparation",
+        "1": "Preparation",
+    }
+
+
+def test_phase_span_null_leaves_class_triplet_and_session_untouched(client: TestClient) -> None:
+    cl = client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper"]})
+    assert cl.status_code == 200
+    tr = client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    assert tr.status_code == 200
+    painted = client.post(
+        "/api/phase/CLIPA/span",
+        json={"phase": "Preparation", "from": 0, "to": 1},
+    )
+    assert painted.status_code == 200
+    cleared = client.post(
+        "/api/phase/CLIPA/span",
+        json={"phase": None, "from": 0, "to": 1},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["frames"] == {}
+    assert client.get("/api/class/CLIPA").json()["frames"] == {"0": ["grasper"]}
+    assert client.get("/api/triplet/CLIPA").json()["frames"]["0"] == [
+        {
+            "id": 1,
+            "instrument": "grasper",
+            "verb": "retract",
+            "target": "gallbladder",
+        }
+    ]
+    assert client.get("/api/session").json().get("active") is False
+
+
 def test_unlabeled_frame_has_no_phase_key(client: TestClient) -> None:
     empty = client.get("/api/phase/CLIPA")
     assert empty.status_code == 200

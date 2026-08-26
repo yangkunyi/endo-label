@@ -11,6 +11,24 @@ async function scrubToFrame(page: Page, index: number) {
   }
 }
 
+async function clipFrames(page: Page, kind: "phase" | "class" | "triplet") {
+  const response = await page.request.get(`/api/${kind}/CLIP_E2E`);
+  expect(response.ok()).toBeTruthy();
+  return (await response.json()).frames as Record<string, unknown>;
+}
+
+async function spanFrom0To1(page: Page) {
+  const hud = page.getByLabel("Span HUD");
+  await scrubToFrame(page, 0);
+  await page.getByRole("img", { name: "Frame 0" }).click();
+  await page.keyboard.press("[");
+  await expect(hud).toContainText("from Frame 0");
+  await scrubToFrame(page, 1);
+  await page.getByRole("img", { name: "Frame 1" }).click();
+  await page.keyboard.press("]");
+  await expect(hud).not.toContainText("from Frame 0");
+}
+
 test("root and Clip routes share one workbench shell", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Choose a Clip" })).toBeVisible();
@@ -139,6 +157,116 @@ test("triplet span uses selected complete rows and ignores incomplete drafts", a
   await page.getByRole("img", { name: "Frame 0" }).click();
   await page.keyboard.press("[");
   await expect(page.getByLabel("Span HUD")).toContainText("from Frame 0");
+});
+
+test("HUD toggles Write to span and Remove from span", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  const hud = page.getByLabel("Span HUD");
+  await expect(hud.getByRole("button", { name: "Write to span" })).toBeVisible();
+  await expect(hud.getByRole("button", { name: "Remove from span" })).toBeVisible();
+  await expect(hud.getByRole("button", { name: "Write to span" })).toHaveAttribute("aria-pressed", "true");
+  await expect(hud.getByRole("button", { name: "Remove from span" })).toHaveAttribute("aria-pressed", "false");
+
+  await page.getByRole("grid", { name: "phase" }).getByText("Preparation", { exact: true }).click();
+  await expect(hud).toContainText("phase: Preparation");
+  await hud.getByRole("button", { name: "Remove from span" }).click();
+  await expect(hud.getByRole("button", { name: "Remove from span" })).toHaveAttribute("aria-pressed", "true");
+  await expect(hud.getByRole("button", { name: "Write to span" })).toHaveAttribute("aria-pressed", "false");
+  await expect(hud).toContainText("phase: Preparation");
+  await expect(page.getByText("Arm class span")).toHaveCount(0);
+  await expect(page.getByText("operation on")).toHaveCount(0);
+  await expect(page.getByText("operation off")).toHaveCount(0);
+});
+
+test("Remove from span paints each kind with [ and ]", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  const hud = page.getByLabel("Span HUD");
+  await hud.getByRole("button", { name: "Write to span" }).click();
+  await page.getByRole("grid", { name: "phase" }).getByText("Preparation", { exact: true }).click();
+  const classTable = page.getByRole("grid", { name: "class" });
+  if (!(await hud.innerText()).includes("class: clipper")) {
+    await classTable.getByText("clipper", { exact: true }).click();
+  }
+  const triplet = page.getByRole("grid", { name: "triplet" });
+  if (await triplet.getByRole("row").count() < 2) {
+    await page.getByRole("button", { name: "Add triplet row" }).click();
+    const draft = triplet.getByRole("row").last();
+    await draft.getByLabel("instrument").fill("bipolar");
+    await draft.getByLabel("instrument").press("Enter");
+    await draft.getByLabel("verb").fill("cut");
+    await draft.getByLabel("verb").press("Enter");
+    await draft.getByLabel("target").fill("cystic-artery");
+    await draft.getByLabel("target").press("Enter");
+  }
+  await triplet.getByRole("row").nth(1).getByRole("gridcell").first().click();
+  await page.getByRole("button", { name: "Add triplet row" }).click();
+  await expect(hud).not.toContainText("incomplete");
+  await expect(hud).toContainText("phase: Preparation");
+  await expect(hud).toContainText("class: clipper");
+  await expect(hud).toContainText("triplet:");
+  const tripletLabel = (await hud.innerText()).match(/triplet: [^·]+/)?.[0] ?? "";
+  expect(tripletLabel).toMatch(/triplet: \S+ \/ \S+ \/ \S+/);
+
+  await spanFrom0To1(page);
+  await expect.poll(async () => await clipFrames(page, "phase")).toMatchObject({
+    "0": "Preparation",
+    "1": "Preparation",
+  });
+  await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("clipper");
+  await expect.poll(async () => ((await clipFrames(page, "class"))["1"] as string[]) ?? []).toContain("clipper");
+
+  await hud.getByRole("button", { name: "Remove from span" }).click();
+  await expect(hud.getByRole("button", { name: "Remove from span" })).toHaveAttribute("aria-pressed", "true");
+  await scrubToFrame(page, 0);
+  await triplet.getByRole("row").nth(1).getByRole("gridcell").first().click();
+  await expect(hud).toContainText("phase: Preparation");
+  await expect(hud).toContainText("class: clipper");
+  await expect(hud).toContainText("triplet:");
+  await page.getByRole("img", { name: "Frame 0" }).click();
+  await page.keyboard.press("[");
+  await expect(hud).toContainText("from Frame 0");
+  await scrubToFrame(page, 1);
+  await page.getByRole("img", { name: "Frame 1" }).click();
+  await page.keyboard.press("]");
+  await expect(hud).not.toContainText("from Frame 0");
+
+  await expect.poll(async () => await clipFrames(page, "phase")).toEqual({});
+  await expect.poll(async () => (((await clipFrames(page, "class"))["0"] as string[]) ?? []).includes("clipper")).toBe(false);
+  await expect.poll(async () => (((await clipFrames(page, "class"))["1"] as string[]) ?? []).includes("clipper")).toBe(false);
+  const [instrument, verb, target] = tripletLabel.replace("triplet: ", "").split(" / ").map((part) => part.trim());
+  await expect.poll(async () => {
+    const frames = await clipFrames(page, "triplet") as Record<string, { instrument: string; verb: string; target: string }[]>;
+    return [...(frames["0"] ?? []), ...(frames["1"] ?? [])].some(
+      (row) => row.instrument === instrument && row.verb === verb && row.target === target,
+    );
+  }).toBe(false);
+});
+
+test("Remove ] without [ clears this Frame only", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  const hud = page.getByLabel("Span HUD");
+  await hud.getByRole("button", { name: "Write to span" }).click();
+  await page.getByRole("grid", { name: "phase" }).getByText("Clipping and cutting", { exact: true }).click();
+  await spanFrom0To1(page);
+  await expect.poll(async () => await clipFrames(page, "phase")).toMatchObject({
+    "0": "Clipping and cutting",
+    "1": "Clipping and cutting",
+  });
+
+  await hud.getByRole("button", { name: "Remove from span" }).click();
+  await scrubToFrame(page, 0);
+  await page.getByRole("button", { name: "Clear Clipping and cutting" }).click();
+  await page.getByRole("grid", { name: "phase" }).getByText("Clipping and cutting", { exact: true }).click();
+  for (const name of ["grasper", "hook", "clipper", "scissors", "blurred"]) {
+    await page.getByRole("grid", { name: "class" }).getByRole("button", { name: `Turn off ${name}` }).click();
+  }
+  await page.getByRole("img", { name: "Frame 0" }).click();
+  await expect(hud).toContainText("phase: Clipping and cutting");
+  await expect(hud).not.toContainText("from Frame");
+  await page.keyboard.press("]");
+  await expect.poll(async () => await clipFrames(page, "phase")).toEqual({
+    "1": "Clipping and cutting",
+  });
 });
 
 test("playback advances without looping and ignores editable controls", async ({ page }) => {
