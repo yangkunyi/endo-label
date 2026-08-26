@@ -11,25 +11,37 @@ from endo_label.app import create_app
 from endo_label.config import Settings
 
 
-@pytest.fixture
-def client(tmp_path: Path) -> TestClient:
+def _sitting(tmp_path: Path, clip_ids: tuple[str, ...]) -> TestClient:
     frames = tmp_path / "frames"
-    clip_a = frames / "CLIPA"
-    clip_a.mkdir(parents=True)
-    (clip_a / "00001.jpg").write_bytes(b"fake-jpeg-0")
-    (clip_a / "00002.jpg").write_bytes(b"fake-jpeg-1")
+    for clip_id in clip_ids:
+        clip = frames / clip_id
+        clip.mkdir(parents=True)
+        (clip / "00001.jpg").write_bytes(b"fake-jpeg-0")
+        (clip / "00002.jpg").write_bytes(b"fake-jpeg-1")
     hidden = frames / "HIDDENCLIP"
     hidden.mkdir()
     (hidden / "00001.jpg").write_bytes(b"hidden-jpeg")
-    settings = Settings(
-        frames_root=frames,
-        clip_allowlist=("CLIPA",),
-        annotations_root=tmp_path / "mask",
-        labels_root=tmp_path / "labels",
-        predictor_backend="fake",
+    return TestClient(
+        create_app(
+            Settings(
+                frames_root=frames,
+                clip_allowlist=clip_ids,
+                annotations_root=tmp_path / "mask",
+                labels_root=tmp_path / "labels",
+                predictor_backend="fake",
+            )
+        )
     )
-    app = create_app(settings)
-    return TestClient(app)
+
+
+@pytest.fixture
+def client(tmp_path: Path) -> TestClient:
+    return _sitting(tmp_path, ("CLIPA",))
+
+
+@pytest.fixture
+def two_clips(tmp_path: Path) -> TestClient:
+    return _sitting(tmp_path, ("CLIPA", "CLIPB"))
 
 
 def test_health_and_clips(client: TestClient) -> None:
@@ -1082,3 +1094,145 @@ def test_phase_survives_new_app_instance(tmp_path: Path) -> None:
     assert loaded.status_code == 200
     assert loaded.json()["frames"] == {"0": "Preparation", "1": "Preparation"}
     assert second.get("/api/session").json().get("active") is False
+
+
+def test_phase_rename_rewrites_every_clip_of_that_kind(two_clips: TestClient) -> None:
+    client = two_clips
+    client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper"]})
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    client.post("/api/phase/CLIPA/span", json={"phase": "Preparation", "from": 0, "to": 1})
+    client.post("/api/phase/CLIPB/span", json={"phase": "Preparation", "from": 0, "to": 0})
+    client.put("/api/phase/CLIPB/frames/1", json={"phase": "Clipping and cutting"})
+
+    renamed = client.post(
+        "/api/vocab/phases/rename",
+        json={"from": "Preparation", "to": "Prep"},
+    )
+    assert renamed.status_code == 200
+    assert "Prep" in renamed.json()["phases"]
+    assert "Preparation" not in renamed.json()["phases"]
+    assert client.get("/api/vocab").json()["phases"] == renamed.json()["phases"]
+
+    assert client.get("/api/phase/CLIPA").json()["frames"] == {"0": "Prep", "1": "Prep"}
+    assert client.get("/api/phase/CLIPB").json()["frames"] == {
+        "0": "Prep",
+        "1": "Clipping and cutting",
+    }
+    assert client.get("/api/class/CLIPA").json()["frames"] == {"0": ["grasper"]}
+    assert client.get("/api/triplet/CLIPA").json()["frames"]["0"] == [
+        {
+            "id": 1,
+            "instrument": "grasper",
+            "verb": "retract",
+            "target": "gallbladder",
+        }
+    ]
+    assert client.get("/api/session").json().get("active") is False
+
+
+def test_phase_rename_rejects_blank_and_duplicate_without_change(two_clips: TestClient) -> None:
+    client = two_clips
+    client.post("/api/phase/CLIPA/span", json={"phase": "Preparation", "from": 0, "to": 1})
+    client.post("/api/phase/CLIPB/span", json={"phase": "Preparation", "from": 0, "to": 1})
+    before = client.get("/api/vocab").json()["phases"]
+
+    blank = client.post("/api/vocab/phases/rename", json={"from": "Preparation", "to": "   "})
+    assert blank.status_code == 400
+    dup = client.post(
+        "/api/vocab/phases/rename",
+        json={"from": "Preparation", "to": "Clipping and cutting"},
+    )
+    assert dup.status_code == 409
+    assert "Clipping and cutting" in dup.json()["detail"]
+
+    assert client.get("/api/vocab").json()["phases"] == before
+    assert client.get("/api/phase/CLIPA").json()["frames"] == {
+        "0": "Preparation",
+        "1": "Preparation",
+    }
+    assert client.get("/api/phase/CLIPB").json()["frames"] == {
+        "0": "Preparation",
+        "1": "Preparation",
+    }
+
+
+def test_class_tag_rename_rewrites_class_clips_not_triplet_strings(two_clips: TestClient) -> None:
+    client = two_clips
+    client.post("/api/phase/CLIPA/span", json={"phase": "Preparation", "from": 0, "to": 0})
+    client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper", "blurred"]})
+    client.put("/api/class/CLIPA/frames/1", json={"tags": ["hook"]})
+    client.put("/api/class/CLIPB/frames/0", json={"tags": ["grasper"]})
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    client.post(
+        "/api/triplet/CLIPB/frames/1",
+        json={"instrument": "grasper", "verb": "grasp", "target": "omentum"},
+    )
+
+    renamed = client.post(
+        "/api/vocab/class_tags/rename",
+        json={"from": "grasper", "to": "jaw"},
+    )
+    assert renamed.status_code == 200
+    assert "jaw" in renamed.json()["class_tags"]
+    assert "grasper" not in renamed.json()["class_tags"]
+    assert "grasper" in renamed.json()["instruments"]
+
+    assert client.get("/api/class/CLIPA").json()["frames"] == {
+        "0": ["jaw", "blurred"],
+        "1": ["hook"],
+    }
+    assert client.get("/api/class/CLIPB").json()["frames"] == {"0": ["jaw"]}
+    assert client.get("/api/phase/CLIPA").json()["frames"] == {"0": "Preparation"}
+    assert client.get("/api/triplet/CLIPA").json()["frames"]["0"] == [
+        {
+            "id": 1,
+            "instrument": "grasper",
+            "verb": "retract",
+            "target": "gallbladder",
+        }
+    ]
+    assert client.get("/api/triplet/CLIPB").json()["frames"]["1"] == [
+        {
+            "id": 1,
+            "instrument": "grasper",
+            "verb": "grasp",
+            "target": "omentum",
+        }
+    ]
+
+
+def test_class_tag_rename_rejects_blank_and_duplicate_without_change(two_clips: TestClient) -> None:
+    client = two_clips
+    client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper"]})
+    client.put("/api/class/CLIPB/frames/1", json={"tags": ["grasper", "hook"]})
+    before = client.get("/api/vocab").json()["class_tags"]
+
+    blank = client.post("/api/vocab/class_tags/rename", json={"from": "grasper", "to": ""})
+    assert blank.status_code == 400
+    dup = client.post("/api/vocab/class_tags/rename", json={"from": "grasper", "to": "hook"})
+    assert dup.status_code == 409
+
+    assert client.get("/api/vocab").json()["class_tags"] == before
+    assert client.get("/api/class/CLIPA").json()["frames"] == {"0": ["grasper"]}
+    assert client.get("/api/class/CLIPB").json()["frames"] == {"1": ["grasper", "hook"]}
+
+
+def test_triplet_list_rename_is_rejected_and_leaves_rows(two_clips: TestClient) -> None:
+    client = two_clips
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    refused = client.post(
+        "/api/vocab/instruments/rename",
+        json={"from": "grasper", "to": "jaw"},
+    )
+    assert refused.status_code == 400
+    assert client.get("/api/vocab").json()["instruments"][0] == "grasper"
+    assert client.get("/api/triplet/CLIPA").json()["frames"]["0"][0]["instrument"] == "grasper"

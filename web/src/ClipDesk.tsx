@@ -24,6 +24,7 @@ import {
   tripletSpanPath,
   vocabListPath,
   vocabPath,
+  vocabRenamePath,
   type ClassDoc,
   type ClipListResponse,
   type ClipMeta,
@@ -113,6 +114,28 @@ function namesFromSelection(selection: Selection, all: string[]): string[] {
     return [...all];
   }
   return [...selection].map(String).filter((name) => all.includes(name));
+}
+
+// ponytail: delay class PUT so dblclick can cancel the toggle; split row-click vs name-dblclick if 280ms lags span.
+const CLASS_CLICK_MS = 280;
+
+function useCancelableDelay() {
+  const timer = useRef<number | null>(null);
+  const cancel = useCallback(() => {
+    if (timer.current != null) {
+      window.clearTimeout(timer.current);
+      timer.current = null;
+    }
+  }, []);
+  useEffect(() => cancel, [cancel]);
+  const schedule = useCallback((fn: () => void) => {
+    cancel();
+    timer.current = window.setTimeout(() => {
+      timer.current = null;
+      fn();
+    }, CLASS_CLICK_MS);
+  }, [cancel]);
+  return { schedule, cancel };
 }
 
 function completeTriplet(row: TripletSpanRow): boolean {
@@ -702,6 +725,62 @@ function RowRemoveButton({ label, onPress }: { label: string; onPress: () => voi
   );
 }
 
+function VocabNameCell({
+  name,
+  renameFrom,
+  renameDraft,
+  renameLabel,
+  onDraft,
+  onCommit,
+  onCancel,
+  onStart,
+}: {
+  name: string;
+  renameFrom: string | null;
+  renameDraft: string;
+  renameLabel: string;
+  onDraft: (value: string) => void;
+  onCommit: () => Promise<void>;
+  onCancel: () => void;
+  onStart: (name: string) => void;
+}) {
+  if (renameFrom === name) {
+    return (
+      <Input
+        autoFocus
+        aria-label={renameLabel}
+        value={renameDraft}
+        onPointerDown={(event) => event.stopPropagation()}
+        onChange={(event) => onDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            void onCommit();
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onCancel();
+          }
+        }}
+        onBlur={() => {
+          void onCommit();
+        }}
+      />
+    );
+  }
+  return (
+    <span
+      onDoubleClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onStart(name);
+      }}
+    >
+      {name}
+    </span>
+  );
+}
+
 async function ensureVocabName(
   listName: "phases" | "class_tags" | "instruments" | "verbs" | "targets",
   raw: string,
@@ -834,6 +913,8 @@ function PhaseTable({
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [renameFrom, setRenameFrom] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   const currentPhase = framePhaseName(phaseFrames, frameIndex);
   const selectedKeys: Selection = currentPhase ? new Set([currentPhase]) : new Set();
 
@@ -849,6 +930,23 @@ function PhaseTable({
     }
   }
 
+  async function commitRename() {
+    if (renameFrom == null) {
+      return;
+    }
+    const from = renameFrom;
+    const to = renameDraft.trim();
+    setRenameFrom(null);
+    if (to === from) {
+      return;
+    }
+    await run(async () => {
+      const next = await sendJson<Vocab>(vocabRenamePath("phases"), "POST", { from, to });
+      await mutateVocab(next, { revalidate: false });
+      await mutatePhase();
+    });
+  }
+
   return (
     <EditorShell title="phase" addLabel="Add phase" dragProps={dragProps} onAdd={() => setDraft("")}>
       <Table>
@@ -858,7 +956,7 @@ function PhaseTable({
             selectionMode="single"
             selectedKeys={selectedKeys}
             onSelectionChange={(selection) => {
-              if (busy || frameCount <= 0) {
+              if (busy || frameCount <= 0 || renameFrom != null) {
                 return;
               }
               const name = namesFromSelection(selection, phases)[0];
@@ -878,7 +976,22 @@ function PhaseTable({
             <Table.Body>
               {phases.map((name) => (
                 <Table.Row key={name} id={name}>
-                  <Table.Cell>{name}</Table.Cell>
+                  <Table.Cell>
+                    <VocabNameCell
+                      name={name}
+                      renameFrom={renameFrom}
+                      renameDraft={renameDraft}
+                      renameLabel="Rename phase"
+                      onDraft={setRenameDraft}
+                      onCommit={commitRename}
+                      onCancel={() => setRenameFrom(null)}
+                      onStart={(value) => {
+                        setError(null);
+                        setRenameFrom(value);
+                        setRenameDraft(value);
+                      }}
+                    />
+                  </Table.Cell>
                   <Table.Cell>
                     <RowRemoveButton
                       label={`Clear ${name}`}
@@ -955,6 +1068,9 @@ function ClassTable({
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [renameFrom, setRenameFrom] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const { schedule, cancel } = useCancelableDelay();
   const current = frameClassTags(classFrames, frameIndex);
   const selectedKeys: Selection = new Set(current);
 
@@ -970,6 +1086,23 @@ function ClassTable({
     }
   }
 
+  async function commitRename() {
+    if (renameFrom == null) {
+      return;
+    }
+    const from = renameFrom;
+    const to = renameDraft.trim();
+    setRenameFrom(null);
+    if (to === from) {
+      return;
+    }
+    await run(async () => {
+      const next = await sendJson<Vocab>(vocabRenamePath("class_tags"), "POST", { from, to });
+      await mutateVocab(next, { revalidate: false });
+      await mutateClass();
+    });
+  }
+
   return (
     <EditorShell title="class" addLabel="Add class tag" dragProps={dragProps} onAdd={() => setDraft("")}>
       <Table>
@@ -979,7 +1112,7 @@ function ClassTable({
             selectionMode="multiple"
             selectedKeys={selectedKeys}
             onSelectionChange={(selection) => {
-              if (busy || frameCount <= 0) {
+              if (busy || frameCount <= 0 || renameFrom != null) {
                 return;
               }
               const tags = namesFromSelection(selection, classTags);
@@ -987,9 +1120,11 @@ function ClassTable({
               if (same) {
                 return;
               }
-              void run(async () => {
-                const doc = await sendJson<ClassDoc>(classFramePath(clipId, frameIndex), "PUT", { tags });
-                await mutateClass(doc, { revalidate: false });
+              schedule(() => {
+                void run(async () => {
+                  const doc = await sendJson<ClassDoc>(classFramePath(clipId, frameIndex), "PUT", { tags });
+                  await mutateClass(doc, { revalidate: false });
+                });
               });
             }}
           >
@@ -1000,7 +1135,23 @@ function ClassTable({
             <Table.Body>
               {classTags.map((name) => (
                 <Table.Row key={name} id={name}>
-                  <Table.Cell>{name}</Table.Cell>
+                  <Table.Cell>
+                    <VocabNameCell
+                      name={name}
+                      renameFrom={renameFrom}
+                      renameDraft={renameDraft}
+                      renameLabel="Rename class tag"
+                      onDraft={setRenameDraft}
+                      onCommit={commitRename}
+                      onCancel={() => setRenameFrom(null)}
+                      onStart={(value) => {
+                        cancel();
+                        setError(null);
+                        setRenameFrom(value);
+                        setRenameDraft(value);
+                      }}
+                    />
+                  </Table.Cell>
                   <Table.Cell>
                     <RowRemoveButton
                       label={`Turn off ${name}`}

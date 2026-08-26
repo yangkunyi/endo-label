@@ -92,6 +92,10 @@ export function vocabListPath(listName: string): string {
   return `/api/vocab/${encodeURIComponent(listName)}`;
 }
 
+export function vocabRenamePath(listName: string): string {
+  return `/api/vocab/${encodeURIComponent(listName)}/rename`;
+}
+
 export function framePhaseName(
   frames: Record<string, string>,
   index: number,

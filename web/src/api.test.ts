@@ -18,6 +18,7 @@ import {
   tripletRowPath,
   tripletSpanPath,
   vocabListPath,
+  vocabRenamePath,
 } from "./api";
 
 test("clip desk path is /clips/:clipId", () => {
@@ -45,6 +46,8 @@ test("phase and vocab paths match compose HTTP", () => {
   expect(phaseSpanPath("CLIPA")).toBe("/api/phase/CLIPA/span");
   expect(phaseFramePath("CLIPA", 0)).toBe("/api/phase/CLIPA/frames/0");
   expect(vocabListPath("phases")).toBe("/api/vocab/phases");
+  expect(vocabRenamePath("phases")).toBe("/api/vocab/phases/rename");
+  expect(vocabRenamePath("class_tags")).toBe("/api/vocab/class_tags/rename");
 });
 
 test("missing Frame phase is unlabeled", () => {

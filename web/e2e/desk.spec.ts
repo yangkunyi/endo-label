@@ -11,10 +11,21 @@ async function scrubToFrame(page: Page, index: number) {
   }
 }
 
-async function clipFrames(page: Page, kind: "phase" | "class" | "triplet") {
-  const response = await page.request.get(`/api/${kind}/CLIP_E2E`);
+async function clipFrames(page: Page, kind: "phase" | "class" | "triplet", clipId = "CLIP_E2E") {
+  const response = await page.request.get(`/api/${kind}/${clipId}`);
   expect(response.ok()).toBeTruthy();
   return (await response.json()).frames as Record<string, unknown>;
+}
+
+async function fillTripletDraft(page: Page, instrument: string, verb: string, target: string) {
+  await page.getByRole("button", { name: "Add triplet row" }).click();
+  const draft = page.getByRole("grid", { name: "triplet" }).getByRole("row").last();
+  await draft.getByLabel("instrument").fill(instrument);
+  await draft.getByLabel("instrument").press("Enter");
+  await draft.getByLabel("verb").fill(verb);
+  await draft.getByLabel("verb").press("Enter");
+  await draft.getByLabel("target").fill(target);
+  await draft.getByLabel("target").press("Enter");
 }
 
 async function spanFrom0To1(page: Page) {
@@ -289,4 +300,119 @@ test("playback advances without looping and ignores editable controls", async ({
   await page.keyboard.press("Space");
   await expect(page.getByRole("img", { name: "Frame 1" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
+});
+
+test("double-click phase name renames every Clip", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await page.getByRole("grid", { name: "class" }).getByText("scissors", { exact: true }).click();
+  await page.getByRole("button", { name: "Add phase" }).click();
+  const newPhase = page.getByLabel("New phase name");
+  await newPhase.fill("DeskRenameP1");
+  await newPhase.press("Enter");
+  await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("DeskRenameP1");
+
+  await page.goto("/clips/CLIP_E2E_B");
+  await page.getByRole("grid", { name: "phase" }).getByText("DeskRenameP1", { exact: true }).click();
+  await expect.poll(async () => (await clipFrames(page, "phase", "CLIP_E2E_B"))["0"]).toBe("DeskRenameP1");
+
+  await page.getByRole("grid", { name: "phase" }).getByText("DeskRenameP1", { exact: true }).dblclick();
+  const rename = page.getByLabel("Rename phase");
+  await expect(rename).toBeVisible();
+  await rename.fill("DeskRenameP2");
+  await rename.press("Enter");
+  await expect(page.getByRole("grid", { name: "phase" }).getByText("DeskRenameP2", { exact: true })).toBeVisible();
+  await expect(page.getByRole("grid", { name: "phase" }).getByText("DeskRenameP1", { exact: true })).toHaveCount(0);
+
+  await expect.poll(async () => await clipFrames(page, "phase")).toMatchObject({ "0": "DeskRenameP2" });
+  await expect.poll(async () => await clipFrames(page, "phase", "CLIP_E2E_B")).toMatchObject({ "0": "DeskRenameP2" });
+  await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("scissors");
+});
+
+test("double-click class tag renames class Clips and leaves triplet instruments", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await page.getByRole("button", { name: "Add class tag" }).click();
+  const newTag = page.getByRole("textbox", { name: "New class tag" });
+  await newTag.fill("DeskRenameC1");
+  await newTag.press("Enter");
+  await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("DeskRenameC1");
+
+  await fillTripletDraft(page, "grasper", "retract", "gallbladder");
+  await page.goto("/clips/CLIP_E2E_B");
+  await page.getByRole("grid", { name: "class" }).getByText("DeskRenameC1", { exact: true }).click();
+  await expect.poll(async () => ((await clipFrames(page, "class", "CLIP_E2E_B"))["0"] as string[]) ?? []).toContain("DeskRenameC1");
+
+  await page.getByRole("grid", { name: "class" }).getByText("DeskRenameC1", { exact: true }).dblclick();
+  const rename = page.getByLabel("Rename class tag");
+  await expect(rename).toBeVisible();
+  await rename.fill("DeskRenameC2");
+  await rename.press("Enter");
+  await expect(page.getByRole("grid", { name: "class" }).getByText("DeskRenameC2", { exact: true })).toBeVisible();
+  await expect(page.getByRole("grid", { name: "class" }).getByText("DeskRenameC1", { exact: true })).toHaveCount(0);
+
+  await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("DeskRenameC2");
+  await expect.poll(async () => ((await clipFrames(page, "class", "CLIP_E2E_B"))["0"] as string[]) ?? []).toContain("DeskRenameC2");
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string }[]>;
+    return (frames["0"] ?? []).some((row) => row.instrument === "grasper");
+  }).toBe(true);
+  const vocab = await (await page.request.get("/api/vocab")).json();
+  expect(vocab.class_tags).toContain("DeskRenameC2");
+  expect(vocab.class_tags).not.toContain("DeskRenameC1");
+  expect(vocab.instruments).toContain("grasper");
+});
+
+test("triplet cell edit changes this row on this Frame only", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await fillTripletDraft(page, "DeskRenameTool", "DeskRenameVerb", "DeskRenameTarget");
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string; verb: string; target: string }[]>;
+    return (frames["0"] ?? []).some(
+      (row) => row.instrument === "DeskRenameTool" && row.verb === "DeskRenameVerb" && row.target === "DeskRenameTarget",
+    );
+  }).toBe(true);
+
+  await scrubToFrame(page, 1);
+  await fillTripletDraft(page, "DeskRenameTool", "DeskRenameVerb", "DeskRenameTarget");
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string }[]>;
+    return (frames["1"] ?? []).some((row) => row.instrument === "DeskRenameTool");
+  }).toBe(true);
+
+  await page.goto("/clips/CLIP_E2E_B");
+  await fillTripletDraft(page, "DeskRenameTool", "DeskRenameVerb", "DeskRenameTarget");
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet", "CLIP_E2E_B")) as Record<string, { instrument: string }[]>;
+    return (frames["0"] ?? []).some((row) => row.instrument === "DeskRenameTool");
+  }).toBe(true);
+
+  await page.goto("/clips/CLIP_E2E");
+  await scrubToFrame(page, 0);
+  const instruments = page.getByRole("grid", { name: "triplet" }).getByLabel("instrument");
+  const count = await instruments.count();
+  let edited = false;
+  for (let i = 0; i < count; i++) {
+    if ((await instruments.nth(i).inputValue()) === "DeskRenameTool") {
+      await instruments.nth(i).dblclick();
+      await instruments.nth(i).fill("bipolar");
+      await instruments.nth(i).press("Enter");
+      edited = true;
+      break;
+    }
+  }
+  expect(edited).toBe(true);
+
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string; verb: string; target: string }[]>;
+    return (frames["0"] ?? []).some(
+      (row) => row.instrument === "bipolar" && row.verb === "DeskRenameVerb" && row.target === "DeskRenameTarget",
+    );
+  }).toBe(true);
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string }[]>;
+    return (frames["1"] ?? []).some((row) => row.instrument === "DeskRenameTool");
+  }).toBe(true);
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet", "CLIP_E2E_B")) as Record<string, { instrument: string }[]>;
+    return (frames["0"] ?? []).some((row) => row.instrument === "DeskRenameTool");
+  }).toBe(true);
 });
