@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import {
   classClipPath,
   classFramePath,
+  classSpanPath,
   clipDeskPath,
   errorDetail,
   frameClassTags,
@@ -15,6 +16,7 @@ import {
   tripletClipPath,
   tripletFramePath,
   tripletRowPath,
+  tripletSpanPath,
   vocabListPath,
 } from "./api";
 
@@ -59,6 +61,7 @@ test("labeled Frame phase is the exclusive name", () => {
 test("class paths match compose HTTP", () => {
   expect(classClipPath("CLIPA")).toBe("/api/class/CLIPA");
   expect(classFramePath("CLIPA", 0)).toBe("/api/class/CLIPA/frames/0");
+  expect(classSpanPath("CLIPA")).toBe("/api/class/CLIPA/span");
   expect(vocabListPath("class_tags")).toBe("/api/vocab/class_tags");
 });
 
@@ -82,6 +85,7 @@ test("toggle class tag does not duplicate a name", () => {
 test("triplet paths match compose HTTP", () => {
   expect(tripletClipPath("CLIPA")).toBe("/api/triplet/CLIPA");
   expect(tripletFramePath("CLIPA", 0)).toBe("/api/triplet/CLIPA/frames/0");
+  expect(tripletSpanPath("CLIPA")).toBe("/api/triplet/CLIPA/span");
   expect(tripletRowPath("CLIPA", 0, 2)).toBe("/api/triplet/CLIPA/frames/0/2");
   expect(vocabListPath("instruments")).toBe("/api/vocab/instruments");
   expect(vocabListPath("verbs")).toBe("/api/vocab/verbs");

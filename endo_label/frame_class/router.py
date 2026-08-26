@@ -14,6 +14,15 @@ class ClassBody(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class ClassSpanBody(BaseModel):
+    tag: str = Field(..., min_length=1)
+    from_frame: int = Field(..., ge=0, alias="from")
+    to_frame: int = Field(..., ge=0, alias="to")
+    on: bool
+
+    model_config = {"populate_by_name": True}
+
+
 def make_router(settings: Settings) -> APIRouter:
     router = APIRouter(tags=["class"])
 
@@ -48,6 +57,33 @@ def make_router(settings: Settings) -> APIRouter:
             for name in tags:
                 _require_class_name(name)
             doc["frames"][key] = tags
+        labels_store.save_clip(settings, "class", clip_id, doc)
+        return doc
+
+    @router.post("/api/class/{clip_id}/span")
+    def paint_span(clip_id: str, body: ClassSpanBody) -> dict:
+        meta = _meta(clip_id)
+        n = int(meta["frame_count"])
+        a, b = body.from_frame, body.to_frame
+        if a > b:
+            a, b = b, a
+        if a < 0 or b >= n:
+            raise HTTPException(status_code=400, detail="span out of range")
+        _require_class_name(body.tag)
+
+        doc = labels_store.load_clip(settings, "class", clip_id)
+        for i in range(a, b + 1):
+            key = str(i)
+            tags = list(dict.fromkeys(doc["frames"].get(key) or []))
+            if body.on:
+                if body.tag not in tags:
+                    tags.append(body.tag)
+            else:
+                tags = [tag for tag in tags if tag != body.tag]
+            if tags:
+                doc["frames"][key] = tags
+            else:
+                doc["frames"].pop(key, None)
         labels_store.save_clip(settings, "class", clip_id, doc)
         return doc
 

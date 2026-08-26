@@ -1,147 +1,164 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 test.describe.configure({ mode: "serial" });
 
-test("clip list then desk shows phase, class, and triplet together", async ({
-  page,
-}) => {
+async function scrubToFrame(page: Page, index: number) {
+  const slider = page.getByRole("slider", { name: "Frame index" });
+  await slider.focus();
+  await page.keyboard.press("Home");
+  for (let i = 0; i < index; i++) {
+    await page.keyboard.press("ArrowRight");
+  }
+}
+
+test("root and Clip routes share one workbench shell", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Clips" })).toBeVisible();
-  await expect(
-    page.getByText("Open a Clip to label phase, class, and triplet"),
-  ).toBeVisible();
-  await page.getByRole("link", { name: "CLIP_E2E", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Choose a Clip" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Clips" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "class" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "triplet" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "phase" })).toBeVisible();
+  await expect(page.getByRole("img")).toHaveCount(0);
 
+  await page.locator('a[href="/clips/CLIP_E2E"]').click();
+  await expect(page).toHaveURL(/\/clips\/CLIP_E2E$/);
   await expect(page.getByRole("heading", { name: "CLIP_E2E" })).toBeVisible();
-  await expect(page.getByText("Frame 0 of 2")).toBeVisible();
-
-  const classHeading = page.getByRole("heading", { name: "class" });
-  const tripletHeading = page.getByRole("heading", { name: "triplet" });
-  const phaseHeading = page.getByRole("heading", { name: "phase" });
-  await expect(classHeading).toBeInViewport();
-  await expect(tripletHeading).toBeInViewport();
-  await expect(phaseHeading).toBeInViewport();
-
-  await expect(page.getByText("%")).toHaveCount(0);
-
-  const writeSpan = page.getByRole("button", { name: "Write span" });
-  await expect(writeSpan).toBeVisible();
-  const bg = await writeSpan.evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(bg).not.toBe("rgba(0, 0, 0, 0)");
-  expect(bg).not.toBe("transparent");
+  await expect(page.getByText("Frame 0 of 2")).toHaveCount(2);
+  await expect(page.getByRole("img", { name: "Frame 0" })).toBeVisible();
 });
 
-test("desk is a full-viewport bench: left filmstrip, contained JPEG, no page scroll", async ({
-  page,
-}) => {
+test("Clip rail has counts, slider scrubs, and no Frame filmstrip", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
-  await expect(page.getByRole("heading", { name: "CLIP_E2E" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Clips" })).toBeVisible();
-  await expect(page.getByText("Frame 0 of 2")).toBeVisible();
+  const rail = page.getByRole("navigation", { name: "Clips" });
+  await expect(rail.getByText("CLIP_E2E", { exact: true })).toBeVisible();
+  await expect(rail.getByText("2 Frames", { exact: true })).toBeVisible();
+  await expect(rail.getByRole("button")).toHaveCount(0);
+  await expect(page.getByRole("slider", { name: "Frame index" })).toBeVisible();
 
-  const frame0 = page.getByRole("button", { name: "Frame 0 unlabeled" });
-  const frame1 = page.getByRole("button", { name: "Frame 1 unlabeled" });
   const jpeg = page.getByRole("img", { name: "Frame 0" });
-  const classHeading = page.getByRole("heading", { name: "class" });
-  await expect(frame0).toBeVisible();
-  await expect(frame1).toBeVisible();
   await expect(jpeg).toBeVisible();
+  expect(await jpeg.evaluate((el) => getComputedStyle(el).objectFit)).toBe("contain");
 
-  const f0 = await frame0.boundingBox();
-  const f1 = await frame1.boundingBox();
-  const jpegBox = await jpeg.boundingBox();
-  const classBox = await classHeading.boundingBox();
-  expect(f0).toBeTruthy();
-  expect(f1).toBeTruthy();
-  expect(jpegBox).toBeTruthy();
-  expect(classBox).toBeTruthy();
-  expect(f1!.y).toBeGreaterThan(f0!.y);
-  expect(f0!.x).toBeLessThan(jpegBox!.x);
-  expect(jpegBox!.x).toBeLessThan(classBox!.x);
-
-  expect(await jpeg.evaluate((el) => getComputedStyle(el).objectFit)).toBe(
-    "contain",
-  );
-  expect(
-    await page.evaluate(
-      () =>
-        document.documentElement.scrollHeight >
-        document.documentElement.clientHeight + 1,
-    ),
-  ).toBe(false);
-
-  await frame1.click();
-  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  await scrubToFrame(page, 1);
+  await expect(page.getByText("Frame 1 of 2")).toHaveCount(2);
   await expect(page.getByRole("img", { name: "Frame 1" })).toBeVisible();
-  await expect(frame1).toHaveAttribute("aria-current", "true");
-
-  await page.setViewportSize({ width: 1280, height: 400 });
-  await expect(page.getByRole("img", { name: "Frame 1" })).toBeInViewport();
-  expect(
-    await page.evaluate(
-      () =>
-        document.documentElement.scrollHeight >
-        document.documentElement.clientHeight + 1,
-    ),
-  ).toBe(false);
 });
 
-test("class chip, phase span, and triplet row write on this Frame", async ({
-  page,
-}) => {
+test("HeroUI tables stay open and write this Frame", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await expect(page.getByRole("heading", { name: "CLIP_E2E" })).toBeVisible();
+  await expect(page.getByRole("grid", { name: "class" })).toBeVisible();
+  await expect(page.getByRole("grid", { name: "triplet" })).toBeVisible();
+  await expect(page.getByRole("grid", { name: "phase" })).toBeVisible();
+  await expect(page.getByText("Arm class span")).toHaveCount(0);
+  await expect(page.getByText("Arm phase span")).toHaveCount(0);
+  await expect(page.getByText("operation on")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "grasper", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "grasper", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText("This Frame: grasper")).toBeVisible();
+  await page.getByRole("grid", { name: "class" }).getByText("grasper", { exact: true }).click();
+  await expect(page.getByLabel("Span HUD")).toContainText("class: grasper");
 
-  await page.getByRole("button", { name: "Write span" }).click();
-  await expect(page.getByText("This Frame: Preparation")).toBeVisible();
+  await page.getByRole("grid", { name: "phase" }).getByText("Preparation", { exact: true }).click();
+  await expect(page.getByLabel("Span HUD")).toContainText("phase: Preparation");
 
-  await page.getByRole("button", { name: "triplet" }).click();
-  await page.getByRole("button", { name: "Add row" }).click();
-  await expect(page.getByText("#1 grasper / grasp / gallbladder")).toBeVisible();
+  await page.getByRole("button", { name: "Add triplet row" }).click();
+  const draft = page.getByRole("grid", { name: "triplet" }).getByRole("row").last();
+  await draft.getByLabel("instrument").fill("grasper");
+  await draft.getByLabel("instrument").press("Enter");
+  await draft.getByLabel("verb").fill("grasp");
+  await draft.getByLabel("verb").press("Enter");
+  await draft.getByLabel("target").fill("gallbladder");
+  await draft.getByLabel("target").press("Enter");
+  await expect(page.getByRole("grid", { name: "triplet" }).getByLabel("instrument")).toHaveValue("grasper");
 });
 
-test("forms fold independently with always-on summaries", async ({ page }) => {
+test("tables do not fold and there is no Arm control", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
-  await expect(page.getByRole("heading", { name: "CLIP_E2E" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "class" })).toBeInViewport();
-  await expect(page.getByRole("heading", { name: "triplet" })).toBeInViewport();
-  await expect(page.getByRole("heading", { name: "phase" })).toBeInViewport();
+  await expect(page.getByRole("grid", { name: "class" })).toBeVisible();
+  await expect(page.getByRole("grid", { name: "triplet" })).toBeVisible();
+  await expect(page.getByRole("grid", { name: "phase" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add class tag" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add triplet row" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add phase" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Write span" })).toHaveCount(0);
+  await expect(page.getByText("Arm class span")).toHaveCount(0);
 
-  await expect(page.getByRole("button", { name: "Write span" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add row" })).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Clear this Frame's phase" }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "grasper", exact: true }),
-  ).toHaveCount(1);
+  await scrubToFrame(page, 1);
+  await expect(page.getByRole("grid", { name: "class" })).toBeVisible();
+  await expect(page.getByRole("grid", { name: "triplet" })).toBeVisible();
+  await expect(page.getByRole("grid", { name: "phase" })).toBeVisible();
+});
 
-  await page.getByRole("button", { name: "triplet" }).click();
-  await expect(page.getByRole("button", { name: "Add row" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Write span" })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "grasper", exact: true }),
-  ).toHaveCount(1);
+test("phase span keys paint an inclusive range and ignore editable controls", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  const phase = page.locator('[data-editor-card="phase"]');
+  await expect(phase).toBeVisible();
+  await expect(phase.locator('input[type="number"]')).toHaveCount(0);
 
-  await page.getByRole("button", { name: "class" }).click();
-  await expect(
-    page.getByRole("button", { name: "grasper", exact: true }),
-  ).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Add row" })).toBeVisible();
+  await page.getByRole("button", { name: "Add phase" }).click();
+  const nameInput = page.getByLabel("New phase name");
+  await nameInput.focus();
+  await page.keyboard.press("[");
+  await page.keyboard.press("]");
+  await expect(page.getByText(/from Frame/)).toHaveCount(0);
+  await page.getByRole("button", { name: "Cancel new phase" }).click();
 
-  await page.getByRole("button", { name: "Frame 1 unlabeled" }).click();
-  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add row" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Write span" })).toBeVisible();
+  await page.getByRole("grid", { name: "phase" }).getByText("Preparation", { exact: true }).click();
+  await page.getByRole("img", { name: "Frame 0" }).click();
+  await page.keyboard.press("[");
+  await expect(page.getByText(/from Frame 0/)).toBeVisible();
+  await scrubToFrame(page, 1);
+  await page.getByRole("img", { name: "Frame 1" }).click();
+  await page.keyboard.press("]");
+  await expect(page.getByLabel("Span HUD")).toContainText("phase: Preparation");
+});
 
-  await page.goto("/clips/CLIP_E2E_B");
-  await expect(page.getByRole("heading", { name: "CLIP_E2E_B" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add row" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Write span" })).toBeVisible();
+test("class span paints selected tags across an inclusive range", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  const classTable = page.getByRole("grid", { name: "class" });
+  await classTable.getByText("hook", { exact: true }).click();
+  await expect(page.getByLabel("Span HUD")).toContainText("class: hook");
+  await expect(page.getByText("Arm class span")).toHaveCount(0);
+
+  await page.getByRole("img", { name: "Frame 0" }).click();
+  await page.keyboard.press("[");
+  await expect(page.getByLabel("Span HUD")).toContainText("from Frame 0");
+  await scrubToFrame(page, 1);
+  await page.getByRole("img", { name: "Frame 1" }).click();
+  await page.keyboard.press("]");
+  await expect(page.getByLabel("Span HUD")).toContainText("class: hook");
+});
+
+test("triplet span uses selected complete rows and ignores incomplete drafts", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  const triplet = page.getByRole("grid", { name: "triplet" });
+  await triplet.getByRole("row").nth(1).getByRole("gridcell").first().click();
+  await expect(page.getByLabel("Span HUD")).toContainText("triplet: grasper / grasp / gallbladder");
+
+  await page.getByRole("button", { name: "Add triplet row" }).click();
+  await expect(page.getByLabel("Span HUD")).not.toContainText("incomplete");
+  await page.getByRole("img", { name: "Frame 0" }).click();
+  await page.keyboard.press("[");
+  await expect(page.getByLabel("Span HUD")).toContainText("from Frame 0");
+});
+
+test("playback advances without looping and ignores editable controls", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await expect(page.getByRole("img", { name: "Frame 0" })).toBeVisible();
+
+  await page.getByRole("button", { name: "1 fps" }).click();
+  await page.getByRole("option", { name: "25", exact: true }).click();
+  const skip = page.getByLabel("Skip every N Frames");
+  await skip.fill("1");
+  await page.reload();
+  await expect(page.getByRole("button", { name: "25 fps" })).toBeVisible();
+  await expect(page.getByLabel("Skip every N Frames")).toHaveValue("1");
+
+  await page.getByRole("slider", { name: "Frame index" }).focus();
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("img", { name: "Frame 0" })).toBeVisible();
+
+  await page.getByRole("img", { name: "Frame 0" }).click();
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("img", { name: "Frame 1" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
 });

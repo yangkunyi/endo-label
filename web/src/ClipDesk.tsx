@@ -1,9 +1,14 @@
-import { useLayoutEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent, type ReactNode } from "react";
+import { Button, Checkbox, ComboBox, Input, Label, ListBox, Select, Slider, Table } from "@heroui/react";
+import type { Key, Selection } from "@heroui/react";
+import { GripVertical, Pause, Play, Plus, X } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
 import {
   classClipPath,
   classFramePath,
+  classSpanPath,
+  clipDeskPath,
   frameClassTags,
   frameJpegPath,
   framePhaseName,
@@ -13,23 +18,163 @@ import {
   phaseFramePath,
   phaseSpanPath,
   sendJson,
-  toggleClassTag,
   tripletClipPath,
   tripletFramePath,
   tripletRowPath,
+  tripletSpanPath,
   vocabListPath,
   vocabPath,
   type ClassDoc,
+  type ClipListResponse,
   type ClipMeta,
   type PhaseDoc,
   type TripletDoc,
   type TripletRow,
   type Vocab,
 } from "./api";
-import { useDeskStore } from "./deskStore";
+import { useDeskStore, type EditorKind } from "./deskStore";
+
+type EditorDragProps = {
+  draggable: true;
+  onDragStart: () => void;
+  onDragOver: (event: DragEvent<HTMLElement>) => void;
+  onDrop: () => void;
+  onDragEnd: () => void;
+};
+
+type PlaybackSettings = {
+  fps: 1 | 10 | 25;
+  skip: number;
+};
+
+type TripletSpanRow = {
+  instrument: string;
+  verb: string;
+  target: string;
+};
+
+type SpanTarget =
+  | { kind: "phase"; name: string }
+  | { kind: "class"; name: string }
+  | { kind: "triplet"; instrument: string; verb: string; target: string };
+
+const PLAYBACK_STORAGE_KEY = "endo_label:desk-playback";
+const DEFAULT_PLAYBACK_SETTINGS: PlaybackSettings = { fps: 1, skip: 1 };
+
+function readPlaybackSettings(): PlaybackSettings {
+  if (typeof window === "undefined") {
+    return DEFAULT_PLAYBACK_SETTINGS;
+  }
+  try {
+    const raw = window.localStorage.getItem(PLAYBACK_STORAGE_KEY);
+    if (!raw) {
+      return DEFAULT_PLAYBACK_SETTINGS;
+    }
+    const value = JSON.parse(raw) as Partial<PlaybackSettings>;
+    const fps = value.fps === 10 || value.fps === 25 ? value.fps : 1;
+    const skip = typeof value.skip === "number" && Number.isInteger(value.skip)
+      ? Math.min(Math.max(1, value.skip), 999)
+      : 1;
+    return { fps, skip };
+  } catch {
+    return DEFAULT_PLAYBACK_SETTINGS;
+  }
+}
+
+function savePlaybackSettings(settings: PlaybackSettings) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(PLAYBACK_STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // localStorage can be unavailable in private browsing or a restricted iframe.
+  }
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  if (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
+    return true;
+  }
+  return Boolean(target.closest('[role="textbox"], [role="combobox"], [role="searchbox"], [role="slider"]'));
+}
+
+function sliderNumber(value: number | number[]): number {
+  return typeof value === "number" ? value : (value[0] ?? 0);
+}
+
+function namesFromSelection(selection: Selection, all: string[]): string[] {
+  if (selection === "all") {
+    return [...all];
+  }
+  return [...selection].map(String).filter((name) => all.includes(name));
+}
+
+function completeTriplet(row: TripletSpanRow): boolean {
+  return Boolean(row.instrument && row.verb && row.target);
+}
+
+function ResizeHandle({
+  label,
+  direction,
+  value,
+  onResize,
+  reverse = false,
+}: {
+  label: string;
+  direction: "horizontal" | "vertical";
+  value: number;
+  onResize: (value: number) => void;
+  reverse?: boolean;
+}) {
+  const start = useRef<{ coordinate: number; value: number } | null>(null);
+
+  function onPointerDown(event: PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    start.current = {
+      coordinate: direction === "horizontal" ? event.clientX : event.clientY,
+      value,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function onPointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (!start.current) {
+      return;
+    }
+    const coordinate = direction === "horizontal" ? event.clientX : event.clientY;
+    const delta = coordinate - start.current.coordinate;
+    onResize(start.current.value + (reverse ? -delta : delta));
+  }
+
+  function stopResize() {
+    start.current = null;
+  }
+
+  return (
+    <div
+      role="separator"
+      aria-label={label}
+      aria-orientation={direction}
+      className={direction === "horizontal" ? "w-1 shrink-0 cursor-col-resize bg-stone-200 hover:bg-emerald-500" : "h-1 shrink-0 cursor-row-resize bg-stone-200 hover:bg-emerald-500"}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={stopResize}
+      onPointerCancel={stopResize}
+    />
+  );
+}
 
 export function ClipDesk() {
   const { clipId } = useParams();
+  const {
+    data: clipList,
+    error: clipListError,
+    isLoading: clipsLoading,
+  } = useSWR("/api/clips", getJson<ClipListResponse>);
   const { data, error, isLoading } = useSWR(
     clipId ? `/api/clips/${encodeURIComponent(clipId)}` : null,
     getJson<ClipMeta>,
@@ -54,7 +199,177 @@ export function ClipDesk() {
   const storedIndex = useDeskStore((s) => s.frameIndex);
   const openClip = useDeskStore((s) => s.openClip);
   const scrub = useDeskStore((s) => s.scrub);
+  const layout = useDeskStore((s) => s.layout);
+  const setLayout = useDeskStore((s) => s.setLayout);
+  const editorOrder = layout.editorOrder;
+  const setEditorOrder = useDeskStore((s) => s.setEditorOrder);
+  const spanStart = useDeskStore((s) => s.spanStart);
+  const setSpanStart = useDeskStore((s) => s.setSpanStart);
+  const [draggedEditor, setDraggedEditor] = useState<EditorKind | null>(null);
+  const [spanError, setSpanError] = useState<string | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [playback, setPlayback] = useState<PlaybackSettings>(() => readPlaybackSettings());
+  const [tripletSpanRows, setTripletSpanRows] = useState<TripletSpanRow[]>([]);
+  const [spanPayload, setSpanPayload] = useState<SpanTarget[]>([]);
+  const spanBusy = useRef(false);
   const frameIndex = storedClipId === clipId ? storedIndex : 0;
+  const currentPhase = data ? framePhaseName(phaseDoc?.frames ?? {}, frameIndex) : null;
+  const currentTags = data ? frameClassTags(classDoc?.frames ?? {}, frameIndex) : [];
+
+  const spanTargets = useMemo<SpanTarget[]>(() => [
+    ...(currentPhase ? [{ kind: "phase" as const, name: currentPhase }] : []),
+    ...currentTags.map((name) => ({ kind: "class" as const, name })),
+    ...tripletSpanRows.filter(completeTriplet).map((row) => ({
+      kind: "triplet" as const,
+      instrument: row.instrument,
+      verb: row.verb,
+      target: row.target,
+    })),
+  ], [currentPhase, currentTags, tripletSpanRows]);
+  const hudTargets = spanStart?.clipId === clipId && spanPayload.length ? spanPayload : spanTargets;
+
+  useEffect(() => {
+    savePlaybackSettings(playback);
+  }, [playback]);
+
+  useEffect(() => {
+    setPlaying(false);
+    setTripletSpanRows([]);
+    setSpanPayload([]);
+  }, [clipId]);
+
+  useEffect(() => {
+    if (!playing) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      const state = useDeskStore.getState();
+      if (!clipId || state.clipId !== clipId || state.frameCount <= 0) {
+        setPlaying(false);
+        return;
+      }
+      const last = state.frameCount - 1;
+      const next = Math.min(state.frameIndex + playback.skip, last);
+      state.scrub(next);
+      if (next >= last) {
+        setPlaying(false);
+      }
+    }, 1000 / playback.fps);
+    return () => window.clearInterval(timer);
+  }, [clipId, playback.fps, playback.skip, playing]);
+
+  const togglePlayback = useCallback(() => {
+    if (!data || data.frame_count <= 0 || frameIndex >= data.frame_count - 1) {
+      setPlaying(false);
+      return;
+    }
+    setPlaying((current) => !current);
+  }, [data, frameIndex]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === " ") {
+        if (clipId && data && data.frame_count > 0) {
+          event.preventDefault();
+          togglePlayback();
+        }
+        return;
+      }
+      if (!clipId || !data || data.frame_count <= 0) {
+        return;
+      }
+      const isStart = key === "[" || key === "i";
+      const isEnd = key === "]" || key === "o";
+      if (!isStart && !isEnd) {
+        return;
+      }
+      if (isStart) {
+        if (!spanTargets.length) {
+          return;
+        }
+        event.preventDefault();
+        setSpanError(null);
+        setSpanStart({ clipId, frameIndex });
+        setSpanPayload(spanTargets);
+        return;
+      }
+      const payload = spanStart?.clipId === clipId && spanPayload.length ? spanPayload : spanTargets;
+      if (!payload.length) {
+        return;
+      }
+      event.preventDefault();
+      setSpanError(null);
+      if (spanBusy.current) {
+        return;
+      }
+      const start = spanStart?.clipId === clipId ? spanStart.frameIndex : frameIndex;
+      spanBusy.current = true;
+      void (async () => {
+        try {
+          for (const target of payload) {
+            if (target.kind === "phase") {
+              const doc = await sendJson<PhaseDoc>(phaseSpanPath(clipId), "POST", {
+                phase: target.name,
+                from: start,
+                to: frameIndex,
+              });
+              await mutatePhase(doc, { revalidate: false });
+              continue;
+            }
+            if (target.kind === "class") {
+              const doc = await sendJson<ClassDoc>(classSpanPath(clipId), "POST", {
+                tag: target.name,
+                from: start,
+                to: frameIndex,
+                on: true,
+              });
+              await mutateClass(doc, { revalidate: false });
+              continue;
+            }
+            const doc = await sendJson<TripletDoc>(tripletSpanPath(clipId), "POST", {
+              instrument: target.instrument,
+              verb: target.verb,
+              target: target.target,
+              from: start,
+              to: frameIndex,
+              op: "add",
+            });
+            await mutateTriplet(doc, { revalidate: false });
+          }
+          setSpanStart(null);
+          setSpanPayload([]);
+          setPlaying(false);
+        } catch (err) {
+          setSpanError(err instanceof Error ? err.message : "Write failed");
+        } finally {
+          spanBusy.current = false;
+        }
+      })();
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [clipId, data, frameIndex, mutateClass, mutatePhase, mutateTriplet, setSpanStart, spanPayload, spanStart, spanTargets, togglePlayback]);
+
+  function moveEditor(target: EditorKind) {
+    if (!draggedEditor || draggedEditor === target) {
+      return;
+    }
+    const next = [...editorOrder];
+    const from = next.indexOf(draggedEditor);
+    const to = next.indexOf(target);
+    if (from < 0 || to < 0) {
+      return;
+    }
+    next.splice(from, 1);
+    next.splice(to, 0, draggedEditor);
+    setEditorOrder(next);
+    setDraggedEditor(null);
+  }
 
   useLayoutEffect(() => {
     if (data) {
@@ -62,183 +377,419 @@ export function ClipDesk() {
     }
   }, [data, openClip]);
 
-  if (!clipId) {
-    return (
-      <main className="mx-auto max-w-5xl p-6">
-        <p>
-          <Link className="text-emerald-800 underline" to="/">
-            Clips
-          </Link>
-        </p>
-        <p>Clip not found.</p>
-      </main>
-    );
-  }
-
-  if (error) {
-    return (
-      <main className="mx-auto max-w-5xl p-6">
-        <p>
-          <Link className="text-emerald-800 underline" to="/">
-            Clips
-          </Link>
-        </p>
-        <h1 className="mb-3 mt-3 text-xl font-semibold">{clipId}</h1>
-        <p>{error instanceof Error ? error.message : "Clip not found"}</p>
-      </main>
-    );
-  }
-
-  if (isLoading || !data) {
-    return (
-      <main className="mx-auto max-w-5xl p-6">
-        <p>
-          <Link className="text-emerald-800 underline" to="/">
-            Clips
-          </Link>
-        </p>
-        <p>Loading Clip…</p>
-      </main>
-    );
-  }
-
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-stone-100 text-stone-900">
+    <main className="flex h-screen min-h-0 flex-col overflow-hidden bg-stone-100 text-stone-900">
       <header className="flex shrink-0 items-center gap-3 border-b border-stone-300 px-3 py-2">
-        <Link className="text-sm text-emerald-800 underline" to="/">
-          Clips
-        </Link>
-        <h1 className="text-sm font-semibold">{data.id}</h1>
-        <p className="text-sm text-stone-600">
-          Frame {frameIndex}
-          {data.frame_count > 0 ? ` of ${data.frame_count}` : ""}
-        </p>
+        <span className="text-sm font-semibold tracking-wide">endo_label</span>
+        <span className="text-stone-300" aria-hidden="true">/</span>
+        <h1 className="text-sm font-semibold">{data?.id ?? "Workbench"}</h1>
+        {data ? <p className="text-sm text-stone-600">Frame {frameIndex} of {data.frame_count}</p> : null}
       </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <nav
-          aria-label="Frames"
-          className="flex w-28 shrink-0 flex-col gap-1 overflow-y-auto border-r border-stone-300 p-1"
+          aria-label="Clips"
+          className="flex shrink-0 flex-col overflow-y-auto border-r border-stone-300 bg-white"
+          style={{ width: layout.clipRailWidth }}
         >
-          {/* ponytail: every thumb in the rail; virtualize when long Clips jank */}
-          {data.frames.map((frame) => {
-            const current = frame.index === frameIndex;
-            const phaseName = framePhaseName(
-              phaseDoc?.frames ?? {},
-              frame.index,
-            );
-            return (
-              <button
-                key={frame.index}
-                type="button"
-                aria-current={current ? "true" : undefined}
-                aria-label={
-                  phaseName
-                    ? `Frame ${frame.index} ${phaseName}`
-                    : `Frame ${frame.index} unlabeled`
-                }
-                className={`w-full rounded border bg-white p-1 text-left text-xs ${
-                  current
-                    ? "border-emerald-700 ring-2 ring-emerald-700"
-                    : "border-stone-300"
-                }`}
-                onClick={() => scrub(frame.index)}
+          <div className="border-b border-stone-200 px-3 py-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">Clips</p>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
+            {clipsLoading ? <p className="p-2 text-sm text-stone-500">Loading Clips…</p> : null}
+            {clipListError ? <p className="p-2 text-sm text-red-800">Could not load Clips</p> : null}
+            {!clipsLoading && !clipListError && clipList?.clips.length === 0 ? <p className="p-2 text-sm text-stone-500">No Clips on the allowlist.</p> : null}
+            {clipList?.clips.map((clip) => (
+              <Link
+                key={clip.id}
+                to={clipDeskPath(clip.id)}
+                aria-current={clip.id === clipId ? "page" : undefined}
+                className={`flex items-center justify-between rounded px-3 py-2 text-left text-sm transition-colors ${clip.id === clipId ? "bg-emerald-100 font-semibold text-emerald-950" : "text-stone-700 hover:bg-stone-100"}`}
               >
-                <img
-                  className="mb-1 h-12 w-full object-cover"
-                  src={frameJpegPath(data.id, frame.index)}
-                  alt=""
-                />
-                <span className="block">{frame.index}</span>
-                <span className="block truncate text-stone-600">
-                  {phaseName ?? ""}
-                </span>
-              </button>
-            );
-          })}
+                <span className="truncate">{clip.id}</span>
+                <span className="ml-2 shrink-0 text-xs text-stone-500">{clip.frame_count} Frames</span>
+              </Link>
+            ))}
+          </div>
         </nav>
-        <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-black">
-          {data.frame_count > 0 ? (
+        <ResizeHandle
+          label="Resize Clip rail"
+          direction="horizontal"
+          value={layout.clipRailWidth}
+          onResize={(value) => setLayout({ clipRailWidth: value })}
+        />
+        <section aria-label="Frame viewer" className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-black">
+          {error ? (
+            <div className="p-6 text-center text-stone-100"><h2 className="mb-2 text-lg font-semibold">{clipId}</h2><p>{error instanceof Error ? error.message : "Clip not found"}</p></div>
+          ) : isLoading ? (
+            <p className="text-stone-100">Loading Clip…</p>
+          ) : data?.frame_count ? (
             <img
               className="h-full w-full object-contain"
               src={frameJpegPath(data.id, frameIndex)}
               alt={`Frame ${frameIndex}`}
             />
-          ) : (
+          ) : data ? (
             <p className="text-stone-100">This Clip has no Frames.</p>
+          ) : (
+            <div className="p-6 text-center text-stone-100"><h2 className="mb-2 text-xl font-semibold">Choose a Clip</h2><p className="text-stone-300">Select a Clip from the left rail to begin labeling.</p></div>
           )}
-        </div>
-        <div className="flex w-[26rem] shrink-0 flex-col gap-4 overflow-y-auto border-l border-stone-300 p-3">
-          <ClassPanel
-            key={data.id}
-            clipId={data.id}
-            frameIndex={frameIndex}
-            frameCount={data.frame_count}
-            classFrames={classDoc?.frames ?? {}}
-            classTags={vocab?.class_tags ?? []}
-            mutateClass={mutateClass}
-            mutateVocab={mutateVocab}
-          />
-          <TripletPanel
-            key={`${data.id}-triplet`}
-            clipId={data.id}
-            frameIndex={frameIndex}
-            frameCount={data.frame_count}
-            tripletFrames={tripletDoc?.frames ?? {}}
-            instruments={vocab?.instruments ?? []}
-            verbs={vocab?.verbs ?? []}
-            targets={vocab?.targets ?? []}
-            mutateTriplet={mutateTriplet}
-            mutateVocab={mutateVocab}
-          />
-          <PhasePanel
-            key={`${data.id}-phase`}
-            clipId={data.id}
-            frameIndex={frameIndex}
-            frameCount={data.frame_count}
-            phaseFrames={phaseDoc?.frames ?? {}}
-            phases={vocab?.phases ?? []}
-            mutatePhase={mutatePhase}
-            mutateVocab={mutateVocab}
-          />
+        </section>
+        <ResizeHandle
+          label="Resize editor rail"
+          direction="horizontal"
+          value={layout.editorRailWidth}
+          reverse
+          onResize={(value) => setLayout({ editorRailWidth: value })}
+        />
+        <div
+          className="flex shrink-0 flex-col gap-4 overflow-y-auto border-l border-stone-300 p-3"
+          style={{ width: layout.editorRailWidth }}
+        >
+          {data ? editorOrder.map((kind) => {
+            const dragProps: EditorDragProps = {
+              draggable: true,
+              onDragStart: () => setDraggedEditor(kind),
+              onDragOver: (event: DragEvent<HTMLElement>) => event.preventDefault(),
+              onDrop: () => moveEditor(kind),
+              onDragEnd: () => setDraggedEditor(null),
+            };
+            if (kind === "class") {
+              return (
+                <ClassTable
+                  key={data.id}
+                  clipId={data.id}
+                  frameIndex={frameIndex}
+                  frameCount={data.frame_count}
+                  classFrames={classDoc?.frames ?? {}}
+                  classTags={vocab?.class_tags ?? []}
+                  mutateClass={mutateClass}
+                  mutateVocab={mutateVocab}
+                  dragProps={dragProps}
+                />
+              );
+            }
+            if (kind === "triplet") {
+              return (
+                <TripletTable
+                  key={`${data.id}-triplet`}
+                  clipId={data.id}
+                  frameIndex={frameIndex}
+                  frameCount={data.frame_count}
+                  tripletFrames={tripletDoc?.frames ?? {}}
+                  instruments={vocab?.instruments ?? []}
+                  verbs={vocab?.verbs ?? []}
+                  targets={vocab?.targets ?? []}
+                  mutateTriplet={mutateTriplet}
+                  mutateVocab={mutateVocab}
+                  dragProps={dragProps}
+                  onSpanRows={setTripletSpanRows}
+                />
+              );
+            }
+            return (
+              <PhaseTable
+                key={`${data.id}-phase`}
+                clipId={data.id}
+                frameIndex={frameIndex}
+                frameCount={data.frame_count}
+                phaseFrames={phaseDoc?.frames ?? {}}
+                phases={vocab?.phases ?? []}
+                mutatePhase={mutatePhase}
+                mutateVocab={mutateVocab}
+                dragProps={dragProps}
+              />
+            );
+          }) : <EmptyEditors />}
         </div>
       </div>
+      <ResizeHandle
+        label="Resize Frame controls"
+        direction="vertical"
+        value={layout.bottomBarHeight}
+        reverse
+        onResize={(value) => setLayout({ bottomBarHeight: value })}
+      />
+      <footer aria-label="Frame transport" className="flex shrink-0 items-center gap-3 overflow-x-auto border-t border-stone-300 bg-white px-4 py-2" style={{ height: layout.bottomBarHeight }}>
+        <Button
+          isIconOnly
+          size="sm"
+          aria-label={playing ? "Pause" : "Play"}
+          isDisabled={!data || data.frame_count <= 0 || (!playing && frameIndex >= data.frame_count - 1)}
+          onPress={togglePlayback}
+        >
+          {playing ? <Pause size={16} /> : <Play size={16} />}
+        </Button>
+        <Select
+          className="w-24"
+          value={String(playback.fps)}
+          onChange={(value) => {
+            const fps = Number(value);
+            if (fps === 1 || fps === 10 || fps === 25) {
+              setPlayback((current) => ({ ...current, fps }));
+            }
+          }}
+        >
+          <Label>fps</Label>
+          <Select.Trigger>
+            <Select.Value />
+            <Select.Indicator />
+          </Select.Trigger>
+          <Select.Popover>
+            <ListBox>
+              <ListBox.Item id="1" textValue="1">1</ListBox.Item>
+              <ListBox.Item id="10" textValue="10">10</ListBox.Item>
+              <ListBox.Item id="25" textValue="25">25</ListBox.Item>
+            </ListBox>
+          </Select.Popover>
+        </Select>
+        <div className="flex shrink-0 items-center gap-1 text-sm">
+          <Label>skip every</Label>
+          <Input
+            aria-label="Skip every N Frames"
+            className="w-16"
+            type="number"
+            min={1}
+            max={999}
+            step={1}
+            value={String(playback.skip)}
+            onChange={(event) => {
+              const skip = Number(event.target.value);
+              if (Number.isInteger(skip) && skip >= 1 && skip <= 999) {
+                setPlayback((current) => ({ ...current, skip }));
+              }
+            }}
+          />
+          <span>Frames</span>
+        </div>
+        <Slider
+          className="min-w-40 flex-1"
+          minValue={0}
+          maxValue={Math.max(0, (data?.frame_count ?? 0) - 1)}
+          step={1}
+          value={data?.frame_count ? frameIndex : 0}
+          isDisabled={!data || data.frame_count <= 0}
+          onChange={(value) => scrub(sliderNumber(value))}
+        >
+          <Label>Frame index</Label>
+          <Slider.Track>
+            <Slider.Fill />
+            <Slider.Thumb />
+          </Slider.Track>
+        </Slider>
+        <output className="w-24 shrink-0 text-right text-sm text-stone-600">{data ? `Frame ${frameIndex} of ${data.frame_count}` : "No Clip"}</output>
+        <div role="region" aria-label="Span HUD" className="min-w-64 max-w-[34rem] text-xs text-stone-600">
+          {hudTargets.length ? (
+            <>
+              <span className="font-medium text-stone-800">
+                {hudTargets.map((target) => target.kind === "class"
+                  ? `class: ${target.name}`
+                  : target.kind === "phase"
+                    ? `phase: ${target.name}`
+                    : `triplet: ${target.instrument} / ${target.verb} / ${target.target}`).join(" · ")}
+              </span>
+              {spanStart && spanStart.clipId === clipId ? ` · from Frame ${spanStart.frameIndex} · press ] or O to write` : " · ] or O writes this Frame"}
+            </>
+          ) : "No span target"}
+          {spanError ? <span className="ml-2 text-red-800">{spanError}</span> : null}
+        </div>
+      </footer>
     </main>
   );
 }
 
-function EditorCard({
-  title,
-  open,
-  onToggle,
-  summary,
-  children,
-}: {
-  title: string;
-  open: boolean;
-  onToggle: () => void;
-  summary: ReactNode;
-  children?: ReactNode;
-}) {
+function EmptyEditors() {
   return (
-    <section className="rounded border border-stone-300 bg-white p-2">
-      <h2 className="mb-2 text-lg font-semibold">
-        <button
-          type="button"
-          aria-expanded={open}
-          className="flex items-center gap-1"
-          onClick={onToggle}
-        >
-          <span aria-hidden="true">{open ? "▾" : "▸"}</span>
-          {title}
-        </button>
-      </h2>
-      {summary}
-      {open ? <div className="mt-2">{children}</div> : null}
-    </section>
+    <>
+      {(["class", "triplet", "phase"] as const).map((title) => (
+        <div key={title} data-editor-card={title}>
+          <h2 className="text-lg font-semibold">{title}</h2>
+          <p className="mt-2 text-sm text-stone-500">Choose a Clip to edit this Task type.</p>
+        </div>
+      ))}
+    </>
   );
 }
 
-function PhasePanel({
+function EditorShell({
+  title,
+  addLabel,
+  onAdd,
+  dragProps,
+  children,
+}: {
+  title: EditorKind;
+  addLabel: string;
+  onAdd: () => void;
+  dragProps?: EditorDragProps;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-editor-card={title}
+      className="flex shrink-0 flex-col gap-2"
+      onDragOver={dragProps?.onDragOver}
+      onDrop={dragProps?.onDrop}
+    >
+      <div className="flex items-center gap-2">
+        {dragProps ? (
+          <span
+            draggable
+            aria-label={`Reorder ${title}`}
+            className="cursor-grab active:cursor-grabbing"
+            onDragStart={dragProps.onDragStart}
+            onDragEnd={dragProps.onDragEnd}
+          >
+            <GripVertical size={15} aria-hidden="true" />
+          </span>
+        ) : null}
+        <h2 className="flex-1 text-lg font-semibold">{title}</h2>
+        <Button isIconOnly size="sm" variant="secondary" aria-label={addLabel} onPress={onAdd}>
+          <Plus size={16} />
+        </Button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function SelectionCheck({ label }: { label: string }) {
+  return (
+    <Checkbox slot="selection" aria-label={label} variant="secondary">
+      <Checkbox.Content>
+        <Checkbox.Control>
+          <Checkbox.Indicator />
+        </Checkbox.Control>
+      </Checkbox.Content>
+    </Checkbox>
+  );
+}
+
+function RowRemoveButton({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Button
+      isIconOnly
+      size="sm"
+      variant="ghost"
+      aria-label={label}
+      onPointerDown={(event) => event.stopPropagation()}
+      onPress={onPress}
+    >
+      <X size={14} />
+    </Button>
+  );
+}
+
+async function ensureVocabName(
+  listName: "phases" | "class_tags" | "instruments" | "verbs" | "targets",
+  raw: string,
+  names: string[],
+  mutateVocab: KeyedMutator<Vocab>,
+): Promise<string | null> {
+  const name = raw.trim();
+  if (!name) {
+    return null;
+  }
+  if (names.includes(name)) {
+    return name;
+  }
+  try {
+    const created = await sendJson<Vocab>(vocabListPath(listName), "POST", { name });
+    await mutateVocab(created, { revalidate: false });
+  } catch (err) {
+    if (!(err instanceof Error) || !err.message.includes("already present")) {
+      throw err;
+    }
+  }
+  return name;
+}
+
+function NameCombo({
+  ariaLabel,
+  names,
+  value,
+  listName,
+  mutateVocab,
+  onCommit,
+}: {
+  ariaLabel: string;
+  names: string[];
+  value: string;
+  listName: "instruments" | "verbs" | "targets";
+  mutateVocab: KeyedMutator<Vocab>;
+  onCommit: (name: string) => Promise<void>;
+}) {
+  const [text, setText] = useState(value);
+  const busy = useRef(false);
+
+  useEffect(() => {
+    setText(value);
+  }, [value]);
+
+  async function commit(raw: string) {
+    const name = raw.trim();
+    if (!name || busy.current) {
+      return;
+    }
+    busy.current = true;
+    try {
+      const added = await ensureVocabName(listName, name, names, mutateVocab);
+      if (added) {
+        setText(added);
+        if (added !== value) {
+          await onCommit(added);
+        }
+      }
+    } finally {
+      busy.current = false;
+    }
+  }
+
+  return (
+    <ComboBox
+      aria-label={ariaLabel}
+      allowsCustomValue
+      allowsEmptyCollection
+      inputValue={text}
+      menuTrigger="focus"
+      selectedKey={names.includes(value) ? value : null}
+      onInputChange={setText}
+      onSelectionChange={(key: Key | null) => {
+        if (key != null) {
+          void commit(String(key));
+        }
+      }}
+    >
+      <ComboBox.InputGroup>
+        <Input
+          aria-label={ariaLabel}
+          onBlur={() => {
+            if (text.trim() && text.trim() !== value) {
+              void commit(text);
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void commit(text);
+            }
+          }}
+        />
+        <ComboBox.Trigger />
+      </ComboBox.InputGroup>
+      <ComboBox.Popover>
+        <ListBox>
+          {names.map((name) => (
+            <ListBox.Item key={name} id={name} textValue={name}>
+              {name}
+            </ListBox.Item>
+          ))}
+        </ListBox>
+      </ComboBox.Popover>
+    </ComboBox>
+  );
+}
+
+function PhaseTable({
   clipId,
   frameIndex,
   frameCount,
@@ -246,6 +797,7 @@ function PhasePanel({
   phases,
   mutatePhase,
   mutateVocab,
+  dragProps,
 }: {
   clipId: string;
   frameIndex: number;
@@ -254,17 +806,13 @@ function PhasePanel({
   phases: string[];
   mutatePhase: KeyedMutator<PhaseDoc>;
   mutateVocab: KeyedMutator<Vocab>;
+  dragProps?: EditorDragProps;
 }) {
-  const [phaseName, setPhaseName] = useState("");
-  const [fromText, setFromText] = useState("0");
-  const [toText, setToText] = useState("0");
-  const [newName, setNewName] = useState("");
+  const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const selected = phases.includes(phaseName) ? phaseName : (phases[0] ?? "");
   const currentPhase = framePhaseName(phaseFrames, frameIndex);
-  const phaseForm = useDeskStore((s) => s.phaseForm);
-  const togglePhaseForm = useDeskStore((s) => s.togglePhaseForm);
+  const selectedKeys: Selection = currentPhase ? new Set([currentPhase]) : new Set();
 
   async function run(op: () => Promise<void>) {
     setBusy(true);
@@ -279,139 +827,90 @@ function PhasePanel({
   }
 
   return (
-    <EditorCard
-      title="phase"
-      open={phaseForm}
-      onToggle={togglePhaseForm}
-      summary={
-        <>
-          <p className="mb-2 text-stone-600">
-            This Frame: {currentPhase ?? "unlabeled"}
-          </p>
-          <button
-            type="button"
-            className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-            disabled={busy || frameCount <= 0}
-            onClick={() =>
-              run(async () => {
-                const doc = await sendJson<PhaseDoc>(
-                  phaseFramePath(clipId, frameIndex),
-                  "PUT",
-                  { phase: null },
-                );
+    <EditorShell title="phase" addLabel="Add phase" dragProps={dragProps} onAdd={() => setDraft("")}>
+      <Table>
+        <Table.ScrollContainer>
+          <Table.Content
+            aria-label="phase"
+            selectionMode="single"
+            selectedKeys={selectedKeys}
+            onSelectionChange={(selection) => {
+              if (busy || frameCount <= 0) {
+                return;
+              }
+              const name = namesFromSelection(selection, phases)[0];
+              if (!name || name === currentPhase) {
+                return;
+              }
+              void run(async () => {
+                const doc = await sendJson<PhaseDoc>(phaseFramePath(clipId, frameIndex), "PUT", { phase: name });
                 await mutatePhase(doc, { revalidate: false });
-              })
-            }
+              });
+            }}
           >
-            Clear this Frame&apos;s phase
-          </button>
-          {error ? <p className="mt-2 text-red-800">{error}</p> : null}
-        </>
-      }
-    >
-      <div className="mb-3 flex flex-wrap items-end gap-2">
-        <label className="text-sm">
-          phase
-          <select
-            className="ml-1 border border-stone-300 bg-white p-1"
-            value={selected}
-            onChange={(e) => setPhaseName(e.target.value)}
-            disabled={!phases.length || busy}
-          >
-            {phases.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          from
-          <input
-            className="ml-1 w-16 border border-stone-300 bg-white p-1"
-            type="number"
-            min={0}
-            max={Math.max(0, frameCount - 1)}
-            value={fromText}
-            onChange={(e) => setFromText(e.target.value)}
-            disabled={busy}
-          />
-        </label>
-        <label className="text-sm">
-          to
-          <input
-            className="ml-1 w-16 border border-stone-300 bg-white p-1"
-            type="number"
-            min={0}
-            max={Math.max(0, frameCount - 1)}
-            value={toText}
-            onChange={(e) => setToText(e.target.value)}
-            disabled={busy}
-          />
-        </label>
-        <button
-          type="button"
-          className="rounded bg-emerald-800 px-3 py-1 text-sm text-white disabled:opacity-50"
-          disabled={busy || !selected || frameCount <= 0}
-          onClick={() =>
-            run(async () => {
-              const doc = await sendJson<PhaseDoc>(
-                phaseSpanPath(clipId),
-                "POST",
-                {
-                  phase: selected,
-                  from: Number(fromText),
-                  to: Number(toText),
-                },
-              );
-              await mutatePhase(doc, { revalidate: false });
-            })
-          }
-        >
-          Write span
-        </button>
-      </div>
-      <details>
-        <summary className="cursor-pointer text-sm">new phase name</summary>
-        <div className="mt-2 flex flex-wrap items-end gap-2">
-          <label className="text-sm">
-            new phase name
-            <input
-              className="ml-1 border border-stone-300 bg-white p-1"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              disabled={busy}
-            />
-          </label>
-          <button
-            type="button"
-            className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-            disabled={busy || !newName.trim()}
-            onClick={() =>
-              run(async () => {
-                const created = await sendJson<Vocab>(
-                  vocabListPath("phases"),
-                  "POST",
-                  { name: newName },
-                );
-                setNewName("");
-                await mutateVocab(created, { revalidate: false });
-                const added = created.phases[created.phases.length - 1];
-                if (added) {
-                  setPhaseName(added);
-                }
-              })
-            }
-          >
-            Add phase name
-          </button>
-        </div>
-      </details>
-    </EditorCard>
+            <Table.Header>
+              <Table.Column isRowHeader>phase</Table.Column>
+              <Table.Column />
+            </Table.Header>
+            <Table.Body>
+              {phases.map((name) => (
+                <Table.Row key={name} id={name}>
+                  <Table.Cell>{name}</Table.Cell>
+                  <Table.Cell>
+                    <RowRemoveButton
+                      label={`Clear ${name}`}
+                      onPress={() => {
+                        if (busy || frameCount <= 0) {
+                          return;
+                        }
+                        void run(async () => {
+                          const doc = await sendJson<PhaseDoc>(phaseFramePath(clipId, frameIndex), "PUT", { phase: null });
+                          await mutatePhase(doc, { revalidate: false });
+                        });
+                      }}
+                    />
+                  </Table.Cell>
+                </Table.Row>
+              ))}
+              {draft != null ? (
+                <Table.Row id="__draft__">
+                  <Table.Cell>
+                    <Input
+                      autoFocus
+                      aria-label="New phase name"
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void run(async () => {
+                            const name = await ensureVocabName("phases", draft, phases, mutateVocab);
+                            if (!name) {
+                              return;
+                            }
+                            const doc = await sendJson<PhaseDoc>(phaseFramePath(clipId, frameIndex), "PUT", { phase: name });
+                            await mutatePhase(doc, { revalidate: false });
+                            setDraft(null);
+                          });
+                        }
+                      }}
+                    />
+                  </Table.Cell>
+                  <Table.Cell>
+                    <RowRemoveButton label="Cancel new phase" onPress={() => setDraft(null)} />
+                  </Table.Cell>
+                </Table.Row>
+              ) : null}
+            </Table.Body>
+          </Table.Content>
+        </Table.ScrollContainer>
+      </Table>
+      {error ? <p className="text-sm text-red-800">{error}</p> : null}
+    </EditorShell>
   );
 }
 
-function ClassPanel({
+function ClassTable({
   clipId,
   frameIndex,
   frameCount,
@@ -419,6 +918,7 @@ function ClassPanel({
   classTags,
   mutateClass,
   mutateVocab,
+  dragProps,
 }: {
   clipId: string;
   frameIndex: number;
@@ -427,13 +927,13 @@ function ClassPanel({
   classTags: string[];
   mutateClass: KeyedMutator<ClassDoc>;
   mutateVocab: KeyedMutator<Vocab>;
+  dragProps?: EditorDragProps;
 }) {
-  const [newName, setNewName] = useState("");
+  const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const current = frameClassTags(classFrames, frameIndex);
-  const classBody = useDeskStore((s) => s.classBody);
-  const toggleClassBody = useDeskStore((s) => s.toggleClassBody);
+  const selectedKeys: Selection = new Set(current);
 
   async function run(op: () => Promise<void>) {
     setBusy(true);
@@ -448,86 +948,96 @@ function ClassPanel({
   }
 
   return (
-    <EditorCard
-      title="class"
-      open={classBody}
-      onToggle={toggleClassBody}
-      summary={
-        <>
-          <p className="mb-2 text-stone-600">
-            This Frame: {current.length ? current.join(", ") : "unlabeled"}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {classTags.map((name) => {
-              const on = current.includes(name);
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  aria-pressed={on}
-                  className={`rounded-full border px-3 py-1 text-sm disabled:opacity-50 ${
-                    on
-                      ? "border-emerald-700 bg-emerald-800 text-white"
-                      : "border-stone-400 bg-white"
-                  }`}
-                  disabled={busy || frameCount <= 0}
-                  onClick={() =>
-                    run(async () => {
-                      const doc = await sendJson<ClassDoc>(
-                        classFramePath(clipId, frameIndex),
-                        "PUT",
-                        { tags: toggleClassTag(current, name) },
-                      );
-                      await mutateClass(doc, { revalidate: false });
-                    })
-                  }
-                >
-                  {name}
-                </button>
-              );
-            })}
-          </div>
-          {error ? <p className="mt-2 text-red-800">{error}</p> : null}
-        </>
-      }
-    >
-      <details>
-        <summary className="cursor-pointer text-sm">new class name</summary>
-        <div className="mt-2 flex flex-wrap items-end gap-2">
-          <label className="text-sm">
-            new class name
-            <input
-              className="ml-1 border border-stone-300 bg-white p-1"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              disabled={busy}
-            />
-          </label>
-          <button
-            type="button"
-            className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-            disabled={busy || !newName.trim()}
-            onClick={() =>
-              run(async () => {
-                const created = await sendJson<Vocab>(
-                  vocabListPath("class_tags"),
-                  "POST",
-                  { name: newName },
-                );
-                setNewName("");
-                await mutateVocab(created, { revalidate: false });
-              })
-            }
+    <EditorShell title="class" addLabel="Add class tag" dragProps={dragProps} onAdd={() => setDraft("")}>
+      <Table>
+        <Table.ScrollContainer>
+          <Table.Content
+            aria-label="class"
+            selectionMode="multiple"
+            selectedKeys={selectedKeys}
+            onSelectionChange={(selection) => {
+              if (busy || frameCount <= 0) {
+                return;
+              }
+              const tags = namesFromSelection(selection, classTags);
+              const same = tags.length === current.length && tags.every((tag) => current.includes(tag));
+              if (same) {
+                return;
+              }
+              void run(async () => {
+                const doc = await sendJson<ClassDoc>(classFramePath(clipId, frameIndex), "PUT", { tags });
+                await mutateClass(doc, { revalidate: false });
+              });
+            }}
           >
-            Add class name
-          </button>
-        </div>
-      </details>
-    </EditorCard>
+            <Table.Header>
+              <Table.Column isRowHeader>class</Table.Column>
+              <Table.Column />
+            </Table.Header>
+            <Table.Body>
+              {classTags.map((name) => (
+                <Table.Row key={name} id={name}>
+                  <Table.Cell>{name}</Table.Cell>
+                  <Table.Cell>
+                    <RowRemoveButton
+                      label={`Turn off ${name}`}
+                      onPress={() => {
+                        if (busy || frameCount <= 0 || !current.includes(name)) {
+                          return;
+                        }
+                        void run(async () => {
+                          const doc = await sendJson<ClassDoc>(
+                            classFramePath(clipId, frameIndex),
+                            "PUT",
+                            { tags: current.filter((tag) => tag !== name) },
+                          );
+                          await mutateClass(doc, { revalidate: false });
+                        });
+                      }}
+                    />
+                  </Table.Cell>
+                </Table.Row>
+              ))}
+              {draft != null ? (
+                <Table.Row id="__draft__">
+                  <Table.Cell>
+                    <Input
+                      autoFocus
+                      aria-label="New class tag"
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void run(async () => {
+                            const name = await ensureVocabName("class_tags", draft, classTags, mutateVocab);
+                            if (!name) {
+                              return;
+                            }
+                            const tags = current.includes(name) ? current : [...current, name];
+                            const doc = await sendJson<ClassDoc>(classFramePath(clipId, frameIndex), "PUT", { tags });
+                            await mutateClass(doc, { revalidate: false });
+                            setDraft(null);
+                          });
+                        }
+                      }}
+                    />
+                  </Table.Cell>
+                  <Table.Cell>
+                    <RowRemoveButton label="Cancel new class tag" onPress={() => setDraft(null)} />
+                  </Table.Cell>
+                </Table.Row>
+              ) : null}
+            </Table.Body>
+          </Table.Content>
+        </Table.ScrollContainer>
+      </Table>
+      {error ? <p className="text-sm text-red-800">{error}</p> : null}
+    </EditorShell>
   );
 }
 
-function TripletPanel({
+function TripletTable({
   clipId,
   frameIndex,
   frameCount,
@@ -537,6 +1047,8 @@ function TripletPanel({
   targets,
   mutateTriplet,
   mutateVocab,
+  dragProps,
+  onSpanRows,
 }: {
   clipId: string;
   frameIndex: number;
@@ -547,244 +1059,218 @@ function TripletPanel({
   targets: string[];
   mutateTriplet: KeyedMutator<TripletDoc>;
   mutateVocab: KeyedMutator<Vocab>;
+  dragProps?: EditorDragProps;
+  onSpanRows: (rows: TripletSpanRow[]) => void;
 }) {
-  const [instrument, setInstrument] = useState("");
-  const [verb, setVerb] = useState("");
-  const [target, setTarget] = useState("");
-  const [newInstrument, setNewInstrument] = useState("");
-  const [newVerb, setNewVerb] = useState("");
-  const [newTarget, setNewTarget] = useState("");
+  const [drafts, setDrafts] = useState<{ localId: string; instrument: string; verb: string; target: string }[]>([]);
+  const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set());
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const selectedInstrument = instruments.includes(instrument)
-    ? instrument
-    : (instruments[0] ?? "");
-  const selectedVerb = verbs.includes(verb) ? verb : (verbs[0] ?? "");
-  const selectedTarget = targets.includes(target) ? target : (targets[0] ?? "");
+  const posting = useRef(new Set<string>());
   const current = frameTripletRows(tripletFrames, frameIndex);
-  const tripletForm = useDeskStore((s) => s.tripletForm);
-  const toggleTripletForm = useDeskStore((s) => s.toggleTripletForm);
+
+  useEffect(() => {
+    setDrafts([]);
+    setSelectedKeys(new Set());
+    onSpanRows([]);
+  }, [clipId, frameIndex, onSpanRows]);
+
+  function reportSpan(nextKeys: Selection, nextDrafts = drafts) {
+    const selected = new Set(nextKeys === "all" ? current.map((row) => String(row.id)) : [...nextKeys].map(String));
+    const rows: TripletSpanRow[] = [
+      ...current.filter((row) => selected.has(String(row.id))),
+      ...nextDrafts.filter((row) => selected.has(row.localId) && completeTriplet(row)),
+    ];
+    onSpanRows(rows);
+  }
 
   async function run(op: () => Promise<void>) {
-    setBusy(true);
     setError(null);
     try {
       await op();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Write failed");
-    } finally {
-      setBusy(false);
     }
   }
 
-  function addVocabName(
-    listName: "instruments" | "verbs" | "targets",
-    name: string,
-    clear: () => void,
-    pick: (added: string) => void,
-  ) {
-    return run(async () => {
-      const created = await sendJson<Vocab>(vocabListPath(listName), "POST", {
-        name,
+  async function persistDraft(draft: { localId: string; instrument: string; verb: string; target: string }) {
+    if (!completeTriplet(draft) || frameCount <= 0 || posting.current.has(draft.localId)) {
+      return;
+    }
+    posting.current.add(draft.localId);
+    try {
+      await sendJson<TripletRow>(tripletFramePath(clipId, frameIndex), "POST", {
+        instrument: draft.instrument,
+        verb: draft.verb,
+        target: draft.target,
       });
-      clear();
-      await mutateVocab(created, { revalidate: false });
-      const added = created[listName][created[listName].length - 1];
-      if (added) {
-        pick(added);
-      }
-    });
+      await mutateTriplet();
+      setDrafts((rows) => rows.filter((row) => row.localId !== draft.localId));
+    } finally {
+      posting.current.delete(draft.localId);
+    }
+  }
+
+  async function patchRow(row: TripletRow, patch: Partial<TripletSpanRow>) {
+    const next = {
+      instrument: patch.instrument ?? row.instrument,
+      verb: patch.verb ?? row.verb,
+      target: patch.target ?? row.target,
+    };
+    if (!completeTriplet(next)) {
+      return;
+    }
+    const doc = await sendJson<TripletDoc>(tripletRowPath(clipId, frameIndex, row.id), "PUT", next);
+    await mutateTriplet(doc, { revalidate: false });
   }
 
   return (
-    <EditorCard
+    <EditorShell
       title="triplet"
-      open={tripletForm}
-      onToggle={toggleTripletForm}
-      summary={
-        <>
-          <p className="mb-2 text-stone-600">
-            This Frame:{" "}
-            {current.length ? `${current.length} row(s)` : "unlabeled"}
-          </p>
-          <ul className="space-y-1">
-            {current.map((row) => (
-              <li
-                key={row.id}
-                className="flex flex-wrap items-center gap-2 text-sm"
-              >
-                <span>
-                  #{row.id} {row.instrument} / {row.verb} / {row.target}
-                </span>
-                <button
-                  type="button"
-                  className="rounded border border-stone-400 bg-white px-2 py-0.5 text-sm disabled:opacity-50"
-                  disabled={busy}
-                  onClick={() =>
-                    run(async () => {
-                      const doc = await sendJson<TripletDoc>(
-                        tripletRowPath(clipId, frameIndex, row.id),
-                        "DELETE",
-                      );
-                      await mutateTriplet(doc, { revalidate: false });
-                    })
-                  }
-                >
-                  Delete
-                </button>
-              </li>
-            ))}
-          </ul>
-          {error ? <p className="mt-2 text-red-800">{error}</p> : null}
-        </>
-      }
+      addLabel="Add triplet row"
+      dragProps={dragProps}
+      onAdd={() => setDrafts((rows) => [...rows, { localId: `draft-${Date.now()}`, instrument: "", verb: "", target: "" }])}
     >
-      <div className="mb-3 flex flex-wrap items-end gap-2">
-        <label className="text-sm">
-          instrument
-          <select
-            className="ml-1 border border-stone-300 bg-white p-1"
-            value={selectedInstrument}
-            onChange={(e) => setInstrument(e.target.value)}
-            disabled={!instruments.length || busy}
+      <Table>
+        <Table.ScrollContainer>
+          <Table.Content
+            aria-label="triplet"
+            selectionMode="multiple"
+            selectedKeys={selectedKeys}
+            onSelectionChange={(selection) => {
+              setSelectedKeys(selection);
+              reportSpan(selection);
+            }}
           >
-            {instruments.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          verb
-          <select
-            className="ml-1 border border-stone-300 bg-white p-1"
-            value={selectedVerb}
-            onChange={(e) => setVerb(e.target.value)}
-            disabled={!verbs.length || busy}
-          >
-            {verbs.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          target
-          <select
-            className="ml-1 border border-stone-300 bg-white p-1"
-            value={selectedTarget}
-            onChange={(e) => setTarget(e.target.value)}
-            disabled={!targets.length || busy}
-          >
-            {targets.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          className="rounded bg-emerald-800 px-3 py-1 text-sm text-white disabled:opacity-50"
-          disabled={
-            busy ||
-            frameCount <= 0 ||
-            !selectedInstrument ||
-            !selectedVerb ||
-            !selectedTarget
-          }
-          onClick={() =>
-            run(async () => {
-              await sendJson<TripletRow>(
-                tripletFramePath(clipId, frameIndex),
-                "POST",
-                {
-                  instrument: selectedInstrument,
-                  verb: selectedVerb,
-                  target: selectedTarget,
-                },
-              );
-              await mutateTriplet();
-            })
-          }
-        >
-          Add row
-        </button>
-      </div>
-      <details>
-        <summary className="cursor-pointer text-sm">new names</summary>
-        <div className="mt-2 flex flex-wrap items-end gap-2">
-          <label className="text-sm">
-            new instrument
-            <input
-              className="ml-1 border border-stone-300 bg-white p-1"
-              value={newInstrument}
-              onChange={(e) => setNewInstrument(e.target.value)}
-              disabled={busy}
-            />
-          </label>
-          <button
-            type="button"
-            className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-            disabled={busy || !newInstrument.trim()}
-            onClick={() =>
-              addVocabName(
-                "instruments",
-                newInstrument,
-                () => setNewInstrument(""),
-                setInstrument,
-              )
-            }
-          >
-            Add instrument
-          </button>
-          <label className="text-sm">
-            new verb
-            <input
-              className="ml-1 border border-stone-300 bg-white p-1"
-              value={newVerb}
-              onChange={(e) => setNewVerb(e.target.value)}
-              disabled={busy}
-            />
-          </label>
-          <button
-            type="button"
-            className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-            disabled={busy || !newVerb.trim()}
-            onClick={() =>
-              addVocabName("verbs", newVerb, () => setNewVerb(""), setVerb)
-            }
-          >
-            Add verb
-          </button>
-          <label className="text-sm">
-            new target
-            <input
-              className="ml-1 border border-stone-300 bg-white p-1"
-              value={newTarget}
-              onChange={(e) => setNewTarget(e.target.value)}
-              disabled={busy}
-            />
-          </label>
-          <button
-            type="button"
-            className="rounded border border-stone-400 bg-white px-3 py-1 text-sm disabled:opacity-50"
-            disabled={busy || !newTarget.trim()}
-            onClick={() =>
-              addVocabName(
-                "targets",
-                newTarget,
-                () => setNewTarget(""),
-                setTarget,
-              )
-            }
-          >
-            Add target
-          </button>
-        </div>
-      </details>
-    </EditorCard>
+            <Table.Header>
+              <Table.Column>
+                <SelectionCheck label="Select all triplet rows" />
+              </Table.Column>
+              <Table.Column isRowHeader>instrument</Table.Column>
+              <Table.Column>verb</Table.Column>
+              <Table.Column>target</Table.Column>
+              <Table.Column />
+            </Table.Header>
+            <Table.Body>
+              {current.map((row) => (
+                <Table.Row key={row.id} id={String(row.id)}>
+                  <Table.Cell>
+                    <SelectionCheck label={`Select row ${row.id}`} />
+                  </Table.Cell>
+                  <Table.Cell>
+                    <NameCombo
+                      ariaLabel="instrument"
+                      names={instruments}
+                      value={row.instrument}
+                      listName="instruments"
+                      mutateVocab={mutateVocab}
+                      onCommit={(name) => run(() => patchRow(row, { instrument: name }))}
+                    />
+                  </Table.Cell>
+                  <Table.Cell>
+                    <NameCombo
+                      ariaLabel="verb"
+                      names={verbs}
+                      value={row.verb}
+                      listName="verbs"
+                      mutateVocab={mutateVocab}
+                      onCommit={(name) => run(() => patchRow(row, { verb: name }))}
+                    />
+                  </Table.Cell>
+                  <Table.Cell>
+                    <NameCombo
+                      ariaLabel="target"
+                      names={targets}
+                      value={row.target}
+                      listName="targets"
+                      mutateVocab={mutateVocab}
+                      onCommit={(name) => run(() => patchRow(row, { target: name }))}
+                    />
+                  </Table.Cell>
+                  <Table.Cell>
+                    <RowRemoveButton
+                      label="Delete row"
+                      onPress={() => {
+                        void run(async () => {
+                          const doc = await sendJson<TripletDoc>(tripletRowPath(clipId, frameIndex, row.id), "DELETE");
+                          await mutateTriplet(doc, { revalidate: false });
+                        });
+                      }}
+                    />
+                  </Table.Cell>
+                </Table.Row>
+              ))}
+              {drafts.map((draft) => (
+                <Table.Row key={draft.localId} id={draft.localId}>
+                  <Table.Cell>
+                    <SelectionCheck label="Select draft row" />
+                  </Table.Cell>
+                  <Table.Cell>
+                    <NameCombo
+                      ariaLabel="instrument"
+                      names={instruments}
+                      value={draft.instrument}
+                      listName="instruments"
+                      mutateVocab={mutateVocab}
+                      onCommit={(name) => run(async () => {
+                        let next = { ...draft, instrument: name };
+                        setDrafts((rows) => {
+                          const current = rows.find((row) => row.localId === draft.localId) ?? draft;
+                          next = { ...current, instrument: name };
+                          return rows.map((row) => row.localId === draft.localId ? next : row);
+                        });
+                        await persistDraft(next);
+                      })}
+                    />
+                  </Table.Cell>
+                  <Table.Cell>
+                    <NameCombo
+                      ariaLabel="verb"
+                      names={verbs}
+                      value={draft.verb}
+                      listName="verbs"
+                      mutateVocab={mutateVocab}
+                      onCommit={(name) => run(async () => {
+                        let next = { ...draft, verb: name };
+                        setDrafts((rows) => {
+                          const current = rows.find((row) => row.localId === draft.localId) ?? draft;
+                          next = { ...current, verb: name };
+                          return rows.map((row) => row.localId === draft.localId ? next : row);
+                        });
+                        await persistDraft(next);
+                      })}
+                    />
+                  </Table.Cell>
+                  <Table.Cell>
+                    <NameCombo
+                      ariaLabel="target"
+                      names={targets}
+                      value={draft.target}
+                      listName="targets"
+                      mutateVocab={mutateVocab}
+                      onCommit={(name) => run(async () => {
+                        let next = { ...draft, target: name };
+                        setDrafts((rows) => {
+                          const current = rows.find((row) => row.localId === draft.localId) ?? draft;
+                          next = { ...current, target: name };
+                          return rows.map((row) => row.localId === draft.localId ? next : row);
+                        });
+                        await persistDraft(next);
+                      })}
+                    />
+                  </Table.Cell>
+                  <Table.Cell>
+                    <RowRemoveButton
+                      label="Delete row"
+                      onPress={() => setDrafts((rows) => rows.filter((row) => row.localId !== draft.localId))}
+                    />
+                  </Table.Cell>
+                </Table.Row>
+              ))}
+            </Table.Body>
+          </Table.Content>
+        </Table.ScrollContainer>
+      </Table>
+      {error ? <p className="text-sm text-red-800">{error}</p> : null}
+    </EditorShell>
   );
 }

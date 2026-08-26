@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -14,6 +16,17 @@ class TripletBody(BaseModel):
     instrument: str = Field(..., min_length=1)
     verb: str = Field(..., min_length=1)
     target: str = Field(..., min_length=1)
+
+
+class TripletSpanBody(BaseModel):
+    instrument: str = Field(..., min_length=1)
+    verb: str = Field(..., min_length=1)
+    target: str = Field(..., min_length=1)
+    from_frame: int = Field(..., ge=0, alias="from")
+    to_frame: int = Field(..., ge=0, alias="to")
+    op: Literal["add", "remove"]
+
+    model_config = {"populate_by_name": True}
 
 
 def make_router(settings: Settings) -> APIRouter:
@@ -30,6 +43,17 @@ def make_router(settings: Settings) -> APIRouter:
             return 1
         return max(int(r.get("id", 0)) for r in rows) + 1
 
+    def _require_triplet_names(instrument: str, verb: str, target: str) -> None:
+        vocab = labels_store.load_vocab(settings)
+        for list_name, value, label in (
+            ("instruments", instrument, "instrument"),
+            ("verbs", verb, "verb"),
+            ("targets", target, "target"),
+        ):
+            names = vocab.get(list_name) or []
+            if value not in names:
+                raise HTTPException(status_code=400, detail=f"unknown {label}: {value}")
+
     @router.get("/api/triplet/{clip_id}")
     def get_clip_triplet(clip_id: str) -> dict:
         _meta(clip_id)
@@ -41,15 +65,7 @@ def make_router(settings: Settings) -> APIRouter:
         n = int(meta["frame_count"])
         if frame_index < 0 or frame_index >= n:
             raise HTTPException(status_code=404, detail=f"Frame index out of range: {frame_index}")
-        vocab = labels_store.load_vocab(settings)
-        for list_name, value, label in (
-            ("instruments", body.instrument, "instrument"),
-            ("verbs", body.verb, "verb"),
-            ("targets", body.target, "target"),
-        ):
-            names = vocab.get(list_name) or []
-            if value not in names:
-                raise HTTPException(status_code=400, detail=f"unknown {label}: {value}")
+        _require_triplet_names(body.instrument, body.verb, body.target)
         doc = labels_store.load_clip(settings, "triplet", clip_id)
         key = str(frame_index)
         rows = list(doc["frames"].get(key) or [])
@@ -63,6 +79,78 @@ def make_router(settings: Settings) -> APIRouter:
         doc["frames"][key] = rows
         labels_store.save_clip(settings, "triplet", clip_id, doc)
         return row
+
+    @router.put("/api/triplet/{clip_id}/frames/{frame_index}/{triplet_id}")
+    def put_triplet(clip_id: str, frame_index: int, triplet_id: int, body: TripletBody) -> dict:
+        meta = _meta(clip_id)
+        n = int(meta["frame_count"])
+        if frame_index < 0 or frame_index >= n:
+            raise HTTPException(status_code=404, detail=f"Frame index out of range: {frame_index}")
+        _require_triplet_names(body.instrument, body.verb, body.target)
+        doc = labels_store.load_clip(settings, "triplet", clip_id)
+        key = str(frame_index)
+        rows = list(doc["frames"].get(key) or [])
+        found = False
+        for row in rows:
+            if int(row.get("id", -1)) == triplet_id:
+                row["instrument"] = body.instrument
+                row["verb"] = body.verb
+                row["target"] = body.target
+                found = True
+                break
+        if not found:
+            raise HTTPException(status_code=404, detail=f"triplet not found: {triplet_id}")
+        doc["frames"][key] = rows
+        labels_store.save_clip(settings, "triplet", clip_id, doc)
+        return doc
+
+    @router.post("/api/triplet/{clip_id}/span")
+    def paint_span(clip_id: str, body: TripletSpanBody) -> dict:
+        meta = _meta(clip_id)
+        n = int(meta["frame_count"])
+        a, b = body.from_frame, body.to_frame
+        if a > b:
+            a, b = b, a
+        if a < 0 or b >= n:
+            raise HTTPException(status_code=400, detail="span out of range")
+        _require_triplet_names(body.instrument, body.verb, body.target)
+
+        doc = labels_store.load_clip(settings, "triplet", clip_id)
+        for i in range(a, b + 1):
+            key = str(i)
+            rows = list(doc["frames"].get(key) or [])
+            if body.op == "add":
+                if not any(
+                    row.get("instrument") == body.instrument
+                    and row.get("verb") == body.verb
+                    and row.get("target") == body.target
+                    for row in rows
+                ):
+                    rows.append(
+                        {
+                            "id": _next_id(rows),
+                            "instrument": body.instrument,
+                            "verb": body.verb,
+                            "target": body.target,
+                        }
+                    )
+            else:
+                rows = [
+                    row
+                    for row in rows
+                    if not (
+                        row.get("instrument") == body.instrument
+                        and row.get("verb") == body.verb
+                        and row.get("target") == body.target
+                    )
+                ]
+            if rows:
+                doc["frames"][key] = rows
+            else:
+                doc["frames"].pop(key, None)
+
+        labels_store.save_clip(settings, "triplet", clip_id, doc)
+        return doc
 
     @router.delete("/api/triplet/{clip_id}/frames/{frame_index}/{triplet_id}")
     def delete_triplet(clip_id: str, frame_index: int, triplet_id: int) -> dict:

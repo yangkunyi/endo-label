@@ -21,12 +21,16 @@ One exclusive surgical step along a Clip. Canonical store: one Phase per Frame. 
 _Avoid_: class (stackable), step (procedure documents)
 
 **Frame class** (spoken **class**):
-A named flag on a Frame that can stack with others (tool present, `blurred`, …). Names are a customizable list.
+A named flag on a Frame that can stack with others (tool present, `blurred`, …). Names are a customizable list. The labeler may paint one flag on or off across an interval; other flags on those Frames stay.
 _Avoid_: Phase; CVS as its own task type
 
 **Triplet** (spoken **triplet**):
-A row on a Frame: instrument, verb, target. Several rows per Frame. Does not require a Track. Vocabularies are customizable lists.
-_Avoid_: action, relation
+A row on a Frame: instrument, verb, target. Several rows per Frame. Does not require a Track. Vocabularies are customizable lists. The labeler may paint one row on or off across an interval; painting on skips a Frame that already holds that triple.
+_Avoid_: action, relation; subject–verb–object as the column names
+
+**Vocab name**:
+A string on a desk-wide list (phases, class tags, instruments, verbs, targets). Renaming a phase or class-tag name rewrites every Frame that stored the old string for that list. It is not a per-Clip display alias.
+_Avoid_: renaming only the picker label while leaving old strings on disk
 
 **mask**:
 Pixel silhouette on a Track-on-Frame. Predict writes this Frame only. Propagate (SAM 3.1) fills other Frames. Propagate does not write phase, class, or triplet.

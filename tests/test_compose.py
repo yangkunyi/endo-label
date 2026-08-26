@@ -301,6 +301,278 @@ def test_class_tags_stay_unique_on_a_frame(client: TestClient) -> None:
     assert put.json()["frames"]["0"] == ["grasper", "blurred"]
 
 
+def test_class_span_unions_one_tag_across_inclusive_range(client: TestClient) -> None:
+    client.put("/api/class/CLIPA/frames/0", json={"tags": ["blurred"]})
+    client.put("/api/class/CLIPA/frames/1", json={"tags": ["hook"]})
+    painted = client.post(
+        "/api/class/CLIPA/span",
+        json={"tag": "grasper", "from": 1, "to": 0, "on": True},
+    )
+    assert painted.status_code == 200
+    assert painted.json()["frames"] == {
+        "0": ["blurred", "grasper"],
+        "1": ["hook", "grasper"],
+    }
+
+
+def test_class_span_on_is_idempotent_and_preserves_other_flags(client: TestClient) -> None:
+    client.put("/api/class/CLIPA/frames/0", json={"tags": ["blurred", "grasper"]})
+    first = client.post(
+        "/api/class/CLIPA/span",
+        json={"tag": "grasper", "from": 0, "to": 1, "on": True},
+    )
+    second = client.post(
+        "/api/class/CLIPA/span",
+        json={"tag": "grasper", "from": 0, "to": 1, "on": True},
+    )
+    assert first.status_code == second.status_code == 200
+    assert second.json()["frames"] == {
+        "0": ["blurred", "grasper"],
+        "1": ["grasper"],
+    }
+
+
+def test_class_span_off_removes_only_tag_and_drops_empty_frames(client: TestClient) -> None:
+    client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper", "blurred"]})
+    client.put("/api/class/CLIPA/frames/1", json={"tags": ["grasper"]})
+    painted = client.post(
+        "/api/class/CLIPA/span",
+        json={"tag": "grasper", "from": 0, "to": 1, "on": False},
+    )
+    assert painted.status_code == 200
+    assert painted.json()["frames"] == {"0": ["blurred"]}
+
+
+def test_class_span_rejects_bad_range_or_vocab_without_partial_change(client: TestClient) -> None:
+    client.put("/api/class/CLIPA/frames/0", json={"tags": ["blurred"]})
+    outside = client.post(
+        "/api/class/CLIPA/span",
+        json={"tag": "grasper", "from": 0, "to": 2, "on": True},
+    )
+    unknown = client.post(
+        "/api/class/CLIPA/span",
+        json={"tag": "NotAClass", "from": 0, "to": 1, "on": True},
+    )
+    assert outside.status_code == unknown.status_code == 400
+    assert client.get("/api/class/CLIPA").json()["frames"] == {"0": ["blurred"]}
+
+
+def test_class_span_leaves_phase_triplet_and_session_untouched(client: TestClient) -> None:
+    client.post(
+        "/api/phase/CLIPA/span",
+        json={"phase": "Preparation", "from": 0, "to": 1},
+    )
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    painted = client.post(
+        "/api/class/CLIPA/span",
+        json={"tag": "blurred", "from": 0, "to": 1, "on": True},
+    )
+    assert painted.status_code == 200
+    assert client.get("/api/phase/CLIPA").json()["frames"] == {
+        "0": "Preparation",
+        "1": "Preparation",
+    }
+    assert client.get("/api/triplet/CLIPA").json()["frames"]["0"][0]["id"] == 1
+    assert client.get("/api/session").json().get("active") is False
+
+
+def test_class_span_is_durable_across_app_instances(tmp_path: Path) -> None:
+    frames = tmp_path / "frames"
+    clip = frames / "CLIPA"
+    clip.mkdir(parents=True)
+    (clip / "00001.jpg").write_bytes(b"fake-jpeg-0")
+    (clip / "00002.jpg").write_bytes(b"fake-jpeg-1")
+    settings = Settings(
+        frames_root=frames,
+        clip_allowlist=("CLIPA",),
+        annotations_root=tmp_path / "mask",
+        labels_root=tmp_path / "labels",
+        predictor_backend="fake",
+    )
+    first = TestClient(create_app(settings))
+    painted = first.post(
+        "/api/class/CLIPA/span",
+        json={"tag": "blurred", "from": 0, "to": 1, "on": True},
+    )
+    assert painted.status_code == 200
+    second = TestClient(create_app(settings))
+    assert second.get("/api/class/CLIPA").json()["frames"] == {
+        "0": ["blurred"],
+        "1": ["blurred"],
+    }
+
+
+def test_triplet_span_add_is_idempotent_and_assigns_frame_local_ids(client: TestClient) -> None:
+    body = {
+        "instrument": "grasper",
+        "verb": "retract",
+        "target": "gallbladder",
+        "from": 1,
+        "to": 0,
+        "op": "add",
+    }
+    first = client.post("/api/triplet/CLIPA/span", json=body)
+    second = client.post("/api/triplet/CLIPA/span", json=body)
+    assert first.status_code == second.status_code == 200
+    assert second.json()["frames"] == {
+        "0": [{
+            "id": 1,
+            "instrument": "grasper",
+            "verb": "retract",
+            "target": "gallbladder",
+        }],
+        "1": [{
+            "id": 1,
+            "instrument": "grasper",
+            "verb": "retract",
+            "target": "gallbladder",
+        }],
+    }
+
+
+def test_triplet_span_remove_matches_by_name_and_preserves_other_rows(client: TestClient) -> None:
+    for frame in (0, 1):
+        client.post(
+            f"/api/triplet/CLIPA/frames/{frame}",
+            json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+        )
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "hook", "verb": "dissect", "target": "omentum"},
+    )
+    removed = client.post(
+        "/api/triplet/CLIPA/span",
+        json={
+            "instrument": "grasper",
+            "verb": "retract",
+            "target": "gallbladder",
+            "from": 0,
+            "to": 1,
+            "op": "remove",
+        },
+    )
+    assert removed.status_code == 200
+    assert removed.json()["frames"] == {
+        "0": [{
+            "id": 2,
+            "instrument": "hook",
+            "verb": "dissect",
+            "target": "omentum",
+        }]
+    }
+
+
+def test_triplet_span_rejects_bad_range_or_vocab_without_partial_change(client: TestClient) -> None:
+    existing = client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "hook", "verb": "dissect", "target": "omentum"},
+    )
+    assert existing.status_code == 200
+    outside = client.post(
+        "/api/triplet/CLIPA/span",
+        json={
+            "instrument": "grasper",
+            "verb": "retract",
+            "target": "gallbladder",
+            "from": 0,
+            "to": 2,
+            "op": "add",
+        },
+    )
+    unknown = client.post(
+        "/api/triplet/CLIPA/span",
+        json={
+            "instrument": "NotAnInstrument",
+            "verb": "retract",
+            "target": "gallbladder",
+            "from": 0,
+            "to": 1,
+            "op": "add",
+        },
+    )
+    assert outside.status_code == unknown.status_code == 400
+    assert client.get("/api/triplet/CLIPA").json()["frames"] == {
+        "0": [{
+            "id": 1,
+            "instrument": "hook",
+            "verb": "dissect",
+            "target": "omentum",
+        }]
+    }
+
+
+def test_triplet_span_leaves_phase_class_and_session_untouched(client: TestClient) -> None:
+    client.post(
+        "/api/phase/CLIPA/span",
+        json={"phase": "Preparation", "from": 0, "to": 1},
+    )
+    client.put("/api/class/CLIPA/frames/0", json={"tags": ["blurred"]})
+    painted = client.post(
+        "/api/triplet/CLIPA/span",
+        json={
+            "instrument": "grasper",
+            "verb": "retract",
+            "target": "gallbladder",
+            "from": 0,
+            "to": 1,
+            "op": "add",
+        },
+    )
+    assert painted.status_code == 200
+    assert client.get("/api/phase/CLIPA").json()["frames"] == {
+        "0": "Preparation",
+        "1": "Preparation",
+    }
+    assert client.get("/api/class/CLIPA").json()["frames"] == {"0": ["blurred"]}
+    assert client.get("/api/session").json().get("active") is False
+
+
+def test_triplet_span_is_durable_across_app_instances(tmp_path: Path) -> None:
+    frames = tmp_path / "frames"
+    clip = frames / "CLIPA"
+    clip.mkdir(parents=True)
+    (clip / "00001.jpg").write_bytes(b"fake-jpeg-0")
+    (clip / "00002.jpg").write_bytes(b"fake-jpeg-1")
+    settings = Settings(
+        frames_root=frames,
+        clip_allowlist=("CLIPA",),
+        annotations_root=tmp_path / "mask",
+        labels_root=tmp_path / "labels",
+        predictor_backend="fake",
+    )
+    first = TestClient(create_app(settings))
+    painted = first.post(
+        "/api/triplet/CLIPA/span",
+        json={
+            "instrument": "grasper",
+            "verb": "retract",
+            "target": "gallbladder",
+            "from": 0,
+            "to": 1,
+            "op": "add",
+        },
+    )
+    assert painted.status_code == 200
+    second = TestClient(create_app(settings))
+    assert second.get("/api/triplet/CLIPA").json()["frames"] == {
+        "0": [{
+            "id": 1,
+            "instrument": "grasper",
+            "verb": "retract",
+            "target": "gallbladder",
+        }],
+        "1": [{
+            "id": 1,
+            "instrument": "grasper",
+            "verb": "retract",
+            "target": "gallbladder",
+        }],
+    }
+
+
 def test_empty_class_list_is_unlabeled(client: TestClient) -> None:
     client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper"]})
     cleared = client.put("/api/class/CLIPA/frames/0", json={"tags": []})
@@ -462,6 +734,80 @@ def test_triplet_rows_stack_and_allow_identical_triples(client: TestClient) -> N
     ids = [row["id"] for row in rows]
     assert len(ids) == len(set(ids))
     assert all("track" not in row for row in rows)
+
+
+def test_triplet_row_put_updates_that_row_only(client: TestClient) -> None:
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "hook", "verb": "dissect", "target": "cystic-duct"},
+    )
+    client.post(
+        "/api/triplet/CLIPA/frames/1",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    updated = client.put(
+        "/api/triplet/CLIPA/frames/0/1",
+        json={"instrument": "bipolar", "verb": "grasp", "target": "omentum"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["frames"] == {
+        "0": [
+            {
+                "id": 1,
+                "instrument": "bipolar",
+                "verb": "grasp",
+                "target": "omentum",
+            },
+            {
+                "id": 2,
+                "instrument": "hook",
+                "verb": "dissect",
+                "target": "cystic-duct",
+            },
+        ],
+        "1": [
+            {
+                "id": 1,
+                "instrument": "grasper",
+                "verb": "retract",
+                "target": "gallbladder",
+            },
+        ],
+    }
+
+
+def test_triplet_row_put_rejects_unknown_names_without_change(client: TestClient) -> None:
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    bad = client.put(
+        "/api/triplet/CLIPA/frames/0/1",
+        json={"instrument": "NotAnInstrument", "verb": "retract", "target": "gallbladder"},
+    )
+    assert bad.status_code == 400
+    assert "NotAnInstrument" in bad.json()["detail"]
+    assert client.get("/api/triplet/CLIPA").json()["frames"]["0"] == [
+        {
+            "id": 1,
+            "instrument": "grasper",
+            "verb": "retract",
+            "target": "gallbladder",
+        }
+    ]
+
+
+def test_triplet_row_put_missing_id_is_not_found(client: TestClient) -> None:
+    missing = client.put(
+        "/api/triplet/CLIPA/frames/0/9",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    assert missing.status_code == 404
+    assert "9" in missing.json()["detail"]
 
 
 def test_delete_one_triplet_row_by_id(client: TestClient) -> None:

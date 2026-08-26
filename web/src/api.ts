@@ -60,12 +60,20 @@ export function classFramePath(clipId: string, frameIndex: number): string {
   return `/api/class/${encodeURIComponent(clipId)}/frames/${frameIndex}`;
 }
 
+export function classSpanPath(clipId: string): string {
+  return `/api/class/${encodeURIComponent(clipId)}/span`;
+}
+
 export function tripletClipPath(clipId: string): string {
   return `/api/triplet/${encodeURIComponent(clipId)}`;
 }
 
 export function tripletFramePath(clipId: string, frameIndex: number): string {
   return `/api/triplet/${encodeURIComponent(clipId)}/frames/${frameIndex}`;
+}
+
+export function tripletSpanPath(clipId: string): string {
+  return `/api/triplet/${encodeURIComponent(clipId)}/span`;
 }
 
 export function tripletRowPath(

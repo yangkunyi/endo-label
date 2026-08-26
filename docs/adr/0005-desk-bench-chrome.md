@@ -1,6 +1,8 @@
 # Clip desk is a full-viewport bench; forms collapse; Task-focus stays banned
 
-The phase / class / triplet spec put three editors on one Frame with no mode switch, on a scrolling `max-w-7xl` page. Sitting chrome is too tall for a labeling bench, but exclusive Task-focus would contradict `CONTEXT.md` and those stories. This pass restyles `/clips/:clipId` as a desktop full-viewport bench (left filmstrip, JPEG center, right rail) and lets unused *forms* collapse. Always-on summaries stay writable: class chips, triplet list + Delete, phase name + Clear. Collapsing chrome is not Task-focus. Tailwind only; no shadcn; mask still omitted.
+Status: accepted; left filmstrip and two-page Clip jump superseded by [ADR 0007](./0007-single-page-workbench.md). Collapsible forms and “not Task-focus” still stand.
+
+The phase / class / triplet spec put three editors on one Frame with no mode switch, on a scrolling `max-w-7xl` page. Sitting chrome is too tall for a labeling bench, but exclusive Task-focus would contradict `CONTEXT.md` and those stories. The desk-appearance pass restyled `/clips/:clipId` as a desktop full-viewport bench (left filmstrip, JPEG center, right rail) and let unused *forms* collapse. Always-on summaries stay writable: class chips, triplet list + Delete, phase name + Clear. Collapsing chrome is not Task-focus. Mask still omitted.
 
 ## Considered Options
 

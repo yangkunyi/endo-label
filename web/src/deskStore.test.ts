@@ -1,14 +1,28 @@
 import { beforeEach, expect, test } from "vitest";
-import { useDeskStore } from "./deskStore";
+import { DEFAULT_DESK_LAYOUT, normalizeDeskLayout, useDeskStore } from "./deskStore";
 
 beforeEach(() => {
   useDeskStore.setState({
     clipId: null,
     frameIndex: 0,
     frameCount: 0,
-    phaseForm: true,
-    classBody: false,
-    tripletForm: false,
+    frameIndexes: {},
+    layout: { ...DEFAULT_DESK_LAYOUT, editorOrder: [...DEFAULT_DESK_LAYOUT.editorOrder] },
+    spanStart: null,
+  });
+});
+
+test("layout values clamp and invalid editor order falls back", () => {
+  expect(normalizeDeskLayout({
+    clipRailWidth: 1,
+    editorRailWidth: 9999,
+    bottomBarHeight: -10,
+    editorOrder: ["phase", "phase", "unknown"],
+  })).toEqual({
+    clipRailWidth: 176,
+    editorRailWidth: 560,
+    bottomBarHeight: 48,
+    editorOrder: ["class", "triplet", "phase"],
   });
 });
 
@@ -50,6 +64,14 @@ test("opening another clip resets to Frame 0", () => {
   expect(s.frameCount).toBe(8);
 });
 
+test("opening a previously visited Clip restores its Frame", () => {
+  useDeskStore.getState().openClip("CLIPA", 3);
+  useDeskStore.getState().scrub(2);
+  useDeskStore.getState().openClip("CLIPB", 8);
+  useDeskStore.getState().openClip("CLIPA", 3);
+  expect(useDeskStore.getState().frameIndex).toBe(2);
+});
+
 test("opening the same clip again keeps the current Frame", () => {
   useDeskStore.getState().openClip("CLIPA", 4);
   useDeskStore.getState().scrub(2);
@@ -57,48 +79,9 @@ test("opening the same clip again keeps the current Frame", () => {
   expect(useDeskStore.getState().frameIndex).toBe(2);
 });
 
-test("opening a clip uses fold defaults", () => {
-  useDeskStore.getState().toggleTripletForm();
-  useDeskStore.getState().toggleClassBody();
-  useDeskStore.getState().togglePhaseForm();
-  useDeskStore.getState().openClip("CLIPA", 4);
-  const s = useDeskStore.getState();
-  expect(s.phaseForm).toBe(true);
-  expect(s.classBody).toBe(false);
-  expect(s.tripletForm).toBe(false);
-});
-
-test("opening another clip resets folds", () => {
+test("opening another clip clears span start", () => {
   useDeskStore.getState().openClip("CLIPA", 3);
-  useDeskStore.getState().toggleTripletForm();
-  useDeskStore.getState().toggleClassBody();
-  useDeskStore.getState().togglePhaseForm();
+  useDeskStore.getState().setSpanStart({ clipId: "CLIPA", frameIndex: 0 });
   useDeskStore.getState().openClip("CLIPB", 8);
-  const s = useDeskStore.getState();
-  expect(s.clipId).toBe("CLIPB");
-  expect(s.phaseForm).toBe(true);
-  expect(s.classBody).toBe(false);
-  expect(s.tripletForm).toBe(false);
-});
-
-test("opening the same clip again keeps folds", () => {
-  useDeskStore.getState().openClip("CLIPA", 4);
-  useDeskStore.getState().toggleTripletForm();
-  useDeskStore.getState().toggleClassBody();
-  useDeskStore.getState().openClip("CLIPA", 4);
-  const s = useDeskStore.getState();
-  expect(s.tripletForm).toBe(true);
-  expect(s.classBody).toBe(true);
-  expect(s.phaseForm).toBe(true);
-});
-
-test("scrub does not reset folds", () => {
-  useDeskStore.getState().openClip("CLIPA", 4);
-  useDeskStore.getState().toggleTripletForm();
-  useDeskStore.getState().scrub(2);
-  const s = useDeskStore.getState();
-  expect(s.frameIndex).toBe(2);
-  expect(s.tripletForm).toBe(true);
-  expect(s.phaseForm).toBe(true);
-  expect(s.classBody).toBe(false);
+  expect(useDeskStore.getState().spanStart).toBeNull();
 });
