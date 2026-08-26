@@ -12,16 +12,11 @@ KINDS = ("phase", "class", "triplet")
 RENAME_LISTS = {"phases": "phase", "class_tags": "class"}
 
 _DEFAULT_VOCAB = {
-    "phases": [
-        "Preparation",
-        "Calot triangle dissection",
-        "Clipping and cutting",
-        "Gallbladder dissection",
-    ],
-    "class_tags": ["grasper", "hook", "clipper", "scissors", "blurred"],
-    "instruments": ["grasper", "hook", "clipper", "bipolar"],
-    "verbs": ["grasp", "retract", "dissect", "cut", "clip"],
-    "targets": ["gallbladder", "cystic-duct", "cystic-artery", "omentum"],
+    "phases": [],
+    "class_tags": [],
+    "instruments": [],
+    "verbs": [],
+    "targets": [],
 }
 
 
@@ -78,8 +73,8 @@ def save_clip(settings: Settings, kind: str, clip_id: str, data: dict[str, Any])
 
 def load_vocab(settings: Settings) -> dict[str, Any]:
     data = _read(vocab_path(settings), _DEFAULT_VOCAB)
-    for key, seed in _DEFAULT_VOCAB.items():
-        data.setdefault(key, list(seed))
+    for key, default in _DEFAULT_VOCAB.items():
+        data.setdefault(key, list(default))
     return data
 
 

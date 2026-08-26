@@ -86,6 +86,8 @@ def test_config_flag_loads_frame_pool_allowlist_and_label_roots(tmp_path: Path) 
     assert clips.status_code == 200
     assert clips.json()["clips"] == [{"id": "YAMLCLIP", "frame_count": 2}]
 
+    added = client.post("/api/vocab/phases", json={"name": "Preparation"})
+    assert added.status_code == 200
     span = client.post(
         "/api/phase/YAMLCLIP/span",
         json={"phase": "Preparation", "from": 0, "to": 0},

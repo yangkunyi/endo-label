@@ -114,6 +114,11 @@ def test_phase_class_triplet_on_sitting_without_session(tmp_path: Path) -> None:
     assert client.get("/").status_code == 200
     assert client.get("/api/session").json().get("active") is False
     assert client.get("/api/clips/CLIPA/frames/0").content == b"fake-jpeg-0"
+    assert client.post("/api/vocab/phases", json={"name": "Preparation"}).status_code == 200
+    assert client.post("/api/vocab/class_tags", json={"name": "grasper"}).status_code == 200
+    assert client.post("/api/vocab/instruments", json={"name": "grasper"}).status_code == 200
+    assert client.post("/api/vocab/verbs", json={"name": "retract"}).status_code == 200
+    assert client.post("/api/vocab/targets", json={"name": "gallbladder"}).status_code == 200
     span = client.post(
         "/api/phase/CLIPA/span",
         json={"phase": "Preparation", "from": 0, "to": 1},

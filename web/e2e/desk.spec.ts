@@ -1,6 +1,30 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type APIRequestContext, type Page, test } from "@playwright/test";
 
 test.describe.configure({ mode: "serial" });
+
+async function ensureVocab(request: APIRequestContext, lists: Record<string, string[]>) {
+  const vocab = (await (await request.get("/api/vocab")).json()) as Record<string, string[]>;
+  for (const [listName, names] of Object.entries(lists)) {
+    for (const name of names) {
+      if ((vocab[listName] ?? []).includes(name)) {
+        continue;
+      }
+      const response = await request.post(`/api/vocab/${listName}`, { data: { name } });
+      expect(response.ok()).toBeTruthy();
+      (vocab[listName] ??= []).push(name);
+    }
+  }
+}
+
+test.beforeEach(async ({ request }) => {
+  await ensureVocab(request, {
+    phases: ["Preparation", "Clipping and cutting"],
+    class_tags: ["grasper", "hook", "clipper", "scissors", "blurred"],
+    instruments: ["grasper", "hook", "clipper", "bipolar"],
+    verbs: ["grasp", "retract", "cut", "dissect"],
+    targets: ["gallbladder", "cystic-duct", "cystic-artery", "omentum"],
+  });
+});
 
 async function scrubToFrame(page: Page, index: number) {
   const slider = page.getByRole("slider", { name: "Frame index" });
