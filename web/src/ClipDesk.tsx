@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent, type ReactNode } from "react";
-import { Button, Checkbox, ComboBox, Input, Label, ListBox, Select, Slider, Table } from "@heroui/react";
-import type { Key, Selection } from "@heroui/react";
-import { GripVertical, Pause, Play, Plus, X } from "lucide-react";
+import { Button, Checkbox, Input, Label, ListBox, Select, Slider, Table } from "@heroui/react";
+import type { Selection } from "@heroui/react";
+import { Check, GripVertical, Pause, Play, Plus, X } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
 import {
@@ -109,6 +109,18 @@ function sliderNumber(value: number | number[]): number {
   return typeof value === "number" ? value : (value[0] ?? 0);
 }
 
+function sliderFillStyle(fromIndex: number | null, currentIndex: number, lastIndex: number): { left: string; width: string } {
+  if (lastIndex <= 0) {
+    return { left: "0%", width: "0%" };
+  }
+  const start = fromIndex == null ? 0 : Math.min(fromIndex, currentIndex);
+  const end = fromIndex == null ? currentIndex : Math.max(fromIndex, currentIndex);
+  return {
+    left: `${(start / lastIndex) * 100}%`,
+    width: `${((end - start) / lastIndex) * 100}%`,
+  };
+}
+
 function namesFromSelection(selection: Selection, all: string[]): string[] {
   if (selection === "all") {
     return [...all];
@@ -184,7 +196,7 @@ function ResizeHandle({
       role="separator"
       aria-label={label}
       aria-orientation={direction}
-      className={direction === "horizontal" ? "w-1 shrink-0 cursor-col-resize bg-stone-200 hover:bg-emerald-500" : "h-1 shrink-0 cursor-row-resize bg-stone-200 hover:bg-emerald-500"}
+      className={direction === "horizontal" ? "w-1 shrink-0 cursor-col-resize bg-separator hover:bg-accent" : "h-1 shrink-0 cursor-row-resize bg-separator hover:bg-accent"}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={stopResize}
@@ -253,6 +265,10 @@ export function ClipDesk() {
     })),
   ], [currentPhase, currentTags, tripletSpanRows]);
   const hudTargets = spanStart?.clipId === clipId && spanPayload.length ? spanPayload : spanTargets;
+  const frozenPayload = spanStart?.clipId === clipId ? spanPayload : [];
+  const frozenPhase = frozenPayload.find((target) => target.kind === "phase");
+  const frozenPhaseName = frozenPhase && frozenPhase.kind === "phase" ? frozenPhase.name : null;
+  const frozenClassNames = frozenPayload.flatMap((target) => target.kind === "class" ? [target.name] : []);
 
   useEffect(() => {
     savePlaybackSettings(playback);
@@ -406,35 +422,35 @@ export function ClipDesk() {
   }, [data, openClip]);
 
   return (
-    <main className="flex h-screen min-h-0 flex-col overflow-hidden bg-stone-100 text-stone-900">
-      <header className="flex shrink-0 items-center gap-3 border-b border-stone-300 px-3 py-2">
+    <main className="flex h-screen min-h-0 flex-col overflow-hidden bg-background text-foreground">
+      <header className="flex shrink-0 items-center gap-3 border-b border-separator px-3 py-2">
         <span className="text-sm font-semibold tracking-wide">endo_label</span>
-        <span className="text-stone-300" aria-hidden="true">/</span>
+        <span className="text-muted" aria-hidden="true">/</span>
         <h1 className="text-sm font-semibold">{data?.id ?? "Workbench"}</h1>
-        {data ? <p className="text-sm text-stone-600">Frame {frameIndex} of {data.frame_count}</p> : null}
+        {data ? <p className="text-sm text-muted">Frame {frameIndex} of {data.frame_count}</p> : null}
       </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <nav
           aria-label="Clips"
-          className="flex shrink-0 flex-col overflow-y-auto border-r border-stone-300 bg-white"
+          className="flex shrink-0 flex-col overflow-y-auto border-r border-separator bg-surface"
           style={{ width: layout.clipRailWidth }}
         >
-          <div className="border-b border-stone-200 px-3 py-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">Clips</p>
+          <div className="border-b border-separator px-3 py-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted">Clips</p>
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
-            {clipsLoading ? <p className="p-2 text-sm text-stone-500">Loading Clips…</p> : null}
-            {clipListError ? <p className="p-2 text-sm text-red-800">Could not load Clips</p> : null}
-            {!clipsLoading && !clipListError && clipList?.clips.length === 0 ? <p className="p-2 text-sm text-stone-500">No Clips on the allowlist.</p> : null}
+            {clipsLoading ? <p className="p-2 text-sm text-muted">Loading Clips…</p> : null}
+            {clipListError ? <p className="p-2 text-sm text-danger">Could not load Clips</p> : null}
+            {!clipsLoading && !clipListError && clipList?.clips.length === 0 ? <p className="p-2 text-sm text-muted">No Clips on the allowlist.</p> : null}
             {clipList?.clips.map((clip) => (
               <Link
                 key={clip.id}
                 to={clipDeskPath(clip.id)}
                 aria-current={clip.id === clipId ? "page" : undefined}
-                className={`flex items-center justify-between rounded px-3 py-2 text-left text-sm transition-colors ${clip.id === clipId ? "bg-emerald-100 font-semibold text-emerald-950" : "text-stone-700 hover:bg-stone-100"}`}
+                className={`flex items-center justify-between rounded px-3 py-2 text-left text-sm transition-colors ${clip.id === clipId ? "bg-accent font-semibold text-accent-foreground" : "text-foreground hover:bg-surface-secondary"}`}
               >
                 <span className="truncate">{clip.id}</span>
-                <span className="ml-2 shrink-0 text-xs text-stone-500">{clip.frame_count} Frames</span>
+                <span className="ml-2 shrink-0 text-xs text-muted">{clip.frame_count} Frames</span>
               </Link>
             ))}
           </div>
@@ -447,9 +463,9 @@ export function ClipDesk() {
         />
         <section aria-label="Frame viewer" className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-black">
           {error ? (
-            <div className="p-6 text-center text-stone-100"><h2 className="mb-2 text-lg font-semibold">{clipId}</h2><p>{error instanceof Error ? error.message : "Clip not found"}</p></div>
+            <div className="p-6 text-center text-foreground"><h2 className="mb-2 text-lg font-semibold">{clipId}</h2><p>{error instanceof Error ? error.message : "Clip not found"}</p></div>
           ) : isLoading ? (
-            <p className="text-stone-100">Loading Clip…</p>
+            <p className="text-foreground">Loading Clip…</p>
           ) : data?.frame_count ? (
             <img
               className="h-full w-full object-contain"
@@ -457,9 +473,9 @@ export function ClipDesk() {
               alt={`Frame ${frameIndex}`}
             />
           ) : data ? (
-            <p className="text-stone-100">This Clip has no Frames.</p>
+            <p className="text-foreground">This Clip has no Frames.</p>
           ) : (
-            <div className="p-6 text-center text-stone-100"><h2 className="mb-2 text-xl font-semibold">Choose a Clip</h2><p className="text-stone-300">Select a Clip from the left rail to begin labeling.</p></div>
+            <div className="p-6 text-center text-foreground"><h2 className="mb-2 text-xl font-semibold">Choose a Clip</h2><p className="text-muted">Select a Clip from the left rail to begin labeling.</p></div>
           )}
         </section>
         <ResizeHandle
@@ -470,7 +486,9 @@ export function ClipDesk() {
           onResize={(value) => setLayout({ editorRailWidth: value })}
         />
         <div
-          className="flex shrink-0 flex-col gap-4 overflow-y-auto border-l border-stone-300 p-3"
+          role="region"
+          aria-label="Editors"
+          className="flex shrink-0 flex-col gap-3 overflow-y-auto overflow-x-hidden border-l border-separator p-2"
           style={{ width: layout.editorRailWidth }}
         >
           {data ? editorOrder.map((kind) => {
@@ -493,6 +511,7 @@ export function ClipDesk() {
                   mutateClass={mutateClass}
                   mutateVocab={mutateVocab}
                   dragProps={dragProps}
+                  payloadNames={frozenClassNames}
                 />
               );
             }
@@ -525,6 +544,7 @@ export function ClipDesk() {
                 mutatePhase={mutatePhase}
                 mutateVocab={mutateVocab}
                 dragProps={dragProps}
+                payloadName={frozenPhaseName}
               />
             );
           }) : <EmptyEditors />}
@@ -537,7 +557,7 @@ export function ClipDesk() {
         reverse
         onResize={(value) => setLayout({ bottomBarHeight: value })}
       />
-      <footer aria-label="Frame transport" className="flex shrink-0 items-center gap-3 overflow-x-auto border-t border-stone-300 bg-white px-4 py-2" style={{ height: layout.bottomBarHeight }}>
+      <footer aria-label="Frame transport" className="flex shrink-0 items-center gap-3 overflow-x-auto border-t border-separator bg-surface px-4 py-2" style={{ height: layout.bottomBarHeight }}>
         <Button
           isIconOnly
           size="sm"
@@ -600,12 +620,22 @@ export function ClipDesk() {
         >
           <Label>Frame index</Label>
           <Slider.Track>
-            <Slider.Fill />
+            <span
+              aria-hidden
+              data-span-fill=""
+              className="pointer-events-none absolute top-0 h-full bg-accent"
+              style={sliderFillStyle(
+                spanStart && spanStart.clipId === clipId ? spanStart.frameIndex : null,
+                frameIndex,
+                Math.max(0, (data?.frame_count ?? 0) - 1),
+              )}
+            />
             <Slider.Thumb />
           </Slider.Track>
         </Slider>
-        <output className="w-24 shrink-0 text-right text-sm text-stone-600">{data ? `Frame ${frameIndex} of ${data.frame_count}` : "No Clip"}</output>
-        <div role="region" aria-label="Span HUD" className="flex min-w-64 max-w-[42rem] items-center gap-2 text-xs text-stone-600">
+        <output className="w-24 shrink-0 text-right text-sm text-muted">{data ? `Frame ${frameIndex} of ${data.frame_count}` : "No Clip"}</output>
+        <div role="region" aria-label="Span HUD" className="flex min-w-64 max-w-[42rem] items-center gap-2 text-xs text-muted">
+          <span className="shrink-0 whitespace-nowrap">Select labels → [ → scrub → ]</span>
           <Button
             size="sm"
             variant={spanDirection === "write" ? "primary" : "ghost"}
@@ -624,7 +654,7 @@ export function ClipDesk() {
           </Button>
           {hudTargets.length ? (
             <>
-              <span className="font-medium text-stone-800">
+              <span className="font-medium text-foreground">
                 {hudTargets.map((target) => target.kind === "class"
                   ? `class: ${target.name}`
                   : target.kind === "phase"
@@ -636,7 +666,7 @@ export function ClipDesk() {
                 : ` · ] or O ${spanDirection === "remove" ? "removes" : "writes"} this Frame`}
             </>
           ) : "No span target"}
-          {spanError ? <span className="ml-2 text-red-800">{spanError}</span> : null}
+          {spanError ? <span className="ml-2 text-danger">{spanError}</span> : null}
         </div>
       </footer>
     </main>
@@ -649,7 +679,7 @@ function EmptyEditors() {
       {(["class", "triplet", "phase"] as const).map((title) => (
         <div key={title} data-editor-card={title}>
           <h2 className="text-lg font-semibold">{title}</h2>
-          <p className="mt-2 text-sm text-stone-500">Choose a Clip to edit this Task type.</p>
+          <p className="mt-2 text-sm text-muted">Choose a Clip to edit this Task type.</p>
         </div>
       ))}
     </>
@@ -805,10 +835,11 @@ async function ensureVocabName(
   return name;
 }
 
-function NameCombo({
+function NameInput({
   ariaLabel,
   names,
   value,
+  listId,
   listName,
   mutateVocab,
   onCommit,
@@ -816,6 +847,7 @@ function NameCombo({
   ariaLabel: string;
   names: string[];
   value: string;
+  listId: string;
   listName: "instruments" | "verbs" | "targets";
   mutateVocab: KeyedMutator<Vocab>;
   onCommit: (name: string) => Promise<void>;
@@ -847,47 +879,27 @@ function NameCombo({
   }
 
   return (
-    <ComboBox
+    <input
       aria-label={ariaLabel}
-      allowsCustomValue
-      allowsEmptyCollection
-      inputValue={text}
-      menuTrigger="focus"
-      selectedKey={names.includes(value) ? value : null}
-      onInputChange={setText}
-      onSelectionChange={(key: Key | null) => {
-        if (key != null) {
-          void commit(String(key));
+      autoComplete="off"
+      className="h-7 w-full min-w-0 max-w-full bg-transparent text-xs text-foreground outline-none"
+      list={listId}
+      size={1}
+      value={text}
+      onPointerDown={(event) => event.stopPropagation()}
+      onChange={(event) => setText(event.target.value)}
+      onBlur={() => {
+        if (text.trim() && text.trim() !== value) {
+          void commit(text);
         }
       }}
-    >
-      <ComboBox.InputGroup>
-        <Input
-          aria-label={ariaLabel}
-          onBlur={() => {
-            if (text.trim() && text.trim() !== value) {
-              void commit(text);
-            }
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void commit(text);
-            }
-          }}
-        />
-        <ComboBox.Trigger />
-      </ComboBox.InputGroup>
-      <ComboBox.Popover>
-        <ListBox>
-          {names.map((name) => (
-            <ListBox.Item key={name} id={name} textValue={name}>
-              {name}
-            </ListBox.Item>
-          ))}
-        </ListBox>
-      </ComboBox.Popover>
-    </ComboBox>
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          void commit(text);
+        }
+      }}
+    />
   );
 }
 
@@ -900,6 +912,7 @@ function PhaseTable({
   mutatePhase,
   mutateVocab,
   dragProps,
+  payloadName,
 }: {
   clipId: string;
   frameIndex: number;
@@ -909,6 +922,7 @@ function PhaseTable({
   mutatePhase: KeyedMutator<PhaseDoc>;
   mutateVocab: KeyedMutator<Vocab>;
   dragProps?: EditorDragProps;
+  payloadName: string | null;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -949,7 +963,7 @@ function PhaseTable({
 
   return (
     <EditorShell title="phase" addLabel="Add phase" dragProps={dragProps} onAdd={() => setDraft("")}>
-      <Table>
+      <Table variant="secondary">
         <Table.ScrollContainer>
           <Table.Content
             aria-label="phase"
@@ -975,22 +989,29 @@ function PhaseTable({
             </Table.Header>
             <Table.Body>
               {phases.map((name) => (
-                <Table.Row key={name} id={name}>
+                <Table.Row
+                  key={name}
+                  id={name}
+                  data-span-payload={payloadName === name ? "true" : undefined}
+                >
                   <Table.Cell>
-                    <VocabNameCell
-                      name={name}
-                      renameFrom={renameFrom}
-                      renameDraft={renameDraft}
-                      renameLabel="Rename phase"
-                      onDraft={setRenameDraft}
-                      onCommit={commitRename}
-                      onCancel={() => setRenameFrom(null)}
-                      onStart={(value) => {
-                        setError(null);
-                        setRenameFrom(value);
-                        setRenameDraft(value);
-                      }}
-                    />
+                    <span className="flex min-w-0 items-center gap-1">
+                      {payloadName === name ? <Check size={14} aria-hidden className="shrink-0 text-success" /> : null}
+                      <VocabNameCell
+                        name={name}
+                        renameFrom={renameFrom}
+                        renameDraft={renameDraft}
+                        renameLabel="Rename phase"
+                        onDraft={setRenameDraft}
+                        onCommit={commitRename}
+                        onCancel={() => setRenameFrom(null)}
+                        onStart={(value) => {
+                          setError(null);
+                          setRenameFrom(value);
+                          setRenameDraft(value);
+                        }}
+                      />
+                    </span>
                   </Table.Cell>
                   <Table.Cell>
                     <RowRemoveButton
@@ -1041,7 +1062,7 @@ function PhaseTable({
           </Table.Content>
         </Table.ScrollContainer>
       </Table>
-      {error ? <p className="text-sm text-red-800">{error}</p> : null}
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
     </EditorShell>
   );
 }
@@ -1055,6 +1076,7 @@ function ClassTable({
   mutateClass,
   mutateVocab,
   dragProps,
+  payloadNames,
 }: {
   clipId: string;
   frameIndex: number;
@@ -1064,6 +1086,7 @@ function ClassTable({
   mutateClass: KeyedMutator<ClassDoc>;
   mutateVocab: KeyedMutator<Vocab>;
   dragProps?: EditorDragProps;
+  payloadNames: string[];
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1105,7 +1128,7 @@ function ClassTable({
 
   return (
     <EditorShell title="class" addLabel="Add class tag" dragProps={dragProps} onAdd={() => setDraft("")}>
-      <Table>
+      <Table variant="secondary">
         <Table.ScrollContainer>
           <Table.Content
             aria-label="class"
@@ -1134,23 +1157,30 @@ function ClassTable({
             </Table.Header>
             <Table.Body>
               {classTags.map((name) => (
-                <Table.Row key={name} id={name}>
+                <Table.Row
+                  key={name}
+                  id={name}
+                  data-span-payload={payloadNames.includes(name) ? "true" : undefined}
+                >
                   <Table.Cell>
-                    <VocabNameCell
-                      name={name}
-                      renameFrom={renameFrom}
-                      renameDraft={renameDraft}
-                      renameLabel="Rename class tag"
-                      onDraft={setRenameDraft}
-                      onCommit={commitRename}
-                      onCancel={() => setRenameFrom(null)}
-                      onStart={(value) => {
-                        cancel();
-                        setError(null);
-                        setRenameFrom(value);
-                        setRenameDraft(value);
-                      }}
-                    />
+                    <span className="flex min-w-0 items-center gap-1">
+                      {payloadNames.includes(name) ? <Check size={14} aria-hidden className="shrink-0 text-success" /> : null}
+                      <VocabNameCell
+                        name={name}
+                        renameFrom={renameFrom}
+                        renameDraft={renameDraft}
+                        renameLabel="Rename class tag"
+                        onDraft={setRenameDraft}
+                        onCommit={commitRename}
+                        onCancel={() => setRenameFrom(null)}
+                        onStart={(value) => {
+                          cancel();
+                          setError(null);
+                          setRenameFrom(value);
+                          setRenameDraft(value);
+                        }}
+                      />
+                    </span>
                   </Table.Cell>
                   <Table.Cell>
                     <RowRemoveButton
@@ -1206,7 +1236,7 @@ function ClassTable({
           </Table.Content>
         </Table.ScrollContainer>
       </Table>
-      {error ? <p className="text-sm text-red-800">{error}</p> : null}
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
     </EditorShell>
   );
 }
@@ -1304,10 +1334,20 @@ function TripletTable({
       dragProps={dragProps}
       onAdd={() => setDrafts((rows) => [...rows, { localId: `draft-${Date.now()}`, instrument: "", verb: "", target: "" }])}
     >
-      <Table>
+      <datalist id="triplet-instruments">
+        {instruments.map((name) => <option key={name} value={name} />)}
+      </datalist>
+      <datalist id="triplet-verbs">
+        {verbs.map((name) => <option key={name} value={name} />)}
+      </datalist>
+      <datalist id="triplet-targets">
+        {targets.map((name) => <option key={name} value={name} />)}
+      </datalist>
+      <Table variant="secondary">
         <Table.ScrollContainer>
           <Table.Content
             aria-label="triplet"
+            className="table-fixed"
             selectionMode="multiple"
             selectedKeys={selectedKeys}
             onSelectionChange={(selection) => {
@@ -1316,13 +1356,13 @@ function TripletTable({
             }}
           >
             <Table.Header>
-              <Table.Column>
+              <Table.Column className="w-8">
                 <SelectionCheck label="Select all triplet rows" />
               </Table.Column>
               <Table.Column isRowHeader>instrument</Table.Column>
               <Table.Column>verb</Table.Column>
               <Table.Column>target</Table.Column>
-              <Table.Column />
+              <Table.Column className="w-8" />
             </Table.Header>
             <Table.Body>
               {current.map((row) => (
@@ -1331,30 +1371,33 @@ function TripletTable({
                     <SelectionCheck label={`Select row ${row.id}`} />
                   </Table.Cell>
                   <Table.Cell>
-                    <NameCombo
+                    <NameInput
                       ariaLabel="instrument"
                       names={instruments}
                       value={row.instrument}
+                      listId="triplet-instruments"
                       listName="instruments"
                       mutateVocab={mutateVocab}
                       onCommit={(name) => run(() => patchRow(row, { instrument: name }))}
                     />
                   </Table.Cell>
                   <Table.Cell>
-                    <NameCombo
+                    <NameInput
                       ariaLabel="verb"
                       names={verbs}
                       value={row.verb}
+                      listId="triplet-verbs"
                       listName="verbs"
                       mutateVocab={mutateVocab}
                       onCommit={(name) => run(() => patchRow(row, { verb: name }))}
                     />
                   </Table.Cell>
                   <Table.Cell>
-                    <NameCombo
+                    <NameInput
                       ariaLabel="target"
                       names={targets}
                       value={row.target}
+                      listId="triplet-targets"
                       listName="targets"
                       mutateVocab={mutateVocab}
                       onCommit={(name) => run(() => patchRow(row, { target: name }))}
@@ -1379,10 +1422,11 @@ function TripletTable({
                     <SelectionCheck label="Select draft row" />
                   </Table.Cell>
                   <Table.Cell>
-                    <NameCombo
+                    <NameInput
                       ariaLabel="instrument"
                       names={instruments}
                       value={draft.instrument}
+                      listId="triplet-instruments"
                       listName="instruments"
                       mutateVocab={mutateVocab}
                       onCommit={(name) => run(async () => {
@@ -1397,10 +1441,11 @@ function TripletTable({
                     />
                   </Table.Cell>
                   <Table.Cell>
-                    <NameCombo
+                    <NameInput
                       ariaLabel="verb"
                       names={verbs}
                       value={draft.verb}
+                      listId="triplet-verbs"
                       listName="verbs"
                       mutateVocab={mutateVocab}
                       onCommit={(name) => run(async () => {
@@ -1415,10 +1460,11 @@ function TripletTable({
                     />
                   </Table.Cell>
                   <Table.Cell>
-                    <NameCombo
+                    <NameInput
                       ariaLabel="target"
                       names={targets}
                       value={draft.target}
+                      listId="triplet-targets"
                       listName="targets"
                       mutateVocab={mutateVocab}
                       onCommit={(name) => run(async () => {
@@ -1444,7 +1490,7 @@ function TripletTable({
           </Table.Content>
         </Table.ScrollContainer>
       </Table>
-      {error ? <p className="text-sm text-red-800">{error}</p> : null}
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
     </EditorShell>
   );
 }

@@ -14,18 +14,18 @@ export type DeskLayout = {
   editorOrder: EditorKind[];
 };
 
-export const DESK_LAYOUT_STORAGE_KEY = "endo_label:desk-layout";
+export const DESK_LAYOUT_STORAGE_KEY = "endo_label:desk-layout-v2";
 
 export const DEFAULT_DESK_LAYOUT: DeskLayout = {
   clipRailWidth: 208,
-  editorRailWidth: 416,
+  editorRailWidth: 280,
   bottomBarHeight: 56,
   editorOrder: ["class", "triplet", "phase"],
 };
 
 export const DESK_LAYOUT_LIMITS = {
   clipRailWidth: { min: 176, max: 360 },
-  editorRailWidth: { min: 320, max: 560 },
+  editorRailWidth: { min: 220, max: 420 },
   bottomBarHeight: { min: 48, max: 220 },
 } as const;
 

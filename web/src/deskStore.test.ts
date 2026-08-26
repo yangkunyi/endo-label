@@ -1,5 +1,10 @@
 import { beforeEach, expect, test } from "vitest";
-import { DEFAULT_DESK_LAYOUT, normalizeDeskLayout, useDeskStore } from "./deskStore";
+import {
+  DEFAULT_DESK_LAYOUT,
+  DESK_LAYOUT_STORAGE_KEY,
+  normalizeDeskLayout,
+  useDeskStore,
+} from "./deskStore";
 
 beforeEach(() => {
   useDeskStore.setState({
@@ -20,10 +25,17 @@ test("layout values clamp and invalid editor order falls back", () => {
     editorOrder: ["phase", "phase", "unknown"],
   })).toEqual({
     clipRailWidth: 176,
-    editorRailWidth: 560,
+    editorRailWidth: 420,
     bottomBarHeight: 48,
     editorOrder: ["class", "triplet", "phase"],
   });
+});
+
+test("new sitting stores editor rail at 280 under a new layout key", () => {
+  expect(DEFAULT_DESK_LAYOUT.editorRailWidth).toBe(280);
+  expect(normalizeDeskLayout(null).editorRailWidth).toBe(280);
+  expect(normalizeDeskLayout({ editorRailWidth: 200 }).editorRailWidth).toBe(220);
+  expect(DESK_LAYOUT_STORAGE_KEY).not.toBe("endo_label:desk-layout");
 });
 
 test("opening a clip starts at Frame 0", () => {

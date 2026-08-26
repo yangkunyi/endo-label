@@ -361,6 +361,96 @@ test("double-click class tag renames class Clips and leaves triplet instruments"
   expect(vocab.instruments).toContain("grasper");
 });
 
+test("dark compact sitting: rail, HUD recipe, slider fill, triplet inputs", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.getByRole("button", { name: /light mode|dark mode|theme/i })).toHaveCount(0);
+  await expect(page.locator("main")).not.toHaveClass(/stone-/);
+  await expect(page.getByLabel("Frame transport")).not.toHaveClass(/stone-/);
+  await expect(page.getByText("Arm class span")).toHaveCount(0);
+  await expect(page.getByRole("img")).toHaveCount(1);
+
+  const editors = page.getByRole("region", { name: "Editors" });
+  await expect(editors).toBeVisible();
+  const railBox = await editors.boundingBox();
+  expect(railBox?.width).toBeGreaterThanOrEqual(260);
+  expect(railBox?.width).toBeLessThanOrEqual(300);
+
+  const hud = page.getByLabel("Span HUD");
+  await expect(hud).toContainText("Select labels → [ → scrub → ]");
+  await expect(hud.getByRole("button", { name: "Write to span" })).toBeVisible();
+  await expect(hud.getByRole("button", { name: "Remove from span" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Add phase" }).click();
+  const newPhase = page.getByLabel("New phase name");
+  await newPhase.fill("DarkPayloadPhase");
+  await newPhase.press("Enter");
+  const onFrameRow = page.getByRole("grid", { name: "phase" }).getByRole("row").filter({ hasText: "DarkPayloadPhase" });
+  await expect(onFrameRow).toHaveAttribute("aria-selected", "true");
+  const onFrameBg = await onFrameRow.locator("td").first().evaluate((el) => getComputedStyle(el).backgroundColor);
+
+  await scrubToFrame(page, 1);
+  const otherRow = page.getByRole("grid", { name: "phase" }).getByRole("row").filter({ hasText: "DarkPayloadPhase" });
+  if ((await otherRow.getAttribute("aria-selected")) === "true") {
+    await page.getByRole("button", { name: "Clear DarkPayloadPhase" }).click();
+  }
+  await scrubToFrame(page, 0);
+  await expect(onFrameRow).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("img", { name: "Frame 0" }).click();
+  await page.keyboard.press("[");
+  await expect(hud).toContainText("DarkPayloadPhase");
+  await expect(hud).toContainText("from Frame 0");
+
+  await scrubToFrame(page, 1);
+  await expect(otherRow).toHaveAttribute("aria-selected", "false");
+  await expect(otherRow).toHaveAttribute("data-span-payload", "true");
+  const payloadBg = await otherRow.locator("td").first().evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(payloadBg).not.toBe(onFrameBg);
+
+  await page.getByRole("img", { name: "Frame 1" }).click();
+  await page.keyboard.press("]");
+  await expect(hud).not.toContainText("from Frame 0");
+
+  await page.getByRole("button", { name: "Add triplet row" }).click();
+  const tripletGrid = page.getByRole("grid", { name: "triplet" });
+  const draft = tripletGrid.getByRole("row").last();
+  await expect(draft.getByLabel("instrument")).toHaveAttribute("list");
+  await expect(draft.getByLabel("verb")).toHaveAttribute("list");
+  await expect(draft.getByLabel("target")).toHaveAttribute("list");
+  await expect(tripletGrid.locator("[data-slot='combo-box']")).toHaveCount(0);
+  const overflow = await tripletGrid.evaluate((el) => {
+    const scroller = (el.closest("[class*='scroll']") ?? el.parentElement ?? el) as HTMLElement;
+    const rail = el.closest('[aria-label="Editors"]') as HTMLElement | null;
+    return { scrollWidth: scroller.scrollWidth, railWidth: rail?.getBoundingClientRect().width ?? 0 };
+  });
+  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.railWidth);
+  await draft.getByLabel("instrument").fill("hook");
+  await draft.getByLabel("instrument").press("Enter");
+  await draft.getByLabel("verb").fill("cut");
+  await draft.getByLabel("verb").press("Enter");
+  await draft.getByLabel("target").fill("cystic-duct");
+  await draft.getByLabel("target").press("Enter");
+
+  await hud.getByRole("button", { name: "Write to span" }).click();
+  await page.getByRole("grid", { name: "phase" }).getByText("DarkPayloadPhase", { exact: true }).click();
+  await scrubToFrame(page, 1);
+  await page.getByRole("img", { name: "Frame 1" }).click();
+  await page.keyboard.press("i");
+  await expect(hud).toContainText("from Frame 1");
+  await scrubToFrame(page, 0);
+  const fill = page.locator("[data-span-fill]");
+  const track = page.locator("[data-slot='slider-track']");
+  const fillBox = await fill.boundingBox();
+  const trackBox = await track.boundingBox();
+  expect(fillBox).toBeTruthy();
+  expect(trackBox).toBeTruthy();
+  expect(fillBox!.width).toBeGreaterThan(trackBox!.width * 0.7);
+  await page.getByRole("img", { name: "Frame 0" }).click();
+  await page.keyboard.press("o");
+  await expect(hud).not.toContainText("from Frame 1");
+});
+
 test("triplet cell edit changes this row on this Frame only", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await fillTripletDraft(page, "DeskRenameTool", "DeskRenameVerb", "DeskRenameTarget");
