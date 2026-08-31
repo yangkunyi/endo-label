@@ -1,39 +1,38 @@
 @import "tailwindcss";
-@import "@heroui/styles";
 
-[data-editor-card] .table-root,
-[data-editor-card] .table__scroll-container,
-[data-editor-card] .table__content {
-  max-width: 100%;
+@theme {
+  --color-background: oklch(0.145 0 0);
+  --color-foreground: oklch(0.985 0 0);
+  --color-card: oklch(0.205 0 0);
+  --color-card-foreground: oklch(0.985 0 0);
+  --color-popover: oklch(0.205 0 0);
+  --color-popover-foreground: oklch(0.985 0 0);
+  --color-primary: oklch(0.922 0 0);
+  --color-primary-foreground: oklch(0.205 0 0);
+  --color-secondary: oklch(0.269 0 0);
+  --color-secondary-foreground: oklch(0.985 0 0);
+  --color-muted: oklch(0.269 0 0);
+  --color-muted-foreground: oklch(0.708 0 0);
+  --color-accent: oklch(0.269 0 0);
+  --color-accent-foreground: oklch(0.985 0 0);
+  --color-destructive: oklch(0.704 0.191 22.216);
+  --color-border: oklch(1 0 0 / 10%);
+  --color-input: oklch(1 0 0 / 15%);
+  --color-ring: oklch(0.556 0 0);
+  --color-separator: oklch(1 0 0 / 10%);
+  --color-surface: oklch(0.205 0 0);
+  --color-surface-secondary: oklch(0.269 0 0);
+  --color-danger: oklch(0.704 0.191 22.216);
 }
 
-[data-editor-card] .table__content {
-  table-layout: fixed;
-  width: 100%;
+html {
+  color-scheme: dark;
 }
 
-[data-editor-card] .table__column,
-[data-editor-card] .table__cell {
-  padding-block: 0.25rem;
-  padding-inline: 0.25rem;
-}
-
-[data-editor-card] .table__scroll-container {
-  overflow-x: hidden;
-}
-
-[data-editor-card] input {
-  min-width: 0;
-  width: 100%;
-  max-width: 100%;
-}
-
-[data-editor-card] .table__row[data-selected="true"] .table__cell {
-  background-color: var(--accent);
-  color: var(--accent-foreground);
-}
-
-[data-editor-card] .table__row[data-span-payload="true"]:not([data-selected="true"]) .table__cell {
-  background-color: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--success);
+html,
+body,
+#root {
+  height: 100%;
+  background: var(--color-background);
+  color: var(--color-foreground);
 }

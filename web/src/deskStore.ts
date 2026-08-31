@@ -14,7 +14,7 @@ export type DeskLayout = {
   editorOrder: EditorKind[];
 };
 
-export const DESK_LAYOUT_STORAGE_KEY = "endo_label:desk-layout-v2";
+export const DESK_LAYOUT_STORAGE_KEY = "endo_label:desk-layout-v3";
 
 export const DEFAULT_DESK_LAYOUT: DeskLayout = {
   clipRailWidth: 208,
