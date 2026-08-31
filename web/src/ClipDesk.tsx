@@ -642,7 +642,8 @@ function TimelineBand({
                 data-timeline-seg=""
                 data-unlabeled={unlabeled ? "true" : undefined}
                 aria-label={unlabeled ? `unlabeled ${seg.start}–${seg.end}` : `${seg.label} ${seg.start}–${seg.end}`}
-                className={`absolute top-0 h-full ${unlabeled ? "bg-white/20" : "bg-primary/80"}`}
+                title={seg.label ?? "unlabeled"}
+                className={`absolute top-0 box-border h-full border-r border-black/50 ${unlabeled ? "bg-white/20" : "bg-primary/80"}`}
                 style={{
                   left: `${(seg.start / frameCount) * 100}%`,
                   width: `${((seg.end - seg.start + 1) / frameCount) * 100}%`,
