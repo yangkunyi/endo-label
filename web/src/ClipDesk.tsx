@@ -36,6 +36,7 @@ import {
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { useDeskStore, type EditorKind, type PaintChip } from "./deskStore";
+import { foldClass, foldPhase, foldTriplet, type TimelineLane } from "./timeline";
 
 type PlaybackRate = 0.5 | 1 | 2;
 
@@ -411,6 +412,16 @@ export function ClipDesk() {
               {jpegClock(frameIndex, data.frame_count)}
             </p>
           ) : null}
+          {data?.frame_count ? (
+            <TimelineBand
+              frameCount={data.frame_count}
+              focus={taskFocus}
+              phaseFrames={phaseDoc?.frames ?? {}}
+              classFrames={classDoc?.frames ?? {}}
+              tripletFrames={tripletDoc?.frames ?? {}}
+              onSeek={scrub}
+            />
+          ) : null}
         </section>
         <ResizeHandle
           label="Resize editor rail"
@@ -591,6 +602,58 @@ export function ClipDesk() {
         ) : null}
       </footer>
     </main>
+  );
+}
+
+function TimelineBand({
+  frameCount,
+  focus,
+  phaseFrames,
+  classFrames,
+  tripletFrames,
+  onSeek,
+}: {
+  frameCount: number;
+  focus: EditorKind;
+  phaseFrames: Record<string, string>;
+  classFrames: Record<string, string[]>;
+  tripletFrames: Record<string, TripletRow[]>;
+  onSeek: (index: number) => void;
+}) {
+  let lanes: TimelineLane[] =
+    focus === "phase"
+      ? foldPhase(frameCount, phaseFrames)
+      : focus === "class"
+        ? foldClass(frameCount, classFrames)
+        : foldTriplet(frameCount, tripletFrames);
+  if (lanes.length === 0) {
+    lanes = [{ key: "empty", segs: [{ start: 0, end: frameCount - 1, label: null }] }];
+  }
+  return (
+    <div role="region" aria-label="Timeline" data-timeline="" className="shrink-0 border-t border-white/20 bg-black/80 px-2 py-1">
+      {lanes.map((lane) => (
+        <div key={lane.key} className="relative mb-0.5 h-4 w-full last:mb-0" data-timeline-lane={lane.key}>
+          {lane.segs.map((seg) => {
+            const unlabeled = seg.label == null;
+            return (
+              <button
+                key={`${lane.key}-${seg.start}`}
+                type="button"
+                data-timeline-seg=""
+                data-unlabeled={unlabeled ? "true" : undefined}
+                aria-label={unlabeled ? `unlabeled ${seg.start}–${seg.end}` : `${seg.label} ${seg.start}–${seg.end}`}
+                className={`absolute top-0 h-full ${unlabeled ? "bg-white/20" : "bg-primary/80"}`}
+                style={{
+                  left: `${(seg.start / frameCount) * 100}%`,
+                  width: `${((seg.end - seg.start + 1) / frameCount) * 100}%`,
+                }}
+                onClick={() => onSeek(seg.start)}
+              />
+            );
+          })}
+        </div>
+      ))}
+    </div>
   );
 }
 

@@ -381,3 +381,21 @@ test("Task-focus tabs, Library write, + does not write Frame, summary does not s
   await expect(page.getByText("Frame 1 of 2")).toBeVisible();
   await expect(page.getByRole("img", { name: "Frame 1" })).toBeVisible();
 });
+
+test("phase band folds span, click seeks, focus rebuilds", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await pickName(page, "phase", "BandPhase");
+  await page.getByRole("button", { name: "Mark from" }).click();
+  await scrubToFrame(page, 1);
+  await page.getByRole("button", { name: "Apply to frames 0–1" }).click();
+  await expect(page.getByText("Wrote phase: BandPhase on frames 0–1")).toBeVisible();
+  await expect.poll(async () => await clipFrames(page, "phase")).toMatchObject({ "0": "BandPhase", "1": "BandPhase" });
+  await expect(page.getByRole("button", { name: "BandPhase 0–1" })).toBeVisible();
+  await scrubToFrame(page, 1);
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  await page.getByRole("button", { name: "BandPhase 0–1" }).click();
+  await expect(page.getByText("Frame 0 of 2")).toBeVisible();
+  await focusTask(page, "class");
+  await expect(page.getByRole("button", { name: "BandPhase 0–1" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Timeline" })).toBeVisible();
+});
