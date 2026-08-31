@@ -72,8 +72,7 @@ function formatClock(seconds: number): string {
 }
 
 function jpegClock(frameIndex: number, frameCount: number): string {
-  const last = Math.max(0, frameCount - 1);
-  return `${formatClock(frameIndex / CLOCK_FPS)} / ${formatClock(last / CLOCK_FPS)}`;
+  return `${formatClock(frameIndex / CLOCK_FPS)} / ${formatClock(Math.max(0, frameCount) / CLOCK_FPS)}`;
 }
 
 function savePlaybackSettings(settings: PlaybackSettings) {
