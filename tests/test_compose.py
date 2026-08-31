@@ -901,8 +901,20 @@ def test_unknown_triplet_names_are_rejected(client: TestClient) -> None:
     assert client.get("/api/triplet/CLIPA").json()["frames"] == {}
 
 
-def test_triplet_rows_stack_and_allow_identical_triples(client: TestClient) -> None:
-    _add_names(client, instruments=["grasper", "hook"], verbs=["retract", "dissect"], targets=["gallbladder", "cystic-duct"])
+def test_triplet_rows_stack_and_toggle_identical_triple(client: TestClient) -> None:
+    _add_names(
+        client,
+        phases="Preparation",
+        class_tags="blurred",
+        instruments=["grasper", "hook"],
+        verbs=["retract", "dissect"],
+        targets=["gallbladder", "cystic-duct"],
+    )
+    assert client.post(
+        "/api/phase/CLIPA/span",
+        json={"phase": "Preparation", "from": 0, "to": 0},
+    ).status_code == 200
+    assert client.put("/api/class/CLIPA/frames/0", json={"tags": ["blurred"]}).status_code == 200
     first = client.post(
         "/api/triplet/CLIPA/frames/0",
         json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
@@ -926,31 +938,74 @@ def test_triplet_rows_stack_and_allow_identical_triples(client: TestClient) -> N
         json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
     )
     assert dup.status_code == 200
-    assert dup.json()["id"] == 3
     rows = client.get("/api/triplet/CLIPA").json()["frames"]["0"]
     assert rows == [
-        {
-            "id": 1,
-            "instrument": "grasper",
-            "verb": "retract",
-            "target": "gallbladder",
-        },
         {
             "id": 2,
             "instrument": "hook",
             "verb": "dissect",
             "target": "cystic-duct",
         },
+    ]
+    assert all("track" not in row for row in rows)
+    assert client.get("/api/phase/CLIPA").json()["frames"] == {"0": "Preparation"}
+    assert client.get("/api/class/CLIPA").json()["frames"] == {"0": ["blurred"]}
+    assert client.get("/api/session").json().get("active") is False
+
+
+def test_triplet_post_collapses_leftover_duplicate_rows(tmp_path: Path) -> None:
+    client = _sitting(tmp_path, ("CLIPA",))
+    _add_names(
+        client,
+        instruments=["grasper", "hook"],
+        verbs=["retract", "dissect"],
+        targets=["gallbladder", "cystic-duct"],
+    )
+    path = tmp_path / "labels" / "triplet" / "CLIPA.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "clip_id": "CLIPA",
+                "frames": {
+                    "0": [
+                        {
+                            "id": 1,
+                            "instrument": "grasper",
+                            "verb": "retract",
+                            "target": "gallbladder",
+                        },
+                        {
+                            "id": 2,
+                            "instrument": "hook",
+                            "verb": "dissect",
+                            "target": "cystic-duct",
+                        },
+                        {
+                            "id": 3,
+                            "instrument": "grasper",
+                            "verb": "retract",
+                            "target": "gallbladder",
+                        },
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    off = client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    assert off.status_code == 200
+    assert client.get("/api/triplet/CLIPA").json()["frames"]["0"] == [
         {
-            "id": 3,
-            "instrument": "grasper",
-            "verb": "retract",
-            "target": "gallbladder",
+            "id": 2,
+            "instrument": "hook",
+            "verb": "dissect",
+            "target": "cystic-duct",
         },
     ]
-    ids = [row["id"] for row in rows]
-    assert len(ids) == len(set(ids))
-    assert all("track" not in row for row in rows)
 
 
 def test_triplet_row_put_updates_that_row_only(client: TestClient) -> None:

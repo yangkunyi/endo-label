@@ -69,6 +69,22 @@ def make_router(settings: Settings) -> APIRouter:
         doc = labels_store.load_clip(settings, "triplet", clip_id)
         key = str(frame_index)
         rows = list(doc["frames"].get(key) or [])
+
+        def _same(row: dict) -> bool:
+            return (
+                row.get("instrument") == body.instrument
+                and row.get("verb") == body.verb
+                and row.get("target") == body.target
+            )
+
+        if any(_same(row) for row in rows):
+            kept = [row for row in rows if not _same(row)]
+            if kept:
+                doc["frames"][key] = kept
+            else:
+                doc["frames"].pop(key, None)
+            labels_store.save_clip(settings, "triplet", clip_id, doc)
+            return {"rows": kept}
         row = {
             "id": _next_id(rows),
             "instrument": body.instrument,
