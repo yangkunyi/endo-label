@@ -37,13 +37,15 @@ import { Combobox } from "./components/ui/combobox";
 import { Input } from "./components/ui/input";
 import { useDeskStore, type PaintChip } from "./deskStore";
 
+type PlaybackRate = 0.5 | 1 | 2;
+
 type PlaybackSettings = {
-  fps: 1 | 10 | 25;
-  skip: number;
+  rate: PlaybackRate;
 };
 
-const PLAYBACK_STORAGE_KEY = "endo_label:desk-playback";
-const DEFAULT_PLAYBACK_SETTINGS: PlaybackSettings = { fps: 1, skip: 1 };
+const CLOCK_FPS = 25;
+const PLAYBACK_STORAGE_KEY = "endo_label:desk-player-rate";
+const DEFAULT_PLAYBACK_SETTINGS: PlaybackSettings = { rate: 1 };
 
 function readPlaybackSettings(): PlaybackSettings {
   if (typeof window === "undefined") {
@@ -55,14 +57,23 @@ function readPlaybackSettings(): PlaybackSettings {
       return DEFAULT_PLAYBACK_SETTINGS;
     }
     const value = JSON.parse(raw) as Partial<PlaybackSettings>;
-    const fps = value.fps === 10 || value.fps === 25 ? value.fps : 1;
-    const skip = typeof value.skip === "number" && Number.isInteger(value.skip)
-      ? Math.min(Math.max(1, value.skip), 999)
-      : 1;
-    return { fps, skip };
+    const rate = value.rate === 0.5 || value.rate === 2 ? value.rate : 1;
+    return { rate };
   } catch {
     return DEFAULT_PLAYBACK_SETTINGS;
   }
+}
+
+function formatClock(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
+function jpegClock(frameIndex: number, frameCount: number): string {
+  const last = Math.max(0, frameCount - 1);
+  return `${formatClock(frameIndex / CLOCK_FPS)} / ${formatClock(last / CLOCK_FPS)}`;
 }
 
 function savePlaybackSettings(settings: PlaybackSettings) {
@@ -239,9 +250,9 @@ export function ClipDesk() {
       setPlaying(false);
       return;
     }
-    const delay = Math.round(1000 / playback.fps);
+    const delay = Math.max(1, Math.round(1000 / (CLOCK_FPS * playback.rate)));
     const id = window.setTimeout(() => {
-      const next = frameIndex + playback.skip;
+      const next = frameIndex + 1;
       if (next >= last) {
         scrub(last);
         setPlaying(false);
@@ -250,7 +261,7 @@ export function ClipDesk() {
       scrub(next);
     }, delay);
     return () => window.clearTimeout(id);
-  }, [data, frameIndex, playback.fps, playback.skip, playing, scrub]);
+  }, [data, frameIndex, playback.rate, playing, scrub]);
 
   const markedFrom = spanStart && spanStart.clipId === clipId ? spanStart.frameIndex : null;
   const { from: rangeFrom, to: rangeTo } = rangeEnds(markedFrom, frameIndex);
@@ -344,7 +355,6 @@ export function ClipDesk() {
         <span className="text-sm font-semibold tracking-wide">endo_label</span>
         <span className="text-muted-foreground" aria-hidden="true">/</span>
         <h1 className="text-sm font-semibold">{data?.id ?? "Workbench"}</h1>
-        {data ? <p className="text-sm text-muted-foreground">Frame {frameIndex} of {data.frame_count}</p> : null}
       </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <nav
@@ -378,22 +388,29 @@ export function ClipDesk() {
           value={layout.clipRailWidth}
           onResize={(value) => setLayout({ clipRailWidth: value })}
         />
-        <section aria-label="Frame viewer" className="flex min-h-0 min-w-0 flex-1 items-center justify-center bg-black">
-          {error ? (
-            <div className="p-6 text-center"><h2 className="mb-2 text-lg font-semibold">{clipId}</h2><p>{error instanceof Error ? error.message : "Clip not found"}</p></div>
-          ) : isLoading ? (
-            <p>Loading Clip…</p>
-          ) : data?.frame_count ? (
-            <img
-              className="h-full w-full object-contain"
-              src={frameJpegPath(data.id, frameIndex)}
-              alt={`Frame ${frameIndex}`}
-            />
-          ) : data ? (
-            <p>This Clip has no Frames.</p>
-          ) : (
-            <div className="p-6 text-center"><h2 className="mb-2 text-xl font-semibold">Choose a Clip</h2><p className="text-muted-foreground">Select a Clip from the left rail to begin labeling.</p></div>
-          )}
+        <section aria-label="Player" className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-black">
+          <div className="flex min-h-0 flex-1 items-center justify-center">
+            {error ? (
+              <div className="p-6 text-center"><h2 className="mb-2 text-lg font-semibold">{clipId}</h2><p>{error instanceof Error ? error.message : "Clip not found"}</p></div>
+            ) : isLoading ? (
+              <p>Loading Clip…</p>
+            ) : data?.frame_count ? (
+              <img
+                className="h-full w-full object-contain"
+                src={frameJpegPath(data.id, frameIndex)}
+                alt={`Frame ${frameIndex}`}
+              />
+            ) : data ? (
+              <p>This Clip has no Frames.</p>
+            ) : (
+              <div className="p-6 text-center"><h2 className="mb-2 text-xl font-semibold">Choose a Clip</h2><p className="text-muted-foreground">Select a Clip from the left rail to begin labeling.</p></div>
+            )}
+          </div>
+          {data?.frame_count ? (
+            <p data-player-clock="" className="pointer-events-none absolute right-3 top-3 text-sm tabular-nums text-white">
+              {jpegClock(frameIndex, data.frame_count)}
+            </p>
+          ) : null}
         </section>
         <ResizeHandle
           label="Resize editor rail"
@@ -460,7 +477,7 @@ export function ClipDesk() {
         reverse
         onResize={(value) => setLayout({ bottomBarHeight: value })}
       />
-      <footer aria-label="Frame transport" className="flex shrink-0 items-center gap-3 overflow-x-auto border-t border-border bg-card px-4 py-2" style={{ height: layout.bottomBarHeight }}>
+      <footer aria-label="Player controls" className="flex shrink-0 items-center gap-3 overflow-x-auto border-t border-border bg-card px-4 py-2" style={{ height: layout.bottomBarHeight }}>
         <Button
           type="button"
           size="icon"
@@ -472,44 +489,24 @@ export function ClipDesk() {
           {playing ? <Pause size={16} /> : <Play size={16} />}
         </Button>
         <label className="flex items-center gap-1 text-sm">
-          <span className="text-muted-foreground">fps</span>
+          <span className="text-muted-foreground">rate</span>
           <select
-            aria-label="fps"
+            aria-label="Playback rate"
             className="h-8 rounded-md border border-input bg-background px-1 text-sm"
-            value={playback.fps}
+            value={playback.rate}
             onChange={(event) => {
-              const fps = Number(event.target.value);
-              if (fps === 1 || fps === 10 || fps === 25) {
-                setPlayback((current) => ({ ...current, fps }));
+              const rate = Number(event.target.value);
+              if (rate === 0.5 || rate === 1 || rate === 2) {
+                setPlayback({ rate });
               }
             }}
           >
-            <option value={1}>1</option>
-            <option value={10}>10</option>
-            <option value={25}>25</option>
+            <option value={0.5}>0.5×</option>
+            <option value={1}>1×</option>
+            <option value={2}>2×</option>
           </select>
         </label>
-        <div className="flex shrink-0 items-center gap-1 text-sm">
-          <span className="text-muted-foreground">skip every</span>
-          <Input
-            aria-label="Skip every N Frames"
-            className="w-16"
-            type="number"
-            min={1}
-            max={999}
-            step={1}
-            value={String(playback.skip)}
-            onChange={(event) => {
-              const skip = Number(event.target.value);
-              if (Number.isInteger(skip) && skip >= 1 && skip <= 999) {
-                setPlayback((current) => ({ ...current, skip }));
-              }
-            }}
-          />
-          <span>Frames</span>
-        </div>
         <div className="relative min-w-40 flex-1">
-          <span className="sr-only">Frame index</span>
           {(markedFrom != null || sliderFlash) && data && data.frame_count > 1 ? (
             <span
               aria-hidden
@@ -525,7 +522,7 @@ export function ClipDesk() {
           ) : null}
           <input
             type="range"
-            aria-label="Frame index"
+            aria-label="Seek"
             className="relative w-full accent-primary"
             min={0}
             max={Math.max(0, (data?.frame_count ?? 0) - 1)}
@@ -535,7 +532,10 @@ export function ClipDesk() {
             onChange={(event) => scrub(Number(event.target.value))}
           />
         </div>
-        <output className="w-24 shrink-0 text-right text-sm text-muted-foreground">{data ? `Frame ${frameIndex} of ${data.frame_count}` : "No Clip"}</output>
+        <output className="shrink-0 text-sm tabular-nums" data-player-clock-bar="">
+          {data ? jpegClock(frameIndex, data.frame_count) : "0:00 / 0:00"}
+        </output>
+        <output className="w-24 shrink-0 text-right text-xs text-muted-foreground">{data ? `Frame ${frameIndex} of ${data.frame_count}` : "No Clip"}</output>
         {markedFrom != null ? (
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{rangeFrom} → {rangeTo}</span>
         ) : null}

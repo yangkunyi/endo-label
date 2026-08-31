@@ -27,7 +27,7 @@ test.beforeEach(async ({ request }) => {
 });
 
 async function scrubToFrame(page: Page, index: number) {
-  const slider = page.getByRole("slider", { name: "Frame index" });
+  const slider = page.getByRole("slider", { name: "Seek" });
   await slider.focus();
   await page.keyboard.press("Home");
   for (let i = 0; i < index; i++) {
@@ -74,24 +74,25 @@ test("root and Clip routes share one workbench shell", async ({ page }) => {
   await page.locator('a[href="/clips/CLIP_E2E"]').click();
   await expect(page).toHaveURL(/\/clips\/CLIP_E2E$/);
   await expect(page.getByRole("heading", { name: "CLIP_E2E" })).toBeVisible();
-  await expect(page.getByText("Frame 0 of 2")).toHaveCount(2);
+  await expect(page.getByText("Frame 0 of 2")).toBeVisible();
   await expect(page.getByRole("img", { name: "Frame 0" })).toBeVisible();
 });
 
-test("Clip rail has counts, slider scrubs, and no Frame filmstrip", async ({ page }) => {
+test("Clip rail has counts, player seeks, and no Frame filmstrip", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   const rail = page.getByRole("navigation", { name: "Clips" });
   await expect(rail.getByText("CLIP_E2E", { exact: true })).toBeVisible();
   await expect(rail.getByText("2 Frames", { exact: true })).toBeVisible();
   await expect(rail.getByRole("button")).toHaveCount(0);
-  await expect(page.getByRole("slider", { name: "Frame index" })).toBeVisible();
+  await expect(page.getByRole("slider", { name: "Seek" })).toBeVisible();
+  await expect(page.getByRole("slider", { name: "Frame index" })).toHaveCount(0);
 
   const jpeg = page.getByRole("img", { name: "Frame 0" });
   await expect(jpeg).toBeVisible();
   expect(await jpeg.evaluate((el) => getComputedStyle(el).objectFit)).toBe("contain");
 
   await scrubToFrame(page, 1);
-  await expect(page.getByText("Frame 1 of 2")).toHaveCount(2);
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
   await expect(page.getByRole("img", { name: "Frame 1" })).toBeVisible();
 });
 
@@ -158,14 +159,11 @@ test("playback advances without looping and ignores editable controls", async ({
   await page.goto("/clips/CLIP_E2E");
   await expect(page.getByRole("img", { name: "Frame 0" })).toBeVisible();
 
-  await page.getByLabel("fps").selectOption("25");
-  const skip = page.getByLabel("Skip every N Frames");
-  await skip.fill("1");
+  await page.getByLabel("Playback rate").selectOption("2");
   await page.reload();
-  await expect(page.getByLabel("fps")).toHaveValue("25");
-  await expect(page.getByLabel("Skip every N Frames")).toHaveValue("1");
+  await expect(page.getByLabel("Playback rate")).toHaveValue("2");
 
-  await page.getByRole("slider", { name: "Frame index" }).focus();
+  await page.getByRole("slider", { name: "Seek" }).focus();
   await page.keyboard.press("Space");
   await expect(page.getByRole("img", { name: "Frame 0" })).toBeVisible();
 
@@ -173,6 +171,17 @@ test("playback advances without looping and ignores editable controls", async ({
   await page.keyboard.press("Space");
   await expect(page.getByRole("img", { name: "Frame 1" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
+});
+
+test("jpeg player shows clock, seek, rate, and small Frame print", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await expect(page.getByRole("region", { name: "Player" })).toBeVisible();
+  await expect(page.locator("[data-player-clock]")).toHaveText("0:00 / 0:00");
+  await expect(page.getByLabel("Player controls").getByText("Frame 0 of 2")).toHaveClass(/text-xs/);
+  await expect(page.getByLabel("Playback rate")).toBeVisible();
+  await scrubToFrame(page, 1);
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Frame 1" })).toBeVisible();
 });
 
 test("List rename phase and class is desk-wide", async ({ page }) => {
@@ -215,7 +224,7 @@ test("dark sitting, compact rail, no HeroUI, no filmstrip, no Arm", async ({ pag
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page.getByRole("button", { name: /light mode|dark mode|theme/i })).toHaveCount(0);
   await expect(page.locator("main")).not.toHaveClass(/stone-/);
-  await expect(page.getByLabel("Frame transport")).not.toHaveClass(/stone-/);
+  await expect(page.getByLabel("Player controls")).not.toHaveClass(/stone-/);
   await expect(page.getByText("Arm class span")).toHaveCount(0);
   await expect(page.getByRole("img")).toHaveCount(1);
   await expect(page.getByRole("grid")).toHaveCount(0);
