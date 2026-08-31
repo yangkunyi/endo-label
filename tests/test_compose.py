@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from endo_label.app import create_app
-from endo_label.config import Settings
+from endo_label.config import Settings, load_settings
 
 _VOCAB_LISTS = ("phases", "class_tags", "instruments", "verbs", "targets")
 
@@ -62,7 +62,82 @@ def test_health_and_clips(client: TestClient) -> None:
     assert h.json()["ok"] is True
     clips = client.get("/api/clips")
     assert clips.status_code == 200
-    assert clips.json()["clips"] == [{"id": "CLIPA", "frame_count": 2}]
+    assert clips.json()["clips"] == [
+        {"id": "CLIPA", "kind": "jpeg", "frame_count": 2, "fps": 25},
+    ]
+
+
+def test_yaml_clips_skip_bad_path_and_unknown_kind(tmp_path: Path) -> None:
+    good = tmp_path / "frames" / "GOOD"
+    good.mkdir(parents=True)
+    (good / "00001.jpg").write_bytes(b"fake-jpeg-0")
+    (good / "00002.jpg").write_bytes(b"fake-jpeg-1")
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake-mp4")
+    yaml_path = tmp_path / "sitting.yaml"
+    yaml_path.write_text(
+        "\n".join(
+            [
+                "clips:",
+                "  - id: GOOD",
+                "    kind: jpeg",
+                f"    path: {good}",
+                "  - id: MISSING",
+                "    kind: jpeg",
+                f"    path: {tmp_path / 'no-such-dir'}",
+                "  - id: WEIRD",
+                "    kind: hologram",
+                f"    path: {good}",
+                "  - id: VID",
+                "    kind: video",
+                f"    path: {video}",
+                f"labels_root: {tmp_path / 'labels'}",
+                f"annotations_root: {tmp_path / 'mask'}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(load_settings(yaml_path)))
+    clips = client.get("/api/clips")
+    assert clips.status_code == 200
+    assert clips.json()["clips"] == [
+        {"id": "GOOD", "kind": "jpeg", "frame_count": 2, "fps": 25},
+        {"id": "VID", "kind": "video", "frame_count": 0, "fps": 25},
+    ]
+    meta = client.get("/api/clips/GOOD")
+    assert meta.status_code == 200
+    assert meta.json()["kind"] == "jpeg"
+    assert client.get("/api/clips/GOOD/frames/0").content == b"fake-jpeg-0"
+    assert client.get("/api/clips/MISSING").status_code == 404
+    assert client.get("/api/clips/VID").json()["kind"] == "video"
+    assert client.get("/api/clips/VID").json()["frame_count"] == 0
+
+
+def test_listing_clips_does_not_write_frame_pool(tmp_path: Path) -> None:
+    good = tmp_path / "frames" / "GOOD"
+    good.mkdir(parents=True)
+    jpeg = good / "00001.jpg"
+    jpeg.write_bytes(b"fake-jpeg-0")
+    before = jpeg.stat().st_mtime_ns
+    yaml_path = tmp_path / "sitting.yaml"
+    yaml_path.write_text(
+        "\n".join(
+            [
+                "clips:",
+                "  - id: GOOD",
+                "    kind: jpeg",
+                f"    path: {good}",
+                f"labels_root: {tmp_path / 'labels'}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app(load_settings(yaml_path)))
+    assert client.get("/api/clips").status_code == 200
+    assert client.get("/api/clips/GOOD/frames/0").status_code == 200
+    assert jpeg.stat().st_mtime_ns == before
 
 
 def test_missing_clip_is_not_found(client: TestClient) -> None:
@@ -84,6 +159,8 @@ def test_clip_meta_and_frame_jpeg(client: TestClient) -> None:
     assert meta.status_code == 200
     body = meta.json()
     assert body["id"] == "CLIPA"
+    assert body["kind"] == "jpeg"
+    assert body["fps"] == 25
     assert body["frame_count"] == 2
     assert body["frames"] == [
         {"index": 0, "stem": "00001"},

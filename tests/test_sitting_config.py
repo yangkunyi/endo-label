@@ -84,7 +84,9 @@ def test_config_flag_loads_frame_pool_allowlist_and_label_roots(tmp_path: Path) 
     client = TestClient(create_app(settings))
     clips = client.get("/api/clips")
     assert clips.status_code == 200
-    assert clips.json()["clips"] == [{"id": "YAMLCLIP", "frame_count": 2}]
+    assert clips.json()["clips"] == [
+        {"id": "YAMLCLIP", "kind": "jpeg", "frame_count": 2, "fps": 25},
+    ]
 
     added = client.post("/api/vocab/phases", json={"name": "Preparation"})
     assert added.status_code == 200
@@ -131,7 +133,7 @@ def test_environment_variables_are_not_sitting_config(tmp_path: Path, monkeypatc
 
     client = TestClient(create_app(load_settings(yaml_path)))
     clips = client.get("/api/clips").json()["clips"]
-    assert clips == [{"id": "YAMLCLIP", "frame_count": 1}]
+    assert clips == [{"id": "YAMLCLIP", "kind": "jpeg", "frame_count": 1, "fps": 25}]
     ids = {row["id"] for row in clips}
     assert "ENVCLIP" not in ids
 

@@ -1,10 +1,12 @@
-export type ClipRow = { id: string; frame_count: number };
+export type ClipRow = { id: string; kind: "jpeg" | "video"; frame_count: number; fps: number };
 
 export type ClipListResponse = { clips: ClipRow[] };
 
 export type ClipMeta = {
   id: string;
+  kind: "jpeg" | "video";
   frame_count: number;
+  fps: number;
   frames: { index: number; stem: string }[];
 };
 

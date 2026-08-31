@@ -56,7 +56,7 @@ def test_built_desk_is_served_at_root_and_api_stays_compose_http(tmp_path: Path)
     assert b"endo_label" in desk.content
     clips = client.get("/api/clips")
     assert clips.status_code == 200
-    assert clips.json()["clips"] == [{"id": "CLIPA", "frame_count": 2}]
+    assert clips.json()["clips"] == [{"id": "CLIPA", "kind": "jpeg", "frame_count": 2, "fps": 25}]
 
 
 def test_refresh_clip_desk_returns_spa_not_404(tmp_path: Path) -> None:
@@ -90,7 +90,7 @@ def test_sitting_without_built_desk_still_serves_api(tmp_path: Path) -> None:
     health = client.get("/api/health")
     assert health.status_code == 200
     assert health.json()["ok"] is True
-    assert client.get("/api/clips").json()["clips"] == [{"id": "CLIPA", "frame_count": 2}]
+    assert client.get("/api/clips").json()["clips"] == [{"id": "CLIPA", "kind": "jpeg", "frame_count": 2, "fps": 25}]
     assert client.get("/").status_code == 404
 
 
@@ -106,7 +106,7 @@ def test_default_sitting_serves_repo_web_dist(tmp_path: Path) -> None:
     clip = client.get("/clips/CLIPA")
     assert clip.status_code == 200
     assert b'id="root"' in clip.content
-    assert client.get("/api/clips").json()["clips"] == [{"id": "CLIPA", "frame_count": 2}]
+    assert client.get("/api/clips").json()["clips"] == [{"id": "CLIPA", "kind": "jpeg", "frame_count": 2, "fps": 25}]
 
 
 def test_phase_class_triplet_on_sitting_without_session(tmp_path: Path) -> None:

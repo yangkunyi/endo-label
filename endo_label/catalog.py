@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from endo_label.config import Settings
+from endo_label.config import ClipEntry, Settings
 
 _JPEG_SUFFIXES = {".jpg", ".jpeg", ".JPG", ".JPEG"}
+JPEG_CLOCK_FPS = 25
 
 
 @dataclass(frozen=True)
@@ -29,17 +30,34 @@ class FrameNotFound(CatalogError):
     pass
 
 
+def clip_entries(settings: Settings) -> tuple[ClipEntry, ...]:
+    if settings.clips:
+        return settings.clips
+    return tuple(
+        ClipEntry(id=clip_id, kind="jpeg", path=settings.frames_root / clip_id)
+        for clip_id in settings.clip_allowlist
+    )
+
+
+def _entry(settings: Settings, clip_id: str) -> ClipEntry:
+    for entry in clip_entries(settings):
+        if entry.id == clip_id:
+            return entry
+    raise ClipNotFound(clip_id)
+
+
 def _clip_dir(settings: Settings, clip_id: str) -> Path:
-    if clip_id not in settings.clip_allowlist:
+    entry = _entry(settings, clip_id)
+    if entry.kind != "jpeg":
         raise ClipNotFound(clip_id)
-    # Reject path traversal: clip_id must be a bare directory name
-    if clip_id in ("", ".", "..") or "/" in clip_id or "\\" in clip_id:
-        raise ClipNotFound(clip_id)
-    path = (settings.frames_root / clip_id).resolve()
-    try:
-        path.relative_to(settings.frames_root.resolve())
-    except ValueError as exc:
-        raise ClipNotFound(clip_id) from exc
+    path = entry.path.resolve()
+    if not settings.clips:
+        if clip_id in ("", ".", "..") or "/" in clip_id or "\\" in clip_id:
+            raise ClipNotFound(clip_id)
+        try:
+            path.relative_to(settings.frames_root.resolve())
+        except ValueError as exc:
+            raise ClipNotFound(clip_id) from exc
     if not path.is_dir():
         raise ClipNotFound(clip_id)
     return path
@@ -68,22 +86,50 @@ def list_frames(settings: Settings, clip_id: str) -> list[FrameRef]:
     return [FrameRef(index=i, stem=p.stem, path=p) for i, p in enumerate(files)]
 
 
+def _clip_row(entry: ClipEntry, settings: Settings) -> dict | None:
+    if entry.kind == "jpeg":
+        try:
+            frames = list_frames(settings, entry.id)
+        except ClipNotFound:
+            return None
+        return {
+            "id": entry.id,
+            "kind": "jpeg",
+            "frame_count": len(frames),
+            "fps": JPEG_CLOCK_FPS,
+        }
+    if entry.kind == "video":
+        path = entry.path.resolve()
+        if not path.is_file():
+            return None
+        return {
+            "id": entry.id,
+            "kind": "video",
+            "frame_count": 0,
+            "fps": JPEG_CLOCK_FPS,
+        }
+    return None
+
+
 def list_clips(settings: Settings) -> list[dict]:
     clips: list[dict] = []
-    for clip_id in settings.clip_allowlist:
-        try:
-            frames = list_frames(settings, clip_id)
-        except ClipNotFound:
-            continue
-        clips.append({"id": clip_id, "frame_count": len(frames)})
+    for entry in clip_entries(settings):
+        row = _clip_row(entry, settings)
+        if row is not None:
+            clips.append(row)
     return clips
 
 
 def clip_meta(settings: Settings, clip_id: str) -> dict:
+    entry = _entry(settings, clip_id)
+    row = _clip_row(entry, settings)
+    if row is None:
+        raise ClipNotFound(clip_id)
+    if entry.kind == "video":
+        return {**row, "frames": []}
     frames = list_frames(settings, clip_id)
     return {
-        "id": clip_id,
-        "frame_count": len(frames),
+        **row,
         "frames": [{"index": f.index, "stem": f.stem} for f in frames],
     }
 

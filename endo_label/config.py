@@ -37,9 +37,17 @@ def _default_sam31_checkpoint() -> Path:
 
 
 @dataclass(frozen=True)
+class ClipEntry:
+    id: str
+    kind: str
+    path: Path
+
+
+@dataclass(frozen=True)
 class Settings:
     frames_root: Path
     clip_allowlist: tuple[str, ...]
+    clips: tuple[ClipEntry, ...] = ()
     annotations_root: Path = field(default_factory=_default_annotations_root)
     labels_root: Path = field(default_factory=_default_labels_root)
     auto_save_on_propagate: bool = True
@@ -78,6 +86,24 @@ def _clip_allowlist(value: object, path: Path) -> tuple[str, ...]:
     raise ConfigError(f"{path}: clip_allowlist must be a list of Clip ids")
 
 
+def _parse_clips(value: object, path: Path, base: Path) -> tuple[ClipEntry, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ConfigError(f"{path}: clips must be a list")
+    entries: list[ClipEntry] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ConfigError(f"{path}: each clips entry must be a mapping")
+        clip_id = str(item.get("id") or "").strip()
+        kind = str(item.get("kind") or "").strip()
+        raw_path = item.get("path")
+        if not clip_id or not kind or raw_path is None or not str(raw_path).strip():
+            continue
+        entries.append(ClipEntry(id=clip_id, kind=kind, path=_resolve_path(str(raw_path).strip(), base)))
+    return tuple(entries)
+
+
 def load_settings(config_path: Path | str | None = None) -> Settings:
     path = Path(config_path) if config_path is not None else default_config_path()
     if not path.is_file():
@@ -97,10 +123,14 @@ def load_settings(config_path: Path | str | None = None) -> Settings:
         raise ConfigError(f"invalid YAML in {path}: expected a mapping")
 
     base = path.parent
+    clips = _parse_clips(data.get("clips"), path, base)
     frames_raw = data.get("frames_root")
     if frames_raw is None or not str(frames_raw).strip():
-        raise ConfigError(f"{path}: frames_root is required")
-    frames_root = _resolve_path(str(frames_raw).strip(), base)
+        if not clips:
+            raise ConfigError(f"{path}: frames_root is required")
+        frames_root = clips[0].path if clips[0].kind == "jpeg" else clips[0].path.parent
+    else:
+        frames_root = _resolve_path(str(frames_raw).strip(), base)
 
     labels_raw = data.get("labels_root")
     if labels_raw is None or not str(labels_raw).strip():
@@ -114,9 +144,11 @@ def load_settings(config_path: Path | str | None = None) -> Settings:
     else:
         annotations_root = _resolve_path(str(ann_raw).strip(), base)
 
+    allowlist = tuple(entry.id for entry in clips) if clips else _clip_allowlist(data.get("clip_allowlist"), path)
     return Settings(
         frames_root=frames_root,
-        clip_allowlist=_clip_allowlist(data.get("clip_allowlist"), path),
+        clip_allowlist=allowlist,
+        clips=clips,
         annotations_root=annotations_root,
         labels_root=labels_root,
     )
