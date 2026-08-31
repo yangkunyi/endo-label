@@ -41,10 +41,25 @@ async function clipFrames(page: Page, kind: "phase" | "class" | "triplet", clipI
   return (await response.json()).frames as Record<string, unknown>;
 }
 
-async function pickName(page: Page, ariaLabel: string, name: string) {
-  const box = page.getByRole("combobox", { name: ariaLabel });
+async function focusTask(page: Page, kind: "class" | "phase" | "triplet") {
+  await page.getByRole("tab", { name: kind }).click();
+}
+
+async function addVocabOnly(page: Page, kind: string, name: string) {
+  const box = page.getByRole("textbox", { name: `Add ${kind} name` });
   await box.fill(name);
   await box.press("Enter");
+}
+
+async function pickName(page: Page, ariaLabel: string, name: string) {
+  const tab = ariaLabel === "class" || ariaLabel === "phase" ? ariaLabel : "triplet";
+  await focusTask(page, tab);
+  const listName = tab === "triplet" ? `${ariaLabel} library` : "Library";
+  const list = page.getByRole("list", { name: listName });
+  if (await list.getByRole("button", { name, exact: true }).count() === 0) {
+    await addVocabOnly(page, ariaLabel, name);
+  }
+  await list.getByRole("button", { name, exact: true }).click();
 }
 
 async function fillTriplet(page: Page, instrument: string, verb: string, target: string) {
@@ -54,6 +69,7 @@ async function fillTriplet(page: Page, instrument: string, verb: string, target:
 }
 
 async function openList(page: Page, editor: "class" | "phase" | "triplet") {
+  await focusTask(page, editor);
   const card = page.locator(`[data-editor-card="${editor}"]`);
   const button = card.getByRole("button", { name: "List" }).first();
   if ((await button.getAttribute("aria-expanded")) !== "true") {
@@ -66,9 +82,10 @@ test("root and Clip routes share one workbench shell", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Choose a Clip" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Clips" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "class" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "triplet" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "phase" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "class" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "triplet" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "phase" })).toBeVisible();
+  await expect(page.getByRole("tabpanel")).toHaveCount(1);
   await expect(page.getByRole("img")).toHaveCount(0);
 
   await page.locator('a[href="/clips/CLIP_E2E"]').click();
@@ -148,11 +165,14 @@ test("class chip and re-pick toggle off; phase re-pick clears; triplet same trip
   }).toBe(false);
 });
 
-test("empty combobox placeholder is Type to add", async ({ page }) => {
+test("empty add-name placeholder is Type to add", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
-  await expect(page.getByRole("combobox", { name: "class" })).toHaveAttribute("placeholder", "Type to add");
-  await expect(page.getByRole("combobox", { name: "phase" })).toHaveAttribute("placeholder", "Type to add");
-  await expect(page.getByRole("combobox", { name: "instrument" })).toHaveAttribute("placeholder", "Type to add");
+  await focusTask(page, "class");
+  await expect(page.getByRole("textbox", { name: "Add class name" })).toHaveAttribute("placeholder", "Type to add");
+  await focusTask(page, "phase");
+  await expect(page.getByRole("textbox", { name: "Add phase name" })).toHaveAttribute("placeholder", "Type to add");
+  await focusTask(page, "triplet");
+  await expect(page.getByRole("textbox", { name: "Add instrument name" })).toHaveAttribute("placeholder", "Type to add");
 });
 
 test("playback advances without looping and ignores editable controls", async ({ page }) => {
@@ -194,7 +214,7 @@ test("List rename phase and class is desk-wide", async ({ page }) => {
   await expect.poll(async () => (await clipFrames(page, "phase", "CLIP_E2E_B"))["0"]).toBe("DeskRenameP1");
 
   const phaseCard = await openList(page, "phase");
-  await phaseCard.getByRole("button", { name: "DeskRenameP1", exact: true }).dblclick();
+  await phaseCard.getByRole("list", { name: "phase names" }).getByRole("button", { name: "DeskRenameP1", exact: true }).dblclick();
   const rename = page.getByLabel("Rename phase");
   await expect(rename).toBeVisible();
   await rename.fill("DeskRenameP2");
@@ -208,7 +228,7 @@ test("List rename phase and class is desk-wide", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E_B");
   await pickName(page, "class", "DeskRenameC1");
   const classCard = await openList(page, "class");
-  await classCard.getByRole("button", { name: "DeskRenameC1", exact: true }).dblclick();
+  await classCard.getByRole("list", { name: "class names" }).getByRole("button", { name: "DeskRenameC1", exact: true }).dblclick();
   const renameClass = page.getByLabel("Rename class tag");
   await renameClass.fill("DeskRenameC2");
   await renameClass.press("Enter");
@@ -332,4 +352,32 @@ test("] applies; Remove without Mark from is this Frame", async ({ page }) => {
   await page.getByRole("button", { name: "Remove from frames 1–1" }).click();
   await expect.poll(async () => (await clipFrames(page, "phase"))["1"]).toBeUndefined();
   await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("ChipApplyP");
+});
+
+test("Task-focus tabs, Library write, + does not write Frame, summary does not seek", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await focusTask(page, "class");
+  await expect(page.locator('[data-editor-card="class"]')).toBeVisible();
+  await expect(page.locator('[data-editor-card="phase"]')).toHaveCount(0);
+  await expect(page.locator('[data-editor-card="triplet"]')).toHaveCount(0);
+
+  await addVocabOnly(page, "class", "TaskFocusLib");
+  await page.getByRole("list", { name: "Library" }).getByRole("button", { name: "TaskFocusLib", exact: true }).click();
+  await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("TaskFocusLib");
+
+  const beforePhase = await clipFrames(page, "phase");
+  await focusTask(page, "phase");
+  await addVocabOnly(page, "phase", "PlusOnlyPhase");
+  await expect.poll(async () => {
+    const vocab = await (await page.request.get("/api/vocab")).json();
+    return (vocab.phases as string[]).includes("PlusOnlyPhase");
+  }).toBe(true);
+  await expect.poll(async () => await clipFrames(page, "phase")).toEqual(beforePhase);
+
+  await scrubToFrame(page, 1);
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  await page.getByRole("button", { name: /class:/ }).click();
+  await expect(page.locator('[data-editor-card="class"]')).toBeVisible();
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Frame 1" })).toBeVisible();
 });

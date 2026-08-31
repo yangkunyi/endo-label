@@ -30,12 +30,12 @@ import {
   type ClipMeta,
   type PhaseDoc,
   type TripletDoc,
+  type TripletRow,
   type Vocab,
 } from "./api";
 import { Button } from "./components/ui/button";
-import { Combobox } from "./components/ui/combobox";
 import { Input } from "./components/ui/input";
-import { useDeskStore, type PaintChip } from "./deskStore";
+import { useDeskStore, type EditorKind, type PaintChip } from "./deskStore";
 
 type PlaybackRate = 0.5 | 1 | 2;
 
@@ -215,6 +215,7 @@ export function ClipDesk() {
     getJson<TripletDoc>,
   );
   const { data: vocab, mutate: mutateVocab } = useSWR(vocabPath(), getJson<Vocab>);
+  const [taskFocus, setTaskFocus] = useState<EditorKind>("class");
   const storedIndex = useDeskStore((s) => s.frameIndex);
   const openClip = useDeskStore((s) => s.openClip);
   const scrub = useDeskStore((s) => s.scrub);
@@ -421,52 +422,75 @@ export function ClipDesk() {
         <div
           role="region"
           aria-label="Editors"
-          className="flex shrink-0 flex-col gap-4 overflow-y-auto overflow-x-hidden border-l border-border p-2"
+          className="flex shrink-0 flex-col gap-2 overflow-hidden border-l border-border p-2"
           style={{ width: layout.editorRailWidth }}
         >
+          <div role="tablist" aria-label="Task type" className="flex shrink-0 gap-1">
+            {(["class", "triplet", "phase"] as const).map((kind) => (
+              <Button
+                key={kind}
+                type="button"
+                role="tab"
+                size="sm"
+                variant={taskFocus === kind ? "default" : "ghost"}
+                aria-selected={taskFocus === kind}
+                onClick={() => setTaskFocus(kind)}
+              >
+                {kind}
+              </Button>
+            ))}
+          </div>
+          <div role="tabpanel" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+            {data ? (
+              taskFocus === "class" ? (
+                <ClassEditor
+                  clipId={data.id}
+                  frameIndex={frameIndex}
+                  frameCount={data.frame_count}
+                  classFrames={classDoc?.frames ?? {}}
+                  classTags={vocab?.class_tags ?? []}
+                  mutateClass={mutateClass}
+                  mutateVocab={mutateVocab}
+                  onPaint={setPaintChip}
+                />
+              ) : taskFocus === "triplet" ? (
+                <TripletEditor
+                  clipId={data.id}
+                  frameIndex={frameIndex}
+                  frameCount={data.frame_count}
+                  tripletFrames={tripletDoc?.frames ?? {}}
+                  instruments={vocab?.instruments ?? []}
+                  verbs={vocab?.verbs ?? []}
+                  targets={vocab?.targets ?? []}
+                  mutateTriplet={mutateTriplet}
+                  mutateVocab={mutateVocab}
+                  onPaint={setPaintChip}
+                />
+              ) : (
+                <PhaseEditor
+                  clipId={data.id}
+                  frameIndex={frameIndex}
+                  frameCount={data.frame_count}
+                  phaseFrames={phaseDoc?.frames ?? {}}
+                  phases={vocab?.phases ?? []}
+                  mutatePhase={mutatePhase}
+                  mutateVocab={mutateVocab}
+                  onPaint={setPaintChip}
+                />
+              )
+            ) : (
+              <p className="text-sm text-muted-foreground">Choose a Clip to edit this Task type.</p>
+            )}
+          </div>
           {data ? (
-            <>
-              <ClassEditor
-                clipId={data.id}
-                frameIndex={frameIndex}
-                frameCount={data.frame_count}
-                classFrames={classDoc?.frames ?? {}}
-                classTags={vocab?.class_tags ?? []}
-                mutateClass={mutateClass}
-                mutateVocab={mutateVocab}
-                onPaint={setPaintChip}
-              />
-              <TripletEditor
-                clipId={data.id}
-                frameIndex={frameIndex}
-                frameCount={data.frame_count}
-                tripletFrames={tripletDoc?.frames ?? {}}
-                instruments={vocab?.instruments ?? []}
-                verbs={vocab?.verbs ?? []}
-                targets={vocab?.targets ?? []}
-                mutateTriplet={mutateTriplet}
-                mutateVocab={mutateVocab}
-                onPaint={setPaintChip}
-              />
-              <PhaseEditor
-                clipId={data.id}
-                frameIndex={frameIndex}
-                frameCount={data.frame_count}
-                phaseFrames={phaseDoc?.frames ?? {}}
-                phases={vocab?.phases ?? []}
-                mutatePhase={mutatePhase}
-                mutateVocab={mutateVocab}
-                onPaint={setPaintChip}
-              />
-            </>
-          ) : (
-            (["class", "triplet", "phase"] as const).map((title) => (
-              <div key={title} data-editor-card={title}>
-                <h2 className="text-lg font-semibold">{title}</h2>
-                <p className="mt-2 text-sm text-muted-foreground">Choose a Clip to edit this Task type.</p>
-              </div>
-            ))
-          )}
+            <OtherSummary
+              focus={taskFocus}
+              phase={framePhaseName(phaseDoc?.frames ?? {}, frameIndex)}
+              classTags={frameClassTags(classDoc?.frames ?? {}, frameIndex)}
+              triplets={frameTripletRows(tripletDoc?.frames ?? {}, frameIndex)}
+              onFocus={setTaskFocus}
+            />
+          ) : null}
         </div>
       </div>
       <ResizeHandle
@@ -567,6 +591,117 @@ export function ClipDesk() {
         ) : null}
       </footer>
     </main>
+  );
+}
+
+function OtherSummary({
+  focus,
+  phase,
+  classTags,
+  triplets,
+  onFocus,
+}: {
+  focus: EditorKind;
+  phase: string | null;
+  classTags: string[];
+  triplets: TripletRow[];
+  onFocus: (kind: EditorKind) => void;
+}) {
+  const others = (["class", "triplet", "phase"] as const).filter((kind) => kind !== focus);
+  return (
+    <div aria-label="Other labels" className="shrink-0 border-t border-border pt-2">
+      {others.map((kind) => {
+        const label = kind === "phase"
+          ? `phase: ${phase ?? "unlabeled"}`
+          : kind === "class"
+            ? `class: ${classTags.length ? classTags.join(", ") : "none"}`
+            : `triplet: ${triplets.length ? triplets.map((row) => `${row.instrument}/${row.verb}/${row.target}`).join("; ") : "none"}`;
+        return (
+          <Button
+            key={kind}
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="mb-1 w-full justify-start truncate"
+            onClick={() => onFocus(kind)}
+          >
+            {label}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
+function LibraryList({
+  names,
+  onPick,
+  disabled,
+  label = "Library",
+}: {
+  names: string[];
+  onPick: (name: string) => void;
+  disabled: boolean;
+  label?: string;
+}) {
+  return (
+    <ul aria-label={label} className="space-y-1">
+      {names.map((name) => (
+        <li key={name}>
+          <Button type="button" size="sm" variant="ghost" className="w-full justify-start" disabled={disabled} onClick={() => onPick(name)}>
+            {name}
+          </Button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function AddVocabRow({
+  listName,
+  names,
+  mutateVocab,
+  ariaLabel,
+}: {
+  listName: string;
+  names: string[];
+  mutateVocab: KeyedMutator<Vocab>;
+  ariaLabel: string;
+}) {
+  const [draft, setDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function addOnly() {
+    const raw = draft.trim();
+    if (!raw) {
+      return;
+    }
+    setError(null);
+    try {
+      await ensureVocabName(listName, raw, names, mutateVocab);
+      setDraft("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Write failed");
+    }
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-1">
+      <Input
+        aria-label={ariaLabel}
+        placeholder="Type to add"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            void addOnly();
+          }
+        }}
+      />
+      <Button type="button" size="sm" aria-label={ariaLabel} onClick={() => void addOnly()}>+</Button>
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+    </div>
   );
 }
 
@@ -775,21 +910,9 @@ function ClassEditor({
 
   return (
     <section data-editor-card="class" className="flex flex-col gap-2">
-      <h2 className="text-lg font-semibold">class</h2>
-      <Combobox
-        ariaLabel="class"
-        names={classTags}
-        disabled={frameCount <= 0}
-        onCommit={async (raw) => {
-          const name = await ensureVocabName("class_tags", raw, classTags, mutateVocab);
-          if (!name || frameCount <= 0) {
-            return;
-          }
-          const on = !current.includes(name);
-          await writeTags(toggleClassTag(current, name), { name, on });
-        }}
-      />
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
       <div className="flex flex-wrap gap-1">
+        {current.length === 0 ? <p className="text-sm text-muted-foreground">none</p> : null}
         {current.map((name) => (
           <Button
             key={name}
@@ -804,6 +927,16 @@ function ClassEditor({
           </Button>
         ))}
       </div>
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
+      <LibraryList
+        names={classTags}
+        disabled={frameCount <= 0}
+        onPick={(name) => {
+          const on = !current.includes(name);
+          void writeTags(toggleClassTag(current, name), { name, on });
+        }}
+      />
+      <AddVocabRow listName="class_tags" names={classTags} mutateVocab={mutateVocab} ariaLabel="Add class name" />
       <VocabList
         title="class names"
         names={classTags}
@@ -856,20 +989,17 @@ function PhaseEditor({
 
   return (
     <section data-editor-card="phase" className="flex flex-col gap-2">
-      <h2 className="text-lg font-semibold">phase</h2>
-      <p className="text-sm text-muted-foreground">{current ?? "unlabeled"}</p>
-      <Combobox
-        ariaLabel="phase"
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
+      <p className="text-sm">{current ?? "unlabeled"}</p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
+      <LibraryList
         names={phases}
         disabled={frameCount <= 0}
-        onCommit={async (raw) => {
-          const name = await ensureVocabName("phases", raw, phases, mutateVocab);
-          if (!name || frameCount <= 0) {
-            return;
-          }
-          await writePhase(name === current ? null : name);
+        onPick={(name) => {
+          void writePhase(name === current ? null : name);
         }}
       />
+      <AddVocabRow listName="phases" names={phases} mutateVocab={mutateVocab} ariaLabel="Add phase name" />
       <VocabList
         title="phase names"
         names={phases}
@@ -941,7 +1071,7 @@ function TripletEditor({
 
   return (
     <section data-editor-card="triplet" className="flex flex-col gap-2">
-      <h2 className="text-lg font-semibold">triplet</h2>
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
       <ul aria-label="triplet">
         {rows.map((row) => (
           <li key={row.id} className="flex items-center gap-1 text-xs">
@@ -968,43 +1098,14 @@ function TripletEditor({
           </li>
         ))}
       </ul>
-      <div className="grid grid-cols-1 gap-1">
-        <Combobox
-          ariaLabel="instrument"
-          names={instruments}
-          disabled={frameCount <= 0}
-          onCommit={async (raw) => {
-            const name = await ensureVocabName("instruments", raw, instruments, mutateVocab);
-            if (!name) {
-              return;
-            }
-            await commitIfComplete({ instrument: name });
-          }}
-        />
-        <Combobox
-          ariaLabel="verb"
-          names={verbs}
-          disabled={frameCount <= 0}
-          onCommit={async (raw) => {
-            const name = await ensureVocabName("verbs", raw, verbs, mutateVocab);
-            if (!name) {
-              return;
-            }
-            await commitIfComplete({ verb: name });
-          }}
-        />
-        <Combobox
-          ariaLabel="target"
-          names={targets}
-          disabled={frameCount <= 0}
-          onCommit={async (raw) => {
-            const name = await ensureVocabName("targets", raw, targets, mutateVocab);
-            if (!name) {
-              return;
-            }
-            await commitIfComplete({ target: name });
-          }}
-        />
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
+      <div className="grid grid-cols-1 gap-2">
+        <LibraryList names={instruments} disabled={frameCount <= 0} label="instrument library" onPick={(name) => void commitIfComplete({ instrument: name })} />
+        <AddVocabRow listName="instruments" names={instruments} mutateVocab={mutateVocab} ariaLabel="Add instrument name" />
+        <LibraryList names={verbs} disabled={frameCount <= 0} label="verb library" onPick={(name) => void commitIfComplete({ verb: name })} />
+        <AddVocabRow listName="verbs" names={verbs} mutateVocab={mutateVocab} ariaLabel="Add verb name" />
+        <LibraryList names={targets} disabled={frameCount <= 0} label="target library" onPick={(name) => void commitIfComplete({ target: name })} />
+        <AddVocabRow listName="targets" names={targets} mutateVocab={mutateVocab} ariaLabel="Add target name" />
       </div>
       <TripletVocabLists
         instruments={instruments}
