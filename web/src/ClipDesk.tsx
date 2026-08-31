@@ -5,6 +5,7 @@ import useSWR, { type KeyedMutator } from "swr";
 import {
   classClipPath,
   classFramePath,
+  classSpanPath,
   clipDeskPath,
   frameClassTags,
   frameJpegPath,
@@ -13,11 +14,13 @@ import {
   getJson,
   phaseClipPath,
   phaseFramePath,
+  phaseSpanPath,
   sendJson,
   toggleClassTag,
   tripletClipPath,
   tripletFramePath,
   tripletRowPath,
+  tripletSpanPath,
   vocabDeletePath,
   vocabListPath,
   vocabPath,
@@ -32,7 +35,7 @@ import {
 import { Button } from "./components/ui/button";
 import { Combobox } from "./components/ui/combobox";
 import { Input } from "./components/ui/input";
-import { useDeskStore } from "./deskStore";
+import { useDeskStore, type PaintChip } from "./deskStore";
 
 type PlaybackSettings = {
   fps: 1 | 10 | 25;
@@ -81,6 +84,32 @@ function isEditableTarget(target: EventTarget | null): boolean {
     return true;
   }
   return Boolean(target.closest('[role="textbox"], [role="combobox"], [role="searchbox"]'));
+}
+
+function chipLabel(chip: PaintChip): string {
+  if (chip.kind === "class") {
+    return `class: ${chip.name}`;
+  }
+  if (chip.kind === "phase") {
+    return `phase: ${chip.name}`;
+  }
+  return `triplet: ${chip.instrument} / ${chip.verb} / ${chip.target}`;
+}
+
+function rangeEnds(fromIndex: number | null, currentIndex: number): { from: number; to: number } {
+  const start = fromIndex == null ? currentIndex : fromIndex;
+  return { from: Math.min(start, currentIndex), to: Math.max(start, currentIndex) };
+}
+
+function sliderFillStyle(fromIndex: number | null, currentIndex: number, lastIndex: number): { left: string; width: string } {
+  if (fromIndex == null || lastIndex <= 0) {
+    return { left: "0%", width: "0%" };
+  }
+  const { from, to } = rangeEnds(fromIndex, currentIndex);
+  return {
+    left: `${(from / lastIndex) * 100}%`,
+    width: `${Math.max(((to - from) / lastIndex) * 100, 2)}%`,
+  };
 }
 
 async function ensureVocabName(
@@ -181,8 +210,15 @@ export function ClipDesk() {
   const scrub = useDeskStore((s) => s.scrub);
   const layout = useDeskStore((s) => s.layout);
   const setLayout = useDeskStore((s) => s.setLayout);
+  const spanStart = useDeskStore((s) => s.spanStart);
+  const setSpanStart = useDeskStore((s) => s.setSpanStart);
+  const paintChip = useDeskStore((s) => s.paintChip);
+  const setPaintChip = useDeskStore((s) => s.setPaintChip);
   const [playing, setPlaying] = useState(false);
   const [playback, setPlayback] = useState<PlaybackSettings>(() => readPlaybackSettings());
+  const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
+  const [sliderFlash, setSliderFlash] = useState<{ from: number; to: number } | null>(null);
+  const spanBusy = useRef(false);
 
   const frameIndex = data && storedIndex >= data.frame_count ? Math.max(0, data.frame_count - 1) : storedIndex;
 
@@ -216,6 +252,58 @@ export function ClipDesk() {
     return () => window.clearTimeout(id);
   }, [data, frameIndex, playback.fps, playback.skip, playing, scrub]);
 
+  const markedFrom = spanStart && spanStart.clipId === clipId ? spanStart.frameIndex : null;
+  const { from: rangeFrom, to: rangeTo } = rangeEnds(markedFrom, frameIndex);
+  const hasChip = Boolean(paintChip);
+
+  const applyRange = useCallback(async (remove: boolean) => {
+    if (!clipId || !data || !paintChip || spanBusy.current) {
+      return;
+    }
+    spanBusy.current = true;
+    setToast(null);
+    try {
+      if (paintChip.kind === "phase") {
+        const doc = await sendJson<PhaseDoc>(phaseSpanPath(clipId), "POST", {
+          phase: remove ? null : paintChip.name,
+          from: rangeFrom,
+          to: rangeTo,
+        });
+        await mutatePhase(doc, { revalidate: false });
+      } else if (paintChip.kind === "class") {
+        const doc = await sendJson<ClassDoc>(classSpanPath(clipId), "POST", {
+          tag: paintChip.name,
+          from: rangeFrom,
+          to: rangeTo,
+          on: !remove,
+        });
+        await mutateClass(doc, { revalidate: false });
+      } else {
+        const doc = await sendJson<TripletDoc>(tripletSpanPath(clipId), "POST", {
+          instrument: paintChip.instrument,
+          verb: paintChip.verb,
+          target: paintChip.target,
+          from: rangeFrom,
+          to: rangeTo,
+          op: remove ? "remove" : "add",
+        });
+        await mutateTriplet(doc, { revalidate: false });
+      }
+      setPlaying(false);
+      setSliderFlash({ from: rangeFrom, to: rangeTo });
+      setSpanStart(null);
+      window.setTimeout(() => setSliderFlash(null), 700);
+      setToast({
+        text: `${remove ? "Removed" : "Wrote"} ${chipLabel(paintChip)} on frames ${rangeFrom}–${rangeTo}`,
+        error: false,
+      });
+    } catch (err) {
+      setToast({ text: err instanceof Error ? err.message : "Write failed", error: true });
+    } finally {
+      spanBusy.current = false;
+    }
+  }, [clipId, data, mutateClass, mutatePhase, mutateTriplet, paintChip, rangeFrom, rangeTo, setSpanStart]);
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (isEditableTarget(event.target)) {
@@ -224,11 +312,25 @@ export function ClipDesk() {
       if (event.key === " " && clipId && data && data.frame_count > 0) {
         event.preventDefault();
         togglePlayback();
+        return;
+      }
+      if (!clipId || !data || data.frame_count <= 0 || !paintChip) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === "[" || key === "i") {
+        event.preventDefault();
+        setSpanStart({ clipId, frameIndex });
+        return;
+      }
+      if (key === "]" || key === "o") {
+        event.preventDefault();
+        void applyRange(false);
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [clipId, data, togglePlayback]);
+  }, [applyRange, clipId, data, frameIndex, paintChip, setSpanStart, togglePlayback]);
 
   useLayoutEffect(() => {
     if (data) {
@@ -316,6 +418,7 @@ export function ClipDesk() {
                 classTags={vocab?.class_tags ?? []}
                 mutateClass={mutateClass}
                 mutateVocab={mutateVocab}
+                onPaint={setPaintChip}
               />
               <TripletEditor
                 clipId={data.id}
@@ -327,6 +430,7 @@ export function ClipDesk() {
                 targets={vocab?.targets ?? []}
                 mutateTriplet={mutateTriplet}
                 mutateVocab={mutateVocab}
+                onPaint={setPaintChip}
               />
               <PhaseEditor
                 clipId={data.id}
@@ -336,6 +440,7 @@ export function ClipDesk() {
                 phases={vocab?.phases ?? []}
                 mutatePhase={mutatePhase}
                 mutateVocab={mutateVocab}
+                onPaint={setPaintChip}
               />
             </>
           ) : (
@@ -403,12 +508,25 @@ export function ClipDesk() {
           />
           <span>Frames</span>
         </div>
-        <label className="flex min-w-40 flex-1 items-center gap-2 text-sm">
+        <div className="relative min-w-40 flex-1">
           <span className="sr-only">Frame index</span>
+          {(markedFrom != null || sliderFlash) && data && data.frame_count > 1 ? (
+            <span
+              aria-hidden
+              data-span-fill=""
+              data-span-flash={sliderFlash ? "true" : undefined}
+              className={`pointer-events-none absolute top-1/2 h-2 -translate-y-1/2 rounded-full ${sliderFlash ? "bg-primary" : "bg-primary/40"}`}
+              style={sliderFillStyle(
+                sliderFlash ? sliderFlash.from : markedFrom,
+                sliderFlash ? sliderFlash.to : frameIndex,
+                Math.max(0, data.frame_count - 1),
+              )}
+            />
+          ) : null}
           <input
             type="range"
             aria-label="Frame index"
-            className="w-full accent-primary"
+            className="relative w-full accent-primary"
             min={0}
             max={Math.max(0, (data?.frame_count ?? 0) - 1)}
             step={1}
@@ -416,8 +534,38 @@ export function ClipDesk() {
             disabled={!data || data.frame_count <= 0}
             onChange={(event) => scrub(Number(event.target.value))}
           />
-        </label>
+        </div>
         <output className="w-24 shrink-0 text-right text-sm text-muted-foreground">{data ? `Frame ${frameIndex} of ${data.frame_count}` : "No Clip"}</output>
+        {markedFrom != null ? (
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{rangeFrom} → {rangeTo}</span>
+        ) : null}
+        <span data-paint-chip="" className="max-w-48 truncate text-xs font-medium">
+          {paintChip ? chipLabel(paintChip) : "No paint chip"}
+        </span>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={!hasChip || !clipId}
+          onClick={() => {
+            if (clipId && paintChip) {
+              setSpanStart({ clipId, frameIndex });
+            }
+          }}
+        >
+          Mark from
+        </Button>
+        <Button type="button" size="sm" disabled={!hasChip} onClick={() => void applyRange(false)}>
+          Apply to frames {rangeFrom}–{rangeTo}
+        </Button>
+        <Button type="button" size="sm" variant="secondary" disabled={!hasChip} onClick={() => void applyRange(true)}>
+          Remove from frames {rangeFrom}–{rangeTo}
+        </Button>
+        {toast ? (
+          <span role={toast.error ? "alert" : "status"} className={toast.error ? "text-xs text-destructive" : "text-xs text-foreground"}>
+            {toast.text}
+          </span>
+        ) : null}
       </footer>
     </main>
   );
@@ -599,6 +747,7 @@ function ClassEditor({
   classTags,
   mutateClass,
   mutateVocab,
+  onPaint,
 }: {
   clipId: string;
   frameIndex: number;
@@ -607,15 +756,19 @@ function ClassEditor({
   classTags: string[];
   mutateClass: KeyedMutator<ClassDoc>;
   mutateVocab: KeyedMutator<Vocab>;
+  onPaint: (chip: PaintChip | null) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const current = frameClassTags(classFrames, frameIndex);
 
-  async function writeTags(tags: string[]) {
+  async function writeTags(tags: string[], painted?: { name: string; on: boolean }) {
     setError(null);
     try {
       const doc = await sendJson<ClassDoc>(classFramePath(clipId, frameIndex), "PUT", { tags });
       await mutateClass(doc, { revalidate: false });
+      if (painted) {
+        onPaint(painted.on ? { kind: "class", name: painted.name } : null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Write failed");
     }
@@ -633,7 +786,8 @@ function ClassEditor({
           if (!name || frameCount <= 0) {
             return;
           }
-          await writeTags(toggleClassTag(current, name));
+          const on = !current.includes(name);
+          await writeTags(toggleClassTag(current, name), { name, on });
         }}
       />
       <div className="flex flex-wrap gap-1">
@@ -676,6 +830,7 @@ function PhaseEditor({
   phases,
   mutatePhase,
   mutateVocab,
+  onPaint,
 }: {
   clipId: string;
   frameIndex: number;
@@ -684,6 +839,7 @@ function PhaseEditor({
   phases: string[];
   mutatePhase: KeyedMutator<PhaseDoc>;
   mutateVocab: KeyedMutator<Vocab>;
+  onPaint: (chip: PaintChip | null) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const current = framePhaseName(phaseFrames, frameIndex);
@@ -693,6 +849,7 @@ function PhaseEditor({
     try {
       const doc = await sendJson<PhaseDoc>(phaseFramePath(clipId, frameIndex), "PUT", { phase });
       await mutatePhase(doc, { revalidate: false });
+      onPaint(phase ? { kind: "phase", name: phase } : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Write failed");
     }
@@ -741,6 +898,7 @@ function TripletEditor({
   targets,
   mutateTriplet,
   mutateVocab,
+  onPaint,
 }: {
   clipId: string;
   frameIndex: number;
@@ -751,6 +909,7 @@ function TripletEditor({
   targets: string[];
   mutateTriplet: KeyedMutator<TripletDoc>;
   mutateVocab: KeyedMutator<Vocab>;
+  onPaint: (chip: PaintChip | null) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const draftRef = useRef({ instrument: "", verb: "", target: "" });
@@ -768,9 +927,14 @@ function TripletEditor({
     }
     setError(null);
     try {
-      await sendJson(tripletFramePath(clipId, frameIndex), "POST", next);
+      const result = await sendJson<Record<string, unknown>>(tripletFramePath(clipId, frameIndex), "POST", next);
       draftRef.current = { instrument: "", verb: "", target: "" };
       await refresh();
+      if ("rows" in result) {
+        onPaint(null);
+      } else {
+        onPaint({ kind: "triplet", instrument: next.instrument, verb: next.verb, target: next.target });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Write failed");
     }

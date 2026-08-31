@@ -275,3 +275,52 @@ test("trashing an instrument in use is refused until the row is gone", async ({ 
   await triplet.getByRole("button", { name: "Delete instrument DeskTrashTool" }).click();
   await expect(page.getByRole("list", { name: "instrument names" }).getByText("DeskTrashTool", { exact: true })).toHaveCount(0);
 });
+
+test("no chip: Mark from and Apply do nothing", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await expect(page.locator("[data-paint-chip]")).toHaveText("No paint chip");
+  await expect(page.getByRole("button", { name: "Mark from" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Apply to frames/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /Remove from frames/ })).toBeDisabled();
+  const before = await clipFrames(page, "class");
+  await page.keyboard.press("]");
+  await expect.poll(async () => await clipFrames(page, "class")).toEqual(before);
+  await expect(page.getByText("Write to span")).toHaveCount(0);
+  await expect(page.getByText("span mode", { exact: false })).toHaveCount(0);
+  await expect(page.getByText("Arm class span")).toHaveCount(0);
+});
+
+test("chip, Mark from, Apply writes range, toast, chip stays", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await pickName(page, "class", "clipper");
+  await expect(page.locator("[data-paint-chip]")).toHaveText("class: clipper");
+  await page.getByRole("button", { name: "Mark from" }).click();
+  await expect(page.locator("[data-span-fill]")).toBeVisible();
+  await expect(page.getByText("0 → 0")).toBeVisible();
+  await scrubToFrame(page, 1);
+  await expect(page.getByText("0 → 1")).toBeVisible();
+  await page.getByRole("button", { name: "Apply to frames 0–1" }).click();
+  await expect(page.getByText("Wrote class: clipper on frames 0–1")).toBeVisible();
+  await expect(page.locator("[data-span-flash]")).toBeVisible();
+  await expect.poll(async () => await clipFrames(page, "class")).toMatchObject({
+    "0": expect.arrayContaining(["clipper"]),
+    "1": expect.arrayContaining(["clipper"]),
+  });
+  await expect(page.locator("[data-paint-chip]")).toHaveText("class: clipper");
+  await expect(page.locator("[data-span-fill]")).toHaveCount(0);
+});
+
+test("] applies; Remove without Mark from is this Frame", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await pickName(page, "phase", "ChipApplyP");
+  await expect(page.locator("[data-paint-chip]")).toHaveText("phase: ChipApplyP");
+  await page.getByRole("img", { name: "Frame 0" }).click();
+  await page.keyboard.press("[");
+  await scrubToFrame(page, 1);
+  await page.getByRole("img", { name: "Frame 1" }).click();
+  await page.keyboard.press("]");
+  await expect.poll(async () => await clipFrames(page, "phase")).toMatchObject({ "0": "ChipApplyP", "1": "ChipApplyP" });
+  await page.getByRole("button", { name: "Remove from frames 1–1" }).click();
+  await expect.poll(async () => (await clipFrames(page, "phase"))["1"]).toBeUndefined();
+  await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("ChipApplyP");
+});

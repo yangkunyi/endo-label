@@ -7,6 +7,11 @@ export type SpanStart = {
   frameIndex: number;
 };
 
+export type PaintChip =
+  | { kind: "phase"; name: string }
+  | { kind: "class"; name: string }
+  | { kind: "triplet"; instrument: string; verb: string; target: string };
+
 export type DeskLayout = {
   clipRailWidth: number;
   editorRailWidth: number;
@@ -109,12 +114,14 @@ type DeskState = {
   frameIndexes: Record<string, number>;
   layout: DeskLayout;
   spanStart: SpanStart | null;
+  paintChip: PaintChip | null;
   openClip: (clipId: string, frameCount: number) => void;
   scrub: (frameIndex: number) => void;
   setLayout: (patch: Partial<DeskLayout>) => void;
   setEditorOrder: (order: EditorKind[]) => void;
   setSpanStart: (start: SpanStart | null) => void;
   clearSpanStart: () => void;
+  setPaintChip: (chip: PaintChip | null) => void;
 };
 
 export const useDeskStore = create<DeskState>((set, get) => ({
@@ -124,6 +131,7 @@ export const useDeskStore = create<DeskState>((set, get) => ({
   frameIndexes: {},
   layout: readStoredLayout(),
   spanStart: null,
+  paintChip: null,
   openClip: (clipId, frameCount) =>
     set((s) => {
       if (s.clipId === clipId) {
@@ -137,6 +145,7 @@ export const useDeskStore = create<DeskState>((set, get) => ({
         frameIndex,
         frameIndexes: { ...s.frameIndexes, [clipId]: frameIndex },
         spanStart: null,
+        paintChip: null,
       };
     }),
   scrub: (frameIndex) => {
@@ -162,4 +171,5 @@ export const useDeskStore = create<DeskState>((set, get) => ({
     }),
   setSpanStart: (spanStart) => set({ spanStart }),
   clearSpanStart: () => set({ spanStart: null }),
+  setPaintChip: (paintChip) => set({ paintChip }),
 }));

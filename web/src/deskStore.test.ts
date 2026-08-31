@@ -14,6 +14,7 @@ beforeEach(() => {
     frameIndexes: {},
     layout: { ...DEFAULT_DESK_LAYOUT, editorOrder: [...DEFAULT_DESK_LAYOUT.editorOrder] },
     spanStart: null,
+    paintChip: null,
   });
 });
 
