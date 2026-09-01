@@ -451,6 +451,33 @@ test("phase band folds span, click seeks, focus rebuilds", async ({ page }) => {
   await expect(page.getByRole("region", { name: "Timeline" })).toBeVisible();
 });
 
+test("colored named intervals match Library and Now", async ({ page }) => {
+  await page.request.put("/api/phase/CLIP_E2E/frames/0", { data: { phase: null } });
+  await page.request.put("/api/phase/CLIP_E2E/frames/1", { data: { phase: null } });
+  await page.goto("/clips/CLIP_E2E");
+  await pickName(page, "phase", "ColorPhaseA");
+  await scrubToFrame(page, 1);
+  await pickName(page, "phase", "ColorPhaseB");
+  const barA = page.getByRole("button", { name: "ColorPhaseA 0–0" });
+  const barB = page.getByRole("button", { name: "ColorPhaseB 1–1" });
+  await expect(barA).toHaveText("ColorPhaseA");
+  await expect(barB).toHaveText("ColorPhaseB");
+  const lib = page.getByRole("list", { name: "Library" });
+  const colorA = await lib.getByRole("button", { name: "ColorPhaseA", exact: true }).getAttribute("data-label-color");
+  const colorB = await lib.getByRole("button", { name: "ColorPhaseB", exact: true }).getAttribute("data-label-color");
+  expect(colorA).toBeTruthy();
+  expect(colorB).toBeTruthy();
+  expect(colorA).not.toBe(colorB);
+  await expect(barA).toHaveAttribute("data-label-color", colorA!);
+  await expect(barB).toHaveAttribute("data-label-color", colorB!);
+  await expect(page.locator("[data-now]")).toHaveAttribute("data-label-color", colorB!);
+  await expect(page.locator("[data-paint-chip]")).toHaveAttribute("data-label-color", colorB!);
+  await lib.getByRole("button", { name: "ColorPhaseB", exact: true }).click();
+  const gap = page.locator("[data-timeline-seg][data-unlabeled]");
+  await expect(gap).toBeVisible();
+  await expect(gap).toHaveText("");
+});
+
 test("video Clip uses video element and seek updates Now", async ({ page }) => {
   await page.goto("/clips/CLIP_VID");
   const video = page.locator("video");

@@ -36,7 +36,7 @@ import {
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { useDeskStore, type EditorKind, type PaintChip } from "./deskStore";
-import { foldClass, foldPhase, foldTriplet, type TimelineLane } from "./timeline";
+import { foldClass, foldPhase, foldTriplet, labelColor, type TimelineLane } from "./timeline";
 
 type PlaybackRate = 0.5 | 1 | 2;
 
@@ -109,6 +109,13 @@ function chipLabel(chip: PaintChip): string {
     return `phase: ${chip.name}`;
   }
   return `triplet: ${chip.instrument} / ${chip.verb} / ${chip.target}`;
+}
+
+function chipIdentity(chip: PaintChip): string {
+  if (chip.kind === "triplet") {
+    return `${chip.instrument} / ${chip.verb} / ${chip.target}`;
+  }
+  return chip.name;
 }
 
 function rangeEnds(fromIndex: number | null, currentIndex: number): { from: number; to: number } {
@@ -625,7 +632,12 @@ export function ClipDesk() {
         {markedFrom != null ? (
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{rangeFrom} → {rangeTo}</span>
         ) : null}
-        <span data-paint-chip="" className="max-w-48 truncate text-xs font-medium">
+        <span
+          data-paint-chip=""
+          data-label-color={paintChip ? labelColor(chipIdentity(paintChip)) : undefined}
+          className="max-w-48 truncate text-xs font-medium"
+          style={paintChip ? { borderLeft: `3px solid ${labelColor(chipIdentity(paintChip))}`, paddingLeft: 6 } : undefined}
+        >
           {paintChip ? chipLabel(paintChip) : "No paint chip"}
         </span>
         <Button
@@ -684,24 +696,29 @@ function TimelineBand({
   return (
     <div role="region" aria-label="Timeline" data-timeline="" className="shrink-0 border-t border-white/20 bg-black/80 px-2 py-1">
       {lanes.map((lane) => (
-        <div key={lane.key} className="relative mb-0.5 h-4 w-full last:mb-0" data-timeline-lane={lane.key}>
+        <div key={lane.key} className="relative mb-0.5 h-5 w-full last:mb-0" data-timeline-lane={lane.key}>
           {lane.segs.map((seg) => {
             const unlabeled = seg.label == null;
+            const color = unlabeled || !seg.label ? undefined : labelColor(seg.label);
             return (
               <button
                 key={`${lane.key}-${seg.start}`}
                 type="button"
                 data-timeline-seg=""
                 data-unlabeled={unlabeled ? "true" : undefined}
+                data-label-color={color}
                 aria-label={unlabeled ? `unlabeled ${seg.start}–${seg.end}` : `${seg.label} ${seg.start}–${seg.end}`}
                 title={seg.label ?? "unlabeled"}
-                className={`absolute top-0 box-border h-full border-r border-black/50 ${unlabeled ? "bg-white/20" : "bg-primary/80"}`}
+                className={`absolute top-0 box-border h-full overflow-hidden border-r border-black/50 px-0.5 text-left text-[10px] leading-5 text-white ${unlabeled ? "bg-white/20" : ""}`}
                 style={{
                   left: `${(seg.start / frameCount) * 100}%`,
                   width: `${((seg.end - seg.start + 1) / frameCount) * 100}%`,
+                  backgroundColor: color,
                 }}
                 onClick={() => onSeek(seg.start)}
-              />
+              >
+                {unlabeled ? null : seg.label}
+              </button>
             );
           })}
         </div>
@@ -754,17 +771,30 @@ function LibraryList({
   onPick,
   disabled,
   label = "Library",
+  colorNames = true,
 }: {
   names: string[];
   onPick: (name: string) => void;
   disabled: boolean;
   label?: string;
+  colorNames?: boolean;
 }) {
   return (
     <ul aria-label={label} className="space-y-1">
       {names.map((name) => (
         <li key={name}>
-          <Button type="button" size="sm" variant="ghost" className="w-full justify-start" disabled={disabled} onClick={() => onPick(name)}>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="w-full justify-start"
+            disabled={disabled}
+            data-label-color={colorNames ? labelColor(name) : undefined}
+            onClick={() => onPick(name)}
+          >
+            {colorNames ? (
+              <span aria-hidden className="mr-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: labelColor(name) }} />
+            ) : null}
             {name}
           </Button>
         </li>
@@ -1030,7 +1060,12 @@ function ClassEditor({
       <div data-now="" className="flex flex-wrap gap-1">
         {current.length === 0 ? <p className="text-sm text-muted-foreground">none</p> : null}
         {current.map((name) => (
-          <span key={name} className="rounded-md bg-secondary px-2 py-1 text-sm text-secondary-foreground">
+          <span
+            key={name}
+            data-label-color={labelColor(name)}
+            className="rounded-md bg-secondary px-2 py-1 text-sm text-secondary-foreground"
+            style={{ borderLeft: `3px solid ${labelColor(name)}` }}
+          >
             {name}
           </span>
         ))}
@@ -1098,7 +1133,14 @@ function PhaseEditor({
   return (
     <section data-editor-card="phase" className="flex flex-col gap-2">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
-      <p data-now="" className="text-sm">{current ?? "unlabeled"}</p>
+      <p
+        data-now=""
+        data-label-color={current ? labelColor(current) : undefined}
+        className="text-sm"
+        style={current ? { borderLeft: `3px solid ${labelColor(current)}`, paddingLeft: 6 } : undefined}
+      >
+        {current ?? "unlabeled"}
+      </p>
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
       <LibraryList
         names={phases}
@@ -1183,17 +1225,23 @@ function TripletEditor({
       <ul aria-label="triplet" data-now="">
         {rows.map((row) => (
           <li key={row.id} className="text-xs">
-            <span className="min-w-0 truncate">{row.instrument} / {row.verb} / {row.target}</span>
+            <span
+              className="min-w-0 truncate"
+              data-label-color={labelColor(`${row.instrument} / ${row.verb} / ${row.target}`)}
+              style={{ borderLeft: `3px solid ${labelColor(`${row.instrument} / ${row.verb} / ${row.target}`)}`, paddingLeft: 6 }}
+            >
+              {row.instrument} / {row.verb} / {row.target}
+            </span>
           </li>
         ))}
       </ul>
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
       <div className="grid grid-cols-1 gap-2">
-        <LibraryList names={instruments} disabled={frameCount <= 0} label="instrument library" onPick={(name) => void commitIfComplete({ instrument: name })} />
+        <LibraryList names={instruments} disabled={frameCount <= 0} label="instrument library" colorNames={false} onPick={(name) => void commitIfComplete({ instrument: name })} />
         <AddVocabRow listName="instruments" names={instruments} mutateVocab={mutateVocab} ariaLabel="Add instrument name" />
-        <LibraryList names={verbs} disabled={frameCount <= 0} label="verb library" onPick={(name) => void commitIfComplete({ verb: name })} />
+        <LibraryList names={verbs} disabled={frameCount <= 0} label="verb library" colorNames={false} onPick={(name) => void commitIfComplete({ verb: name })} />
         <AddVocabRow listName="verbs" names={verbs} mutateVocab={mutateVocab} ariaLabel="Add verb name" />
-        <LibraryList names={targets} disabled={frameCount <= 0} label="target library" onPick={(name) => void commitIfComplete({ target: name })} />
+        <LibraryList names={targets} disabled={frameCount <= 0} label="target library" colorNames={false} onPick={(name) => void commitIfComplete({ target: name })} />
         <AddVocabRow listName="targets" names={targets} mutateVocab={mutateVocab} ariaLabel="Add target name" />
       </div>
       <TripletVocabLists

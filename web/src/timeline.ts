@@ -4,6 +4,16 @@ export type TimelineSeg = {
   label: string | null;
 };
 
+/** Stable sitting color for a phase name, class tag, or exact triple. Not stored. */
+export function labelColor(identity: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < identity.length; i += 1) {
+    hash ^= identity.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `hsl(${(hash >>> 0) % 360} 70% 42%)`;
+}
+
 export type TimelineLane = {
   key: string;
   segs: TimelineSeg[];
