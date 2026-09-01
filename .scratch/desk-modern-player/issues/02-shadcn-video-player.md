@@ -1,0 +1,12 @@
+# 02 — Both Clip kinds play in one shadcn Video Player
+
+**What to build:** The desk player is the shadcn Video Player transport (media-chrome): play/pause, progress, time, rate, fullscreen. JPEG Clips play their transcoded file; video Clips play their own file. The custom rate selector, self-built clock, and bottom seek slider are gone (the Playhead is the seek). Seeking updates Now. Playwright: video element present for both kinds, seek updates Now, no seek slider in the footer.
+
+**Blocked by:** 01 — JPEG Clip lazily transcodes to mp4 with cache
+
+**Status:** ready-for-agent
+
+- [ ] JPEG and video Clips both play through the same Video Player transport
+- [ ] No custom rate selector or self-built clock left in the desk
+- [ ] No seek slider in the footer; seeking the player updates Now
+- [ ] Playwright covers video element present for both kinds and seek-updates-Now

@@ -115,5 +115,5 @@ Parent ADR 0001–0004 stay: Tailwind only, Frame index in Zustand, immediate pe
 
 - UI stack: [ADR 0001](../../docs/adr/0001-frontend-stack.md). This chrome: [ADR 0005](../../docs/adr/0005-desk-bench-chrome.md).
 - Glossary: `CONTEXT.md` is **not** edited. “Task focus: Do not use” still means all Task types stay editable on the same Frame. Collapsible forms are not a glossary term.
-- Tickets: `issues/01-full-viewport-bench.md`, `issues/02-collapsible-forms.md` (`ready-for-agent`). Frontier is 01. Do not implement unless asked.
+- Tickets: `issues/01-full-viewport-bench.md`, `issues/02-collapsible-forms.md` (both `resolved`).
 - Next product slice for capability is still **mask** on the same Frame, beside these panels, not behind a mode. This spec must not invent a focus switch that mask would then inherit.

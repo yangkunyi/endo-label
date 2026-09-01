@@ -11,5 +11,5 @@ Phase and class tables list desk-wide vocab. Double-click a name, commit a new s
 ## Consequences
 
 - New vocab rename HTTP. It must rewrite all Clip documents of that kind in one request, or refuse.
-- Vocab **delete** is still out of this pass.
+- Vocab **delete** was out of this pass; ADR 0012 adds it.
 - Triplet instance edit may PUT that Frame’s rows; it must not scan other Clips.

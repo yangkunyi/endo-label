@@ -1,6 +1,6 @@
 # Frontend: Vite SPA, React, TypeScript, SWR, Zustand, Tailwind; Python FastAPI is the only public API
 
-Status: accepted; “Tailwind-only controls / no shadcn” superseded by [ADR 0006](./0006-heroui-lucide.md). Routes `/` vs `/clips/:clipId` as separate pages superseded by [ADR 0007](./0007-single-page-workbench.md).
+Status: accepted; “Tailwind-only controls / no shadcn” superseded by [ADR 0006](./0006-heroui-lucide.md), then by [ADR 0013](./0013-shadcn.md) (shadcn in `web/`). Routes `/` vs `/clips/:clipId` as separate pages superseded by [ADR 0007](./0007-single-page-workbench.md).
 
 The desk is a local one-labeler tool. We ship a **new** Vite SPA under `web/` (**React + TypeScript**, **Tailwind**, **SWR** for server data, **Zustand** for UI state, **React Router**). npm. Dev: Vite `:5173` proxies `/api` to FastAPI `:7880`. Sitting: `vite build`, FastAPI serves `web/dist`. Browser talks only to this Python compose — no Go, no Next.js, no Node API, no copy of `sam3_1_label_tool` `web/src`. Canvas library waits for the mask spec.
 

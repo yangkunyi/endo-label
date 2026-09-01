@@ -1,4 +1,4 @@
-Status: specified — tickets 01–03 ready-for-agent
+Status: specified — tickets 01–03 resolved
 
 # Spec: HeroUI label tables (phase / class / triplet)
 
