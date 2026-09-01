@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { Pause, Play, Trash2 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
@@ -1167,6 +1167,26 @@ function PhaseEditor({
   );
 }
 
+function tripleIdentity(row: { instrument: string; verb: string; target: string }): string {
+  return `${row.instrument} / ${row.verb} / ${row.target}`;
+}
+
+function distinctTriples(frames: Record<string, TripletRow[]>): { instrument: string; verb: string; target: string }[] {
+  const seen = new Set<string>();
+  const out: { instrument: string; verb: string; target: string }[] = [];
+  for (const list of Object.values(frames)) {
+    for (const row of list ?? []) {
+      const key = tripleIdentity(row);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      out.push({ instrument: row.instrument, verb: row.verb, target: row.target });
+    }
+  }
+  return out;
+}
+
 function TripletEditor({
   clipId,
   frameIndex,
@@ -1191,29 +1211,61 @@ function TripletEditor({
   onPaint: (chip: PaintChip | null) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const draftRef = useRef({ instrument: "", verb: "", target: "" });
-  const rows = frameTripletRows(tripletFrames, frameIndex);
+  const [composed, setComposed] = useState<{ instrument: string; verb: string; target: string }[]>([]);
+  const [draft, setDraft] = useState({ instrument: "", verb: "", target: "" });
+  useEffect(() => {
+    setComposed([]);
+    setDraft({ instrument: "", verb: "", target: "" });
+  }, [clipId]);
+  const nowRows = frameTripletRows(tripletFrames, frameIndex);
+  const onKeys = new Set(nowRows.map(tripleIdentity));
+  const libraryRows = useMemo(() => {
+    const seen = new Set<string>();
+    const rows: { instrument: string; verb: string; target: string }[] = [];
+    for (const row of [...distinctTriples(tripletFrames), ...composed]) {
+      const key = tripleIdentity(row);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      rows.push(row);
+    }
+    return rows;
+  }, [composed, tripletFrames]);
 
-  async function refresh() {
-    await mutateTriplet();
-  }
-
-  async function commitIfComplete(patch: Partial<{ instrument: string; verb: string; target: string }>) {
-    const next = { ...draftRef.current, ...patch };
-    draftRef.current = next;
-    if (!next.instrument || !next.verb || !next.target || frameCount <= 0) {
+  async function toggleRow(row: { instrument: string; verb: string; target: string }) {
+    if (frameCount <= 0) {
       return;
     }
     setError(null);
     try {
-      const result = await sendJson<Record<string, unknown>>(tripletFramePath(clipId, frameIndex), "POST", next);
-      draftRef.current = { instrument: "", verb: "", target: "" };
-      await refresh();
+      const result = await sendJson<Record<string, unknown>>(tripletFramePath(clipId, frameIndex), "POST", row);
+      await mutateTriplet();
       if ("rows" in result) {
         onPaint(null);
       } else {
-        onPaint({ kind: "triplet", instrument: next.instrument, verb: next.verb, target: next.target });
+        onPaint({ kind: "triplet", instrument: row.instrument, verb: row.verb, target: row.target });
       }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Write failed");
+    }
+  }
+
+  async function addRowOnly() {
+    const instrument = draft.instrument.trim();
+    const verb = draft.verb.trim();
+    const target = draft.target.trim();
+    if (!instrument || !verb || !target) {
+      return;
+    }
+    setError(null);
+    try {
+      await ensureVocabName("instruments", instrument, instruments, mutateVocab);
+      await ensureVocabName("verbs", verb, verbs, mutateVocab);
+      await ensureVocabName("targets", target, targets, mutateVocab);
+      const row = { instrument, verb, target };
+      setComposed((current) => (current.some((item) => tripleIdentity(item) === tripleIdentity(row)) ? current : [...current, row]));
+      setDraft({ instrument: "", verb: "", target: "" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Write failed");
     }
@@ -1222,27 +1274,70 @@ function TripletEditor({
   return (
     <section data-editor-card="triplet" className="flex flex-col gap-2">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
-      <ul aria-label="triplet" data-now="">
-        {rows.map((row) => (
-          <li key={row.id} className="text-xs">
-            <span
-              className="min-w-0 truncate"
-              data-label-color={labelColor(`${row.instrument} / ${row.verb} / ${row.target}`)}
-              style={{ borderLeft: `3px solid ${labelColor(`${row.instrument} / ${row.verb} / ${row.target}`)}`, paddingLeft: 6 }}
-            >
-              {row.instrument} / {row.verb} / {row.target}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <table aria-label="Now" data-now="" className="w-full text-left text-xs">
+        <thead>
+          <tr className="text-muted-foreground">
+            <th className="font-medium">instrument</th>
+            <th className="font-medium">verb</th>
+            <th className="font-medium">target</th>
+          </tr>
+        </thead>
+        <tbody>
+          {nowRows.map((row) => {
+            const key = tripleIdentity(row);
+            return (
+              <tr key={row.id} data-label-color={labelColor(key)} style={{ borderLeft: `3px solid ${labelColor(key)}` }}>
+                <td className="truncate px-1">{row.instrument}</td>
+                <td className="truncate px-1">{row.verb}</td>
+                <td className="truncate px-1">{row.target}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
-      <div className="grid grid-cols-1 gap-2">
-        <LibraryList names={instruments} disabled={frameCount <= 0} label="instrument library" colorNames={false} onPick={(name) => void commitIfComplete({ instrument: name })} />
-        <AddVocabRow listName="instruments" names={instruments} mutateVocab={mutateVocab} ariaLabel="Add instrument name" />
-        <LibraryList names={verbs} disabled={frameCount <= 0} label="verb library" colorNames={false} onPick={(name) => void commitIfComplete({ verb: name })} />
-        <AddVocabRow listName="verbs" names={verbs} mutateVocab={mutateVocab} ariaLabel="Add verb name" />
-        <LibraryList names={targets} disabled={frameCount <= 0} label="target library" colorNames={false} onPick={(name) => void commitIfComplete({ target: name })} />
-        <AddVocabRow listName="targets" names={targets} mutateVocab={mutateVocab} ariaLabel="Add target name" />
+      <table aria-label="Library" className="w-full text-left text-xs">
+        <thead>
+          <tr className="text-muted-foreground">
+            <th className="font-medium">instrument</th>
+            <th className="font-medium">verb</th>
+            <th className="font-medium">target</th>
+          </tr>
+        </thead>
+        <tbody>
+          {libraryRows.map((row) => {
+            const key = tripleIdentity(row);
+            const lit = onKeys.has(key);
+            return (
+              <tr key={key}>
+                <td colSpan={3} className="p-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={lit ? "secondary" : "ghost"}
+                    className="grid h-auto w-full grid-cols-3 justify-items-start font-normal"
+                    disabled={frameCount <= 0}
+                    aria-label={key}
+                    aria-pressed={lit}
+                    data-label-color={labelColor(key)}
+                    style={{ borderLeft: `3px solid ${labelColor(key)}` }}
+                    onClick={() => void toggleRow(row)}
+                  >
+                    <span className="truncate">{row.instrument}</span>
+                    <span className="truncate">{row.verb}</span>
+                    <span className="truncate">{row.target}</span>
+                  </Button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="mt-2 grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-1">
+        <Input aria-label="instrument" placeholder="instrument" value={draft.instrument} onChange={(event) => setDraft((s) => ({ ...s, instrument: event.target.value }))} />
+        <Input aria-label="verb" placeholder="verb" value={draft.verb} onChange={(event) => setDraft((s) => ({ ...s, verb: event.target.value }))} />
+        <Input aria-label="target" placeholder="target" value={draft.target} onChange={(event) => setDraft((s) => ({ ...s, target: event.target.value }))} />
+        <Button type="button" size="sm" aria-label="Add triplet row" onClick={() => void addRowOnly()}>+</Button>
       </div>
       <TripletVocabLists
         instruments={instruments}

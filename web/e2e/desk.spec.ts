@@ -63,9 +63,18 @@ async function pickName(page: Page, ariaLabel: string, name: string) {
 }
 
 async function fillTriplet(page: Page, instrument: string, verb: string, target: string) {
-  await pickName(page, "instrument", instrument);
-  await pickName(page, "verb", verb);
-  await pickName(page, "target", target);
+  await focusTask(page, "triplet");
+  const library = page.getByRole("table", { name: "Library" });
+  const name = `${instrument} / ${verb} / ${target}`;
+  const row = library.getByRole("button", { name, exact: true });
+  if ((await row.count()) === 0) {
+    await page.getByRole("textbox", { name: "instrument" }).fill(instrument);
+    await page.getByRole("textbox", { name: "verb" }).fill(verb);
+    await page.getByRole("textbox", { name: "target" }).fill(target);
+    await page.getByRole("button", { name: "Add triplet row" }).click();
+    await expect(row).toBeVisible();
+  }
+  await row.click();
 }
 
 async function openList(page: Page, editor: "class" | "phase" | "triplet") {
@@ -210,7 +219,9 @@ test("empty add-name placeholder is Type to add", async ({ page }) => {
   await focusTask(page, "phase");
   await expect(page.getByRole("textbox", { name: "Add phase name" })).toHaveAttribute("placeholder", "Type to add");
   await focusTask(page, "triplet");
-  await expect(page.getByRole("textbox", { name: "Add instrument name" })).toHaveAttribute("placeholder", "Type to add");
+  await expect(page.getByRole("textbox", { name: "instrument" })).toHaveAttribute("placeholder", "instrument");
+  await expect(page.getByRole("textbox", { name: "verb" })).toHaveAttribute("placeholder", "verb");
+  await expect(page.getByRole("textbox", { name: "target" })).toHaveAttribute("placeholder", "target");
 });
 
 test("playback advances without looping and ignores editable controls", async ({ page }) => {
@@ -476,6 +487,54 @@ test("colored named intervals match Library and Now", async ({ page }) => {
   const gap = page.locator("[data-timeline-seg][data-unlabeled]");
   await expect(gap).toBeVisible();
   await expect(gap).toHaveText("");
+});
+
+test("triplet Library rows toggle; + does not write Frame", async ({ page }) => {
+  const tripletDoc = (await (await page.request.get("/api/triplet/CLIP_E2E")).json()) as {
+    frames?: Record<string, { id: number }[]>;
+  };
+  for (const [index, rows] of Object.entries(tripletDoc.frames ?? {})) {
+    for (const row of rows) {
+      await page.request.delete(`/api/triplet/CLIP_E2E/frames/${index}/${row.id}`);
+    }
+  }
+  await page.goto("/clips/CLIP_E2E");
+  await focusTask(page, "triplet");
+  const library = page.getByRole("table", { name: "Library" });
+  await expect(library.getByRole("columnheader", { name: "instrument" })).toBeVisible();
+  await expect(library.getByRole("columnheader", { name: "verb" })).toBeVisible();
+  await expect(library.getByRole("columnheader", { name: "target" })).toBeVisible();
+  await expect(page.getByRole("list", { name: "instrument library" })).toHaveCount(0);
+
+  const before = await clipFrames(page, "triplet");
+  await page.getByRole("textbox", { name: "instrument" }).fill("RowTool");
+  await page.getByRole("textbox", { name: "verb" }).fill("RowAct");
+  await page.getByRole("textbox", { name: "target" }).fill("RowOrg");
+  await page.getByRole("button", { name: "Add triplet row" }).click();
+  const row = library.getByRole("button", { name: "RowTool / RowAct / RowOrg", exact: true });
+  await expect(row).toBeVisible();
+  await expect.poll(async () => await clipFrames(page, "triplet")).toEqual(before);
+  await expect(page.getByRole("button", { name: "bipolar / dissect / omentum", exact: true })).toHaveCount(0);
+
+  await row.click();
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string; verb: string; target: string }[]>;
+    return (frames["0"] ?? []).some((item) => item.instrument === "RowTool" && item.verb === "RowAct" && item.target === "RowOrg");
+  }).toBe(true);
+  await expect(page.locator("[data-now]")).toContainText("RowTool");
+  await expect(page.locator("[data-now]")).toContainText("RowAct");
+  await expect(page.locator("[data-now]")).toContainText("RowOrg");
+  await page.locator("[data-now]").getByText("RowTool").click();
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string }[]>;
+    return (frames["0"] ?? []).some((item) => item.instrument === "RowTool");
+  }).toBe(true);
+
+  await row.click();
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string }[]>;
+    return (frames["0"] ?? []).some((item) => item.instrument === "RowTool");
+  }).toBe(false);
 });
 
 test("video Clip uses video element and seek updates Now", async ({ page }) => {
