@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { foldClass, foldPhase, foldTriplet } from "./timeline";
+import { foldClass, foldPhase, foldTriplet, labelColor } from "./timeline";
 
 test("phase folds consecutive names and unlabeled gaps", () => {
   expect(foldPhase(4, { "0": "Calot", "1": "Calot", "3": "Pack" })).toEqual([
@@ -38,3 +38,13 @@ test("triplet folds each exact triple", () => {
     },
   ]);
 });
+
+test("labelColor is stable, distinct, and desaturated for dark surfaces", () => {
+  expect(labelColor("Calot")).toBe(labelColor("Calot"));
+  expect(labelColor("Calot")).not.toBe(labelColor("Pack"));
+  expect(labelColor("blurred")).not.toBe(labelColor("grasper"));
+  for (const identity of ["Calot", "blurred", "grasper / retract / gallbladder"]) {
+    expect(labelColor(identity)).toMatch(/^hsl\(\d+ 35% 55%\)$/);
+  }
+});
+

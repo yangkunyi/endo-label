@@ -11,7 +11,7 @@ export function labelColor(identity: string): string {
     hash ^= identity.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
-  return `hsl(${(hash >>> 0) % 360} 70% 42%)`;
+  return `hsl(${(hash >>> 0) % 360} 35% 55%)`;
 }
 
 export type TimelineLane = {

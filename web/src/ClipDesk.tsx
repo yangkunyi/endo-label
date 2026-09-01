@@ -418,7 +418,7 @@ export function ClipDesk() {
                 key={clip.id}
                 to={clipDeskPath(clip.id)}
                 aria-current={clip.id === clipId ? "page" : undefined}
-                className={`flex items-center justify-between rounded px-3 py-2 text-left text-sm ${clip.id === clipId ? "bg-accent font-semibold text-accent-foreground" : "text-foreground hover:bg-secondary"}`}
+                className={`flex items-center justify-between rounded-lg px-3 py-2 text-left text-sm ${clip.id === clipId ? "bg-primary/15 font-semibold text-foreground" : "text-foreground hover:bg-secondary"}`}
               >
                 <span className="truncate">{clip.id}</span>
                 <span className="ml-2 shrink-0 text-xs text-muted-foreground">{clip.frame_count} Frames</span>
@@ -432,7 +432,7 @@ export function ClipDesk() {
           value={layout.clipRailWidth}
           onResize={(value) => setLayout({ clipRailWidth: value })}
         />
-        <section aria-label="Player" className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-black">
+        <section aria-label="Player" className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-black">
           <div className="flex min-h-0 flex-1 items-center justify-center">
             {error ? (
               <div className="p-6 text-center"><h2 className="mb-2 text-lg font-semibold">{clipId}</h2><p>{error instanceof Error ? error.message : "Clip not found"}</p></div>

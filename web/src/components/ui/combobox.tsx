@@ -70,7 +70,7 @@ export function Combobox({
           role="listbox"
           aria-label={ariaLabel}
           className={cn(
-            "absolute z-20 mt-1 max-h-40 w-full overflow-auto rounded-md border border-border bg-popover py-1 text-sm text-popover-foreground shadow",
+            "absolute z-20 mt-1 max-h-40 w-full overflow-auto rounded-md border border-border bg-popover py-1 text-sm text-popover-foreground",
           )}
         >
           {filtered.length === 0 ? (
