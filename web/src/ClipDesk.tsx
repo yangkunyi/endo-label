@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
-import { Pause, Play, Trash2, X } from "lucide-react";
+import { Pause, Play, Trash2 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
 import {
@@ -20,7 +20,6 @@ import {
   toggleClassTag,
   tripletClipPath,
   tripletFramePath,
-  tripletRowPath,
   tripletSpanPath,
   vocabDeletePath,
   vocabListPath,
@@ -90,6 +89,10 @@ function savePlaybackSettings(settings: PlaybackSettings) {
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  // Seek is <input type="range">. Treating every INPUT as typing swallowed i/o/[].
+  if (target instanceof HTMLInputElement && target.type === "range") {
     return false;
   }
   if (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
@@ -1024,20 +1027,12 @@ function ClassEditor({
   return (
     <section data-editor-card="class" className="flex flex-col gap-2">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
-      <div className="flex flex-wrap gap-1">
+      <div data-now="" className="flex flex-wrap gap-1">
         {current.length === 0 ? <p className="text-sm text-muted-foreground">none</p> : null}
         {current.map((name) => (
-          <Button
-            key={name}
-            type="button"
-            size="sm"
-            variant="secondary"
-            aria-label={`Turn off ${name}`}
-            onClick={() => void writeTags(current.filter((tag) => tag !== name))}
-          >
+          <span key={name} className="rounded-md bg-secondary px-2 py-1 text-sm text-secondary-foreground">
             {name}
-            <X size={12} />
-          </Button>
+          </span>
         ))}
       </div>
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
@@ -1103,7 +1098,7 @@ function PhaseEditor({
   return (
     <section data-editor-card="phase" className="flex flex-col gap-2">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
-      <p className="text-sm">{current ?? "unlabeled"}</p>
+      <p data-now="" className="text-sm">{current ?? "unlabeled"}</p>
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
       <LibraryList
         names={phases}
@@ -1185,29 +1180,10 @@ function TripletEditor({
   return (
     <section data-editor-card="triplet" className="flex flex-col gap-2">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
-      <ul aria-label="triplet">
+      <ul aria-label="triplet" data-now="">
         {rows.map((row) => (
-          <li key={row.id} className="flex items-center gap-1 text-xs">
-            <span className="min-w-0 flex-1 truncate">{row.instrument} / {row.verb} / {row.target}</span>
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label={`Delete row ${row.instrument} / ${row.verb} / ${row.target}`}
-              onClick={() => {
-                void (async () => {
-                  setError(null);
-                  try {
-                    await sendJson(tripletRowPath(clipId, frameIndex, row.id), "DELETE");
-                    await refresh();
-                  } catch (err) {
-                    setError(err instanceof Error ? err.message : "Write failed");
-                  }
-                })();
-              }}
-            >
-              <X size={12} />
-            </Button>
+          <li key={row.id} className="text-xs">
+            <span className="min-w-0 truncate">{row.instrument} / {row.verb} / {row.target}</span>
           </li>
         ))}
       </ul>

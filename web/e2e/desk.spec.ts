@@ -120,7 +120,7 @@ test("Pick+Create writes this Frame and there are no HeroUI tables", async ({ pa
 
   await pickName(page, "class", "grasper");
   await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("grasper");
-  await expect(page.getByRole("button", { name: "Turn off grasper" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Turn off grasper" })).toHaveCount(0);
 
   await pickName(page, "phase", "Preparation");
   await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("Preparation");
@@ -132,11 +132,50 @@ test("Pick+Create writes this Frame and there are no HeroUI tables", async ({ pa
   }).toBe(true);
 });
 
+test("Now is read-only; Library writes this Frame", async ({ page }) => {
+  await page.request.put("/api/class/CLIP_E2E/frames/0", { data: { tags: [] } });
+  await page.request.put("/api/phase/CLIP_E2E/frames/0", { data: { phase: null } });
+  const tripletDoc = (await (await page.request.get("/api/triplet/CLIP_E2E")).json()) as {
+    frames?: Record<string, { id: number }[]>;
+  };
+  for (const row of tripletDoc.frames?.["0"] ?? []) {
+    await page.request.delete(`/api/triplet/CLIP_E2E/frames/0/${row.id}`);
+  }
+  await page.goto("/clips/CLIP_E2E");
+  await pickName(page, "class", "grasper");
+  await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("grasper");
+  await expect(page.getByRole("button", { name: /Turn off / })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Delete row / })).toHaveCount(0);
+  await page.locator('[data-editor-card="class"] [data-now]').getByText("grasper", { exact: true }).click();
+  await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("grasper");
+  await pickName(page, "class", "grasper");
+  await expect.poll(async () => (((await clipFrames(page, "class"))["0"] as string[]) ?? []).includes("grasper")).toBe(false);
+
+  await pickName(page, "phase", "Preparation");
+  await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("Preparation");
+  await page.locator('[data-editor-card="phase"] [data-now]').click();
+  await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("Preparation");
+  await pickName(page, "phase", "Preparation");
+  await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBeUndefined();
+
+  await fillTriplet(page, "grasper", "grasp", "gallbladder");
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string }[]>;
+    return (frames["0"] ?? []).some((row) => row.instrument === "grasper");
+  }).toBe(true);
+  await expect(page.getByRole("button", { name: /Delete row / })).toHaveCount(0);
+  await fillTriplet(page, "grasper", "grasp", "gallbladder");
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string }[]>;
+    return (frames["0"] ?? []).some((row) => row.instrument === "grasper");
+  }).toBe(false);
+});
+
 test("class chip and re-pick toggle off; phase re-pick clears; triplet same triple toggles", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await pickName(page, "class", "hook");
   await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("hook");
-  await page.getByRole("button", { name: "Turn off hook" }).click();
+  await pickName(page, "class", "hook");
   await expect.poll(async () => (((await clipFrames(page, "class"))["0"] as string[]) ?? []).includes("hook")).toBe(false);
 
   await pickName(page, "class", "blurred");
@@ -267,7 +306,7 @@ test("trash vs x: chip is this Frame, List trash removes the desk name", async (
   await scrubToFrame(page, 1);
   await pickName(page, "class", "DeskTrashC");
   await scrubToFrame(page, 0);
-  await page.getByRole("button", { name: "Turn off DeskTrashC" }).click();
+  await pickName(page, "class", "DeskTrashC");
   await expect.poll(async () => (((await clipFrames(page, "class"))["0"] as string[]) ?? []).includes("DeskTrashC")).toBe(false);
   await expect.poll(async () => ((await clipFrames(page, "class"))["1"] as string[]) ?? []).toContain("DeskTrashC");
 
@@ -294,7 +333,7 @@ test("trashing an instrument in use is refused until the row is gone", async ({ 
   const vocabBefore = await (await page.request.get("/api/vocab")).json();
   expect(vocabBefore.instruments).toContain("DeskTrashTool");
 
-  await page.locator('[data-editor-card="triplet"]').getByRole("button", { name: "Delete row DeskTrashTool / grasp / gallbladder" }).click();
+  await fillTriplet(page, "DeskTrashTool", "grasp", "gallbladder");
   await expect.poll(async () => {
     const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string }[]>;
     return (frames["0"] ?? []).some((row) => row.instrument === "DeskTrashTool");
@@ -351,6 +390,19 @@ test("] applies; Remove without Mark from is this Frame", async ({ page }) => {
   await page.getByRole("button", { name: "Remove from frames 1–1" }).click();
   await expect.poll(async () => (await clipFrames(page, "phase"))["1"]).toBeUndefined();
   await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("ChipApplyP");
+});
+
+test("i/[ marks from while Seek is focused", async ({ page }) => {
+  await page.request.put("/api/phase/CLIP_E2E/frames/0", { data: { phase: null } });
+  await page.request.put("/api/phase/CLIP_E2E/frames/1", { data: { phase: null } });
+  await page.goto("/clips/CLIP_E2E");
+  await pickName(page, "phase", "ChipApplyP");
+  await expect(page.locator("[data-paint-chip]")).toHaveText("phase: ChipApplyP");
+  await page.getByRole("slider", { name: "Seek" }).focus();
+  await page.keyboard.press("[");
+  await expect(page.locator("[data-span-fill]")).toBeVisible();
+  await page.keyboard.press("i");
+  await expect(page.getByText("0 → 0")).toBeVisible();
 });
 
 test("Task-focus tabs, Library write, + does not write Frame, summary does not seek", async ({ page }) => {
