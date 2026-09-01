@@ -98,8 +98,7 @@ test("root and Clip routes share one workbench shell", async ({ page }) => {
 test("Clip rail has counts, player seeks, and no Frame filmstrip", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   const rail = page.getByRole("navigation", { name: "Clips" });
-  await expect(rail.getByText("CLIP_E2E", { exact: true })).toBeVisible();
-  await expect(rail.getByText("2 Frames", { exact: true })).toBeVisible();
+  await expect(rail.getByRole("link", { name: "CLIP_E2E 2 Frames" })).toBeVisible();
   await expect(rail.getByRole("button")).toHaveCount(0);
   await expect(page.getByRole("slider", { name: "Seek" })).toBeVisible();
   await expect(page.getByRole("slider", { name: "Frame index" })).toHaveCount(0);
@@ -398,4 +397,19 @@ test("phase band folds span, click seeks, focus rebuilds", async ({ page }) => {
   await focusTask(page, "class");
   await expect(page.getByRole("button", { name: "BandPhase 0–1" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Timeline" })).toBeVisible();
+});
+
+test("video Clip uses video element and seek updates Now", async ({ page }) => {
+  await page.goto("/clips/CLIP_VID");
+  const video = page.locator("video");
+  await expect(video).toBeVisible();
+  await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.readyState)).toBeGreaterThanOrEqual(1);
+  await expect(page.getByRole("img")).toHaveCount(0);
+  await expect(page.getByText("Frame 0 of 2")).toBeVisible();
+  await pickName(page, "phase", "VidPhase");
+  await expect(page.getByRole("tabpanel").getByRole("paragraph").filter({ hasText: /^VidPhase$/ })).toBeVisible();
+  await scrubToFrame(page, 1);
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  await expect(page.getByRole("tabpanel").getByRole("paragraph").filter({ hasText: /^unlabeled$/ })).toBeVisible();
+  await expect.poll(async () => await clipFrames(page, "phase", "CLIP_VID")).toMatchObject({ "0": "VidPhase" });
 });

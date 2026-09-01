@@ -6,6 +6,7 @@ import {
   clipDeskPath,
   errorDetail,
   frameClassTags,
+  clipMediaPath,
   frameJpegPath,
   framePhaseName,
   frameTripletRows,
@@ -32,6 +33,10 @@ test("clip desk path is /clips/:clipId", () => {
 test("frame JPEG path is catalog Frame URL", () => {
   expect(frameJpegPath("CLIPA", 0)).toBe("/api/clips/CLIPA/frames/0");
   expect(frameJpegPath("CLIPA", 3)).toBe("/api/clips/CLIPA/frames/3");
+});
+
+test("video media path is catalog media URL", () => {
+  expect(clipMediaPath("VID")).toBe("/api/clips/VID/media");
 });
 
 test("error detail uses FastAPI detail string", () => {

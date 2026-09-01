@@ -112,6 +112,41 @@ def test_yaml_clips_skip_bad_path_and_unknown_kind(tmp_path: Path) -> None:
     assert client.get("/api/clips/MISSING").status_code == 404
     assert client.get("/api/clips/VID").json()["kind"] == "video"
     assert client.get("/api/clips/VID").json()["frame_count"] == 0
+    assert client.get("/api/clips/GOOD/media").status_code == 404
+
+
+_TINY_MP4 = Path(__file__).resolve().parent / "fixtures" / "tiny.mp4"
+
+
+def test_video_clip_media_is_read_only_and_maps_frames(tmp_path: Path) -> None:
+    yaml_path = tmp_path / "sitting.yaml"
+    yaml_path.write_text(
+        "\n".join(
+            [
+                "clips:",
+                "  - id: VID",
+                "    kind: video",
+                f"    path: {_TINY_MP4}",
+                f"labels_root: {tmp_path / 'labels'}",
+                f"annotations_root: {tmp_path / 'mask'}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    before = _TINY_MP4.stat().st_mtime_ns
+    client = TestClient(create_app(load_settings(yaml_path)))
+    listed = client.get("/api/clips").json()["clips"]
+    assert listed == [{"id": "VID", "kind": "video", "frame_count": 2, "fps": 25}]
+    meta = client.get("/api/clips/VID").json()
+    assert meta["frame_count"] == 2
+    assert meta["fps"] == 25
+    media = client.get("/api/clips/VID/media")
+    assert media.status_code == 200
+    assert media.content == _TINY_MP4.read_bytes()
+    assert _TINY_MP4.stat().st_mtime_ns == before
+    assert client.get("/api/phase/VID").status_code == 200
+    assert client.get("/api/clips/VID/frames/0").status_code == 404
 
 
 def test_listing_clips_does_not_write_frame_pool(tmp_path: Path) -> None:

@@ -1,6 +1,12 @@
-frames_root: fixtures/frames
-clip_allowlist:
-  - CLIP_E2E
-  - CLIP_E2E_B
+clips:
+  - id: CLIP_E2E
+    kind: jpeg
+    path: fixtures/frames/CLIP_E2E
+  - id: CLIP_E2E_B
+    kind: jpeg
+    path: fixtures/frames/CLIP_E2E_B
+  - id: CLIP_VID
+    kind: video
+    path: ../../tests/fixtures/tiny.mp4
 labels_root: .work/labels
 annotations_root: .work/mask

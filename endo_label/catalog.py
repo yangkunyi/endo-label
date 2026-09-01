@@ -86,6 +86,149 @@ def list_frames(settings: Settings, clip_id: str) -> list[FrameRef]:
     return [FrameRef(index=i, stem=p.stem, path=p) for i, p in enumerate(files)]
 
 
+def _read_u32(fh, offset: int) -> int | None:
+    fh.seek(offset)
+    data = fh.read(4)
+    if len(data) < 4:
+        return None
+    return int.from_bytes(data, "big")
+
+
+def _boxes(fh, start: int, end: int):
+    offset = start
+    while offset + 8 <= end:
+        size = _read_u32(fh, offset)
+        fh.seek(offset + 4)
+        typ = fh.read(4)
+        if size is None or len(typ) < 4:
+            break
+        if size == 1:
+            fh.seek(offset + 8)
+            ext = fh.read(8)
+            if len(ext) < 8:
+                break
+            size = int.from_bytes(ext, "big")
+            header = 16
+        elif size == 0:
+            size = end - offset
+            header = 8
+        else:
+            header = 8
+        if size < 8 or offset + size > end:
+            break
+        yield typ, offset + header, offset + size
+        offset += size
+
+
+def _mvhd_seconds(fh, start: int, end: int) -> float | None:
+    if end - start < 20:
+        return None
+    fh.seek(start)
+    version = fh.read(1)[0]
+    if version == 1:
+        if end - start < 32:
+            return None
+        timescale = _read_u32(fh, start + 20)
+        fh.seek(start + 24)
+        duration_raw = fh.read(8)
+        if timescale is None or len(duration_raw) < 8:
+            return None
+        duration = int.from_bytes(duration_raw, "big")
+    else:
+        timescale = _read_u32(fh, start + 12)
+        duration = _read_u32(fh, start + 16)
+        if timescale is None or duration is None:
+            return None
+    if timescale <= 0:
+        return None
+    return duration / timescale
+
+
+def _stts_delta(fh, start: int, end: int) -> int | None:
+    if end - start < 16:
+        return None
+    count = _read_u32(fh, start + 4)
+    if not count:
+        return None
+    delta = _read_u32(fh, start + 12)
+    return delta if delta and delta > 0 else None
+
+
+def _mdhd_timescale(fh, start: int, end: int) -> int | None:
+    if end - start < 20:
+        return None
+    fh.seek(start)
+    version = fh.read(1)[0]
+    if version == 1:
+        if end - start < 24:
+            return None
+        return _read_u32(fh, start + 20)
+    return _read_u32(fh, start + 12)
+
+
+def _trak_fps(fh, start: int, end: int) -> int | None:
+    timescale = None
+    delta = None
+    vide = False
+    for typ, inner_start, inner_end in _boxes(fh, start, end):
+        if typ != b"mdia":
+            continue
+        for inner, media_start, media_end in _boxes(fh, inner_start, inner_end):
+            if inner == b"mdhd":
+                timescale = _mdhd_timescale(fh, media_start, media_end)
+            elif inner == b"minf":
+                for leaf, leaf_start, leaf_end in _boxes(fh, media_start, media_end):
+                    if leaf == b"vmhd":
+                        vide = True
+                    elif leaf == b"stbl":
+                        for table, table_start, table_end in _boxes(fh, leaf_start, leaf_end):
+                            if table == b"stts":
+                                delta = _stts_delta(fh, table_start, table_end)
+    if not vide or not timescale or not delta:
+        return None
+    return max(1, round(timescale / delta))
+
+
+def _mp4_clock(path: Path) -> tuple[float | None, int | None]:
+    seconds = None
+    fps = None
+    with path.open("rb") as fh:
+        size = path.stat().st_size
+        for typ, start, end in _boxes(fh, 0, size):
+            if typ != b"moov":
+                continue
+            for inner, inner_start, inner_end in _boxes(fh, start, end):
+                if inner == b"mvhd":
+                    seconds = _mvhd_seconds(fh, inner_start, inner_end)
+                elif inner == b"trak" and fps is None:
+                    fps = _trak_fps(fh, inner_start, inner_end)
+    return seconds, fps
+
+
+def video_clock(path: Path) -> tuple[int, int]:
+    """Return (frame_count, fps). fps is container fps, else 25."""
+    fps = JPEG_CLOCK_FPS
+    try:
+        seconds, parsed_fps = _mp4_clock(path)
+    except OSError:
+        return 0, fps
+    if parsed_fps:
+        fps = parsed_fps
+    if seconds is None:
+        return 0, fps
+    return max(1, round(seconds * fps)), fps
+
+
+def video_path(settings: Settings, clip_id: str) -> Path:
+    entry = _entry(settings, clip_id)
+    if entry.kind != "video":
+        raise ClipNotFound(clip_id)
+    path = entry.path.resolve()
+    if not path.is_file():
+        raise ClipNotFound(clip_id)
+    return path
+
+
 def _clip_row(entry: ClipEntry, settings: Settings) -> dict | None:
     if entry.kind == "jpeg":
         try:
@@ -102,11 +245,12 @@ def _clip_row(entry: ClipEntry, settings: Settings) -> dict | None:
         path = entry.path.resolve()
         if not path.is_file():
             return None
+        frame_count, fps = video_clock(path)
         return {
             "id": entry.id,
             "kind": "video",
-            "frame_count": 0,
-            "fps": JPEG_CLOCK_FPS,
+            "frame_count": frame_count,
+            "fps": fps,
         }
     return None
 

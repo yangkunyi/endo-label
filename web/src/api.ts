@@ -42,6 +42,10 @@ export function frameJpegPath(clipId: string, frameIndex: number): string {
   return `/api/clips/${encodeURIComponent(clipId)}/frames/${frameIndex}`;
 }
 
+export function clipMediaPath(clipId: string): string {
+  return `/api/clips/${encodeURIComponent(clipId)}/media`;
+}
+
 export function phaseClipPath(clipId: string): string {
   return `/api/phase/${encodeURIComponent(clipId)}`;
 }

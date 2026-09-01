@@ -8,6 +8,7 @@ import {
   classSpanPath,
   clipDeskPath,
   frameClassTags,
+  clipMediaPath,
   frameJpegPath,
   framePhaseName,
   frameTripletRows,
@@ -44,7 +45,6 @@ type PlaybackSettings = {
   rate: PlaybackRate;
 };
 
-const CLOCK_FPS = 25;
 const PLAYBACK_STORAGE_KEY = "endo_label:desk-player-rate";
 const DEFAULT_PLAYBACK_SETTINGS: PlaybackSettings = { rate: 1 };
 
@@ -72,8 +72,9 @@ function formatClock(seconds: number): string {
   return `${minutes}:${String(rest).padStart(2, "0")}`;
 }
 
-function jpegClock(frameIndex: number, frameCount: number): string {
-  return `${formatClock(frameIndex / CLOCK_FPS)} / ${formatClock(Math.max(0, frameCount) / CLOCK_FPS)}`;
+function playerClock(frameIndex: number, frameCount: number, fps: number): string {
+  const rate = fps > 0 ? fps : 25;
+  return `${formatClock(frameIndex / rate)} / ${formatClock(Math.max(0, frameCount) / rate)}`;
 }
 
 function savePlaybackSettings(settings: PlaybackSettings) {
@@ -231,6 +232,7 @@ export function ClipDesk() {
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
   const [sliderFlash, setSliderFlash] = useState<{ from: number; to: number } | null>(null);
   const spanBusy = useRef(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const frameIndex = data && storedIndex >= data.frame_count ? Math.max(0, data.frame_count - 1) : storedIndex;
 
@@ -242,7 +244,19 @@ export function ClipDesk() {
     setPlaying((current) => !current);
   }, []);
 
+  const seekPlayhead = useCallback((index: number) => {
+    scrub(index);
+    const el = videoRef.current;
+    if (el && data?.kind === "video") {
+      const fps = data.fps > 0 ? data.fps : 25;
+      el.currentTime = index / fps;
+    }
+  }, [data, scrub]);
+
   useEffect(() => {
+    if (data?.kind === "video") {
+      return;
+    }
     if (!playing || !data || data.frame_count <= 0) {
       return;
     }
@@ -251,7 +265,8 @@ export function ClipDesk() {
       setPlaying(false);
       return;
     }
-    const delay = Math.max(1, Math.round(1000 / (CLOCK_FPS * playback.rate)));
+    const fps = data.fps > 0 ? data.fps : 25;
+    const delay = Math.max(1, Math.round(1000 / (fps * playback.rate)));
     const id = window.setTimeout(() => {
       const next = frameIndex + 1;
       if (next >= last) {
@@ -263,6 +278,19 @@ export function ClipDesk() {
     }, delay);
     return () => window.clearTimeout(id);
   }, [data, frameIndex, playback.rate, playing, scrub]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || data?.kind !== "video") {
+      return;
+    }
+    el.playbackRate = playback.rate;
+    if (playing) {
+      void el.play();
+    } else {
+      el.pause();
+    }
+  }, [data?.kind, playback.rate, playing]);
 
   const markedFrom = spanStart && spanStart.clipId === clipId ? spanStart.frameIndex : null;
   const { from: rangeFrom, to: rangeTo } = rangeEnds(markedFrom, frameIndex);
@@ -395,6 +423,27 @@ export function ClipDesk() {
               <div className="p-6 text-center"><h2 className="mb-2 text-lg font-semibold">{clipId}</h2><p>{error instanceof Error ? error.message : "Clip not found"}</p></div>
             ) : isLoading ? (
               <p>Loading Clip…</p>
+            ) : data?.kind === "video" && data.frame_count ? (
+              <video
+                ref={videoRef}
+                className="h-full w-full object-contain"
+                src={clipMediaPath(data.id)}
+                playsInline
+                preload="metadata"
+                onLoadedMetadata={(event) => {
+                  const fps = data.fps > 0 ? data.fps : 25;
+                  event.currentTarget.currentTime = frameIndex / fps;
+                }}
+                onTimeUpdate={(event) => {
+                  const fps = data.fps > 0 ? data.fps : 25;
+                  const last = Math.max(0, data.frame_count - 1);
+                  const index = Math.min(last, Math.max(0, Math.round(event.currentTarget.currentTime * fps)));
+                  if (index !== frameIndex) {
+                    scrub(index);
+                  }
+                }}
+                onEnded={() => setPlaying(false)}
+              />
             ) : data?.frame_count ? (
               <img
                 className="h-full w-full object-contain"
@@ -409,7 +458,7 @@ export function ClipDesk() {
           </div>
           {data?.frame_count ? (
             <p data-player-clock="" className="pointer-events-none absolute right-3 top-3 text-sm tabular-nums text-white">
-              {jpegClock(frameIndex, data.frame_count)}
+              {playerClock(frameIndex, data.frame_count, data.fps)}
             </p>
           ) : null}
           {data?.frame_count ? (
@@ -419,7 +468,7 @@ export function ClipDesk() {
               phaseFrames={phaseDoc?.frames ?? {}}
               classFrames={classDoc?.frames ?? {}}
               tripletFrames={tripletDoc?.frames ?? {}}
-              onSeek={scrub}
+              onSeek={seekPlayhead}
             />
           ) : null}
         </section>
@@ -563,11 +612,11 @@ export function ClipDesk() {
             step={1}
             value={data?.frame_count ? frameIndex : 0}
             disabled={!data || data.frame_count <= 0}
-            onChange={(event) => scrub(Number(event.target.value))}
+            onChange={(event) => seekPlayhead(Number(event.target.value))}
           />
         </div>
         <output className="shrink-0 text-sm tabular-nums" data-player-clock-bar="">
-          {data ? jpegClock(frameIndex, data.frame_count) : "0:00 / 0:00"}
+          {data ? playerClock(frameIndex, data.frame_count, data.fps) : "0:00 / 0:00"}
         </output>
         <output className="w-24 shrink-0 text-right text-xs text-muted-foreground">{data ? `Frame ${frameIndex} of ${data.frame_count}` : "No Clip"}</output>
         {markedFrom != null ? (
