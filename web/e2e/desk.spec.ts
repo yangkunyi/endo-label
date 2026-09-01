@@ -51,11 +51,9 @@ async function addVocabOnly(page: Page, kind: string, name: string) {
   await box.press("Enter");
 }
 
-async function pickName(page: Page, ariaLabel: string, name: string) {
-  const tab = ariaLabel === "class" || ariaLabel === "phase" ? ariaLabel : "triplet";
-  await focusTask(page, tab);
-  const listName = tab === "triplet" ? `${ariaLabel} library` : "Library";
-  const list = page.getByRole("list", { name: listName });
+async function pickName(page: Page, ariaLabel: "class" | "phase", name: string) {
+  await focusTask(page, ariaLabel);
+  const list = page.getByRole("list", { name: "Library" });
   if (await list.getByRole("button", { name, exact: true }).count() === 0) {
     await addVocabOnly(page, ariaLabel, name);
   }
@@ -535,6 +533,20 @@ test("triplet Library rows toggle; + does not write Frame", async ({ page }) => 
     const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string }[]>;
     return (frames["0"] ?? []).some((item) => item.instrument === "RowTool");
   }).toBe(false);
+});
+
+test("composed triplet row survives a Task focus switch", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await focusTask(page, "triplet");
+  await page.getByRole("textbox", { name: "instrument" }).fill("FocusTool");
+  await page.getByRole("textbox", { name: "verb" }).fill("FocusAct");
+  await page.getByRole("textbox", { name: "target" }).fill("FocusOrg");
+  await page.getByRole("button", { name: "Add triplet row" }).click();
+  const row = page.getByRole("table", { name: "Library" }).getByRole("button", { name: "FocusTool / FocusAct / FocusOrg", exact: true });
+  await expect(row).toBeVisible();
+  await focusTask(page, "phase");
+  await focusTask(page, "triplet");
+  await expect(row).toBeVisible();
 });
 
 test("video Clip uses video element and seek updates Now", async ({ page }) => {

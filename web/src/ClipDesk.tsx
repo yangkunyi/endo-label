@@ -228,6 +228,7 @@ export function ClipDesk() {
   );
   const { data: vocab, mutate: mutateVocab } = useSWR(vocabPath(), getJson<Vocab>);
   const [taskFocus, setTaskFocus] = useState<EditorKind>("class");
+  const [composedTriples, setComposedTriples] = useState<{ instrument: string; verb: string; target: string }[]>([]);
   const storedIndex = useDeskStore((s) => s.frameIndex);
   const openClip = useDeskStore((s) => s.openClip);
   const scrub = useDeskStore((s) => s.scrub);
@@ -388,6 +389,10 @@ export function ClipDesk() {
     }
   }, [data, openClip]);
 
+  useEffect(() => {
+    setComposedTriples([]);
+  }, [data?.id]);
+
   return (
     <main className="flex h-screen min-h-0 flex-col overflow-hidden bg-background text-foreground">
       <header className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-2">
@@ -535,6 +540,8 @@ export function ClipDesk() {
                   mutateTriplet={mutateTriplet}
                   mutateVocab={mutateVocab}
                   onPaint={setPaintChip}
+                  composed={composedTriples}
+                  setComposed={setComposedTriples}
                 />
               ) : (
                 <PhaseEditor
@@ -1198,6 +1205,8 @@ function TripletEditor({
   mutateTriplet,
   mutateVocab,
   onPaint,
+  composed,
+  setComposed,
 }: {
   clipId: string;
   frameIndex: number;
@@ -1209,12 +1218,12 @@ function TripletEditor({
   mutateTriplet: KeyedMutator<TripletDoc>;
   mutateVocab: KeyedMutator<Vocab>;
   onPaint: (chip: PaintChip | null) => void;
+  composed: { instrument: string; verb: string; target: string }[];
+  setComposed: React.Dispatch<React.SetStateAction<{ instrument: string; verb: string; target: string }[]>>;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const [composed, setComposed] = useState<{ instrument: string; verb: string; target: string }[]>([]);
   const [draft, setDraft] = useState({ instrument: "", verb: "", target: "" });
   useEffect(() => {
-    setComposed([]);
     setDraft({ instrument: "", verb: "", target: "" });
   }, [clipId]);
   const nowRows = frameTripletRows(tripletFrames, frameIndex);
@@ -1256,6 +1265,7 @@ function TripletEditor({
     const verb = draft.verb.trim();
     const target = draft.target.trim();
     if (!instrument || !verb || !target) {
+      setError("Fill instrument, verb, and target.");
       return;
     }
     setError(null);
@@ -1286,8 +1296,8 @@ function TripletEditor({
           {nowRows.map((row) => {
             const key = tripleIdentity(row);
             return (
-              <tr key={row.id} data-label-color={labelColor(key)} style={{ borderLeft: `3px solid ${labelColor(key)}` }}>
-                <td className="truncate px-1">{row.instrument}</td>
+              <tr key={row.id} data-label-color={labelColor(key)}>
+                <td className="truncate px-1" style={{ borderLeft: `3px solid ${labelColor(key)}` }}>{row.instrument}</td>
                 <td className="truncate px-1">{row.verb}</td>
                 <td className="truncate px-1">{row.target}</td>
               </tr>
