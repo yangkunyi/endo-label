@@ -4,11 +4,17 @@
 
 **Blocked by:** 02 — Both Clip kinds play in one shadcn Video Player
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Timeline sits full-width directly under the player, outside the editor panel
-- [ ] Playhead shows and seeks the current Frame; drag is frame-snapped; click seeks to interval start
-- [ ] One lane per label identity; label name written once at the lane head
-- [ ] Interval bars are display-only (not draggable); unlabeled gaps dim
-- [ ] Many lanes scroll; the player keeps its size
-- [ ] Playwright covers lane-head-once, drag-seek, and not-draggable bars
+- [x] Timeline sits full-width directly under the player, outside the editor panel
+- [x] Playhead shows and seeks the current Frame; drag is frame-snapped; click seeks to interval start
+- [x] One lane per label identity; label name written once at the lane head
+- [x] Interval bars are display-only (not draggable); unlabeled gaps dim
+- [x] Many lanes scroll; the player keeps its size
+- [x] Playwright covers lane-head-once, drag-seek, and not-draggable bars
+
+## Answer
+
+Timeline sits full-width under the player (sibling of the Player region, not in Editors). One lane per label identity; name at the lane head only. Playhead is frame-snapped (`floor(frac * N)`); the knob drags, the stem does not steal interval clicks. Bars are display-only; unlabeled gaps dim; lanes scroll (`max-h-44`) while the player keeps `min-h-48`.
+
+Commits `823b9a4` (fold/lanes/playhead) and `cab4151` (under-player layout + handle).
