@@ -4,9 +4,15 @@
 
 **Blocked by:** 01 — JPEG Clip lazily transcodes to mp4 with cache
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] JPEG and video Clips both play through the same Video Player transport
-- [ ] No custom rate selector or self-built clock left in the desk
-- [ ] No seek slider in the footer; seeking the player updates Now
-- [ ] Playwright covers video element present for both kinds and seek-updates-Now
+- [x] JPEG and video Clips both play through the same Video Player transport
+- [x] No custom rate selector or self-built clock left in the desk
+- [x] No seek slider in the footer; seeking the player updates Now
+- [x] Playwright covers video element present for both kinds and seek-updates-Now
+
+## Answer
+
+Both Clip kinds play through one media-chrome Video Player (shadcn-style local component). Custom rate select, self-built clock, footer seek slider, and JPEG timer all removed. Seeking updates Now via timeupdate→scrub. Space guard avoids double-toggle with media-chrome's own keyboard shortcuts.
+
+Commit `5cc04cc` on `main`.

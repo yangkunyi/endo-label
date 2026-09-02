@@ -4,10 +4,16 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Canvas, surface ladder, and hairline tokens applied desk-wide
-- [ ] Radius 6/8/12 on buttons, cards, and the player
-- [ ] Accent `#5e6ad2` on selection, focus rings, and Playhead
-- [ ] Label colors keep stable hue, desaturated for dark surfaces
-- [ ] Same style on jpeg and video Clips; no light theme
+- [x] Canvas, surface ladder, and hairline tokens applied desk-wide
+- [x] Radius 6/8/12 on buttons, cards, and the player
+- [x] Accent `#5e6ad2` on selection, focus rings, and Playhead
+- [x] Label colors keep stable hue, desaturated for dark surfaces
+- [x] Same style on jpeg and video Clips; no light theme
+
+## Answer
+
+Linear-style tokens over the shadcn kit: canvas `#0a0a0b`, surfaces `#141516`/`#1a1b1c`, hairlines, radius 6/8/12, indigo `#5e6ad2` accent, desaturated label colors, Inter + tabular-nums, no shadows. Judgement items fixed in-review (Inter font link, selected-clip accent).
+
+Commit `302b19d` on `main`.
