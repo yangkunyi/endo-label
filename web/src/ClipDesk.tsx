@@ -332,39 +332,41 @@ export function ClipDesk() {
           value={layout.clipRailWidth}
           onResize={(value) => setLayout({ clipRailWidth: value })}
         />
-        <section aria-label="Player" className="relative flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-black">
-          <div className="flex min-h-0 flex-1 items-center justify-center">
-            {error ? (
-              <div className="p-6 text-center"><h2 className="mb-2 text-lg font-semibold">{clipId}</h2><p>{error instanceof Error ? error.message : "Clip not found"}</p></div>
-            ) : isLoading ? (
-              <p>Loading Clip…</p>
-            ) : data?.frame_count ? (
-              <VideoPlayer
-                src={clipMediaPath(data.id)}
-                videoRef={videoRef}
-                frameLabel={`Frame ${frameIndex}`}
-                onLoadedMetadata={() => {
-                  const fps = data.fps > 0 ? data.fps : 25;
-                  const el = videoRef.current;
-                  if (el) {
-                    el.currentTime = frameIndex / fps;
-                  }
-                }}
-                onTimeUpdate={(currentTime) => {
-                  const fps = data.fps > 0 ? data.fps : 25;
-                  const last = Math.max(0, data.frame_count - 1);
-                  const index = Math.min(last, Math.max(0, Math.round(currentTime * fps)));
-                  if (index !== frameIndex) {
-                    scrub(index);
-                  }
-                }}
-              />
-            ) : data ? (
-              <p>This Clip has no Frames.</p>
-            ) : (
-              <div className="p-6 text-center"><h2 className="mb-2 text-xl font-semibold">Choose a Clip</h2><p className="text-muted-foreground">Select a Clip from the left rail to begin labeling.</p></div>
-            )}
-          </div>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <section aria-label="Player" className="relative flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-black">
+            <div className="flex min-h-0 flex-1 items-center justify-center">
+              {error ? (
+                <div className="p-6 text-center"><h2 className="mb-2 text-lg font-semibold">{clipId}</h2><p>{error instanceof Error ? error.message : "Clip not found"}</p></div>
+              ) : isLoading ? (
+                <p>Loading Clip…</p>
+              ) : data?.frame_count ? (
+                <VideoPlayer
+                  src={clipMediaPath(data.id)}
+                  videoRef={videoRef}
+                  frameLabel={`Frame ${frameIndex}`}
+                  onLoadedMetadata={() => {
+                    const fps = data.fps > 0 ? data.fps : 25;
+                    const el = videoRef.current;
+                    if (el) {
+                      el.currentTime = frameIndex / fps;
+                    }
+                  }}
+                  onTimeUpdate={(currentTime) => {
+                    const fps = data.fps > 0 ? data.fps : 25;
+                    const last = Math.max(0, data.frame_count - 1);
+                    const index = Math.min(last, Math.max(0, Math.round(currentTime * fps)));
+                    if (index !== frameIndex) {
+                      scrub(index);
+                    }
+                  }}
+                />
+              ) : data ? (
+                <p>This Clip has no Frames.</p>
+              ) : (
+                <div className="p-6 text-center"><h2 className="mb-2 text-xl font-semibold">Choose a Clip</h2><p className="text-muted-foreground">Select a Clip from the left rail to begin labeling.</p></div>
+              )}
+            </div>
+          </section>
           {data?.frame_count ? (
             <TimelineBand
               frameCount={data.frame_count}
@@ -376,7 +378,7 @@ export function ClipDesk() {
               onSeek={seekPlayhead}
             />
           ) : null}
-        </section>
+        </div>
         <ResizeHandle
           label="Resize editor rail"
           direction="horizontal"
@@ -534,7 +536,7 @@ function TimelineBand({
         ? foldClass(frameCount, classFrames)
         : foldTriplet(frameCount, tripletFrames);
   if (lanes.length === 0) {
-    lanes = [{ key: "unlabeled", segs: [{ start: 0, end: frameCount - 1, label: null }] }];
+    lanes = [{ key: "", segs: [{ start: 0, end: frameCount - 1, label: null }] }];
   }
   const trackRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -547,18 +549,17 @@ function TimelineBand({
       }
       const rect = track.getBoundingClientRect();
       const frac = Math.min(1, Math.max(0, (clientX - rect.left) / (rect.width || 1)));
-      const last = Math.max(0, frameCount - 1);
-      onSeek(Math.round(frac * last));
+      onSeek(Math.min(frameCount - 1, Math.floor(frac * frameCount)));
     },
     [frameCount, onSeek],
   );
 
-  const stopDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+  const stopDrag = useCallback((event: PointerEvent<HTMLDivElement>) => {
     dragging.current = false;
     event.currentTarget.releasePointerCapture?.(event.pointerId);
   }, []);
 
-  const frac = frameCount > 1 ? frameIndex / (frameCount - 1) : 0;
+  const playheadLeft = `${(frameIndex / frameCount) * 100}%`;
 
   return (
     <div role="region" aria-label="Timeline" data-timeline="" className="shrink-0 border-t border-border bg-card select-none">
@@ -566,7 +567,7 @@ function TimelineBand({
         <div className="flex">
           <div className="flex w-40 shrink-0 flex-col pr-2">
             {lanes.map((lane) => {
-              const unlabeled = lane.key === "unlabeled";
+              const unlabeled = !lane.key;
               return (
                 <div key={lane.key} className="flex h-6 shrink-0 items-center gap-1.5" data-lane-head title={unlabeled ? undefined : lane.key}>
                   {unlabeled ? null : (
@@ -606,33 +607,34 @@ function TimelineBand({
                 })}
               </div>
             ))}
-            <div
-              data-playhead=""
-              role="slider"
-              aria-label="Playhead"
-              aria-valuemin={0}
-              aria-valuemax={Math.max(0, frameCount - 1)}
-              aria-valuenow={frameIndex}
-              aria-valuetext={`Frame ${frameIndex}`}
-              className="absolute bottom-0 top-0 z-10 w-3 -translate-x-1/2 touch-none cursor-ew-resize"
-              style={{ left: `${frac * 100}%` }}
-              onPointerDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                dragging.current = true;
-                event.currentTarget.setPointerCapture(event.pointerId);
-                seekFromClientX(event.clientX);
-              }}
-              onPointerMove={(event) => {
-                if (dragging.current) {
+            <div className="pointer-events-none absolute bottom-0 top-0 z-10 w-3 -translate-x-1/2" style={{ left: playheadLeft }}>
+              <div
+                data-playhead=""
+                role="slider"
+                aria-label="Playhead"
+                aria-valuemin={0}
+                aria-valuemax={Math.max(0, frameCount - 1)}
+                aria-valuenow={frameIndex}
+                aria-valuetext={`Frame ${frameIndex}`}
+                className="absolute left-1/2 top-0 h-2 w-3 -translate-x-1/2 touch-none cursor-ew-resize pointer-events-auto"
+                onPointerDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  dragging.current = true;
+                  event.currentTarget.setPointerCapture(event.pointerId);
                   seekFromClientX(event.clientX);
-                }
-              }}
-              onPointerUp={stopDrag}
-              onPointerCancel={stopDrag}
-            >
+                }}
+                onPointerMove={(event) => {
+                  if (dragging.current) {
+                    seekFromClientX(event.clientX);
+                  }
+                }}
+                onPointerUp={stopDrag}
+                onPointerCancel={stopDrag}
+              >
+                <span aria-hidden="true" className="absolute left-1/2 top-0 h-2 w-2 -translate-x-1/2 rounded-full bg-[#5e6ad2]" />
+              </div>
               <span aria-hidden="true" className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-[#5e6ad2]" />
-              <span aria-hidden="true" className="absolute left-1/2 top-0 h-2 w-2 -translate-x-1/2 rounded-full bg-[#5e6ad2]" />
             </div>
           </div>
         </div>

@@ -494,7 +494,15 @@ test("timeline playhead drags frame-snapped; bars are display-only", async ({ pa
   await page.goto("/clips/CLIP_E2E");
   const timeline = page.getByRole("region", { name: "Timeline" });
   await expect(timeline).toBeVisible();
+  const player = page.getByRole("region", { name: "Player", exact: true });
   await expect(page.locator('[role="region"][aria-label="Editors"] [data-timeline]')).toHaveCount(0);
+  await expect(player.locator("[data-timeline]")).toHaveCount(0);
+  const playerBox = await player.boundingBox();
+  const timelineBox = await timeline.boundingBox();
+  expect(playerBox).not.toBeNull();
+  expect(timelineBox).not.toBeNull();
+  expect(timelineBox!.y).toBeGreaterThanOrEqual(playerBox!.y + playerBox!.height - 1);
+  expect(Math.abs(timelineBox!.width - playerBox!.width)).toBeLessThan(2);
   const video = page.locator("video");
   await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.readyState)).toBeGreaterThanOrEqual(1);
   const playhead = page.locator("[data-playhead]");
