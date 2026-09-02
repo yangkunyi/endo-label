@@ -1,0 +1,19 @@
+/* media-chrome controls themed to the desk tokens (dark surface, hairlines). */
+:root {
+  --media-background: transparent;
+  --media-control-background: transparent;
+  --media-control-background-hover: rgba(255, 255, 255, 0.08);
+  --media-control-focus-ring-color: var(--ring);
+  --media-range-track-background: rgba(255, 255, 255, 0.16);
+  --media-range-track-background-hover: rgba(255, 255, 255, 0.24);
+  --media-range-thumb-background: var(--foreground);
+  --media-range-thumb-border: 1px solid var(--border);
+  --media-range-thumb-box-shadow: none;
+  --media-range-track-border-radius: 999px;
+  --media-range-track-height: 3px;
+  --media-color-text: var(--muted-foreground);
+  --media-icon-color: var(--muted-foreground);
+  --media-icon-color-hover: var(--foreground);
+  --media-poster-image-background: #000000;
+  --media-poster-image-background-position: center;
+}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
-import { Pause, Play, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
 import {
@@ -9,7 +9,6 @@ import {
   clipDeskPath,
   frameClassTags,
   clipMediaPath,
-  frameJpegPath,
   framePhaseName,
   frameTripletRows,
   getJson,
@@ -35,64 +34,12 @@ import {
 } from "./api";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
+import { VideoPlayer } from "./components/ui/video-player";
 import { useDeskStore, type EditorKind, type PaintChip } from "./deskStore";
 import { foldClass, foldPhase, foldTriplet, labelColor, type TimelineLane } from "./timeline";
 
-type PlaybackRate = 0.5 | 1 | 2;
-
-type PlaybackSettings = {
-  rate: PlaybackRate;
-};
-
-const PLAYBACK_STORAGE_KEY = "endo_label:desk-player-rate";
-const DEFAULT_PLAYBACK_SETTINGS: PlaybackSettings = { rate: 1 };
-
-function readPlaybackSettings(): PlaybackSettings {
-  if (typeof window === "undefined") {
-    return DEFAULT_PLAYBACK_SETTINGS;
-  }
-  try {
-    const raw = window.localStorage.getItem(PLAYBACK_STORAGE_KEY);
-    if (!raw) {
-      return DEFAULT_PLAYBACK_SETTINGS;
-    }
-    const value = JSON.parse(raw) as Partial<PlaybackSettings>;
-    const rate = value.rate === 0.5 || value.rate === 2 ? value.rate : 1;
-    return { rate };
-  } catch {
-    return DEFAULT_PLAYBACK_SETTINGS;
-  }
-}
-
-function formatClock(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds));
-  const minutes = Math.floor(total / 60);
-  const rest = total % 60;
-  return `${minutes}:${String(rest).padStart(2, "0")}`;
-}
-
-function playerClock(frameIndex: number, frameCount: number, fps: number): string {
-  const rate = fps > 0 ? fps : 25;
-  return `${formatClock(frameIndex / rate)} / ${formatClock(Math.max(0, frameCount) / rate)}`;
-}
-
-function savePlaybackSettings(settings: PlaybackSettings) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    window.localStorage.setItem(PLAYBACK_STORAGE_KEY, JSON.stringify(settings));
-  } catch {
-    // ignore
-  }
-}
-
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-  // Seek is <input type="range">. Treating every INPUT as typing swallowed i/o/[].
-  if (target instanceof HTMLInputElement && target.type === "range") {
     return false;
   }
   if (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) {
@@ -121,17 +68,6 @@ function chipIdentity(chip: PaintChip): string {
 function rangeEnds(fromIndex: number | null, currentIndex: number): { from: number; to: number } {
   const start = fromIndex == null ? currentIndex : fromIndex;
   return { from: Math.min(start, currentIndex), to: Math.max(start, currentIndex) };
-}
-
-function sliderFillStyle(fromIndex: number | null, currentIndex: number, lastIndex: number): { left: string; width: string } {
-  if (fromIndex == null || lastIndex <= 0) {
-    return { left: "0%", width: "0%" };
-  }
-  const { from, to } = rangeEnds(fromIndex, currentIndex);
-  return {
-    left: `${(from / lastIndex) * 100}%`,
-    width: `${Math.max(((to - from) / lastIndex) * 100, 2)}%`,
-  };
 }
 
 async function ensureVocabName(
@@ -238,70 +174,31 @@ export function ClipDesk() {
   const setSpanStart = useDeskStore((s) => s.setSpanStart);
   const paintChip = useDeskStore((s) => s.paintChip);
   const setPaintChip = useDeskStore((s) => s.setPaintChip);
-  const [playing, setPlaying] = useState(false);
-  const [playback, setPlayback] = useState<PlaybackSettings>(() => readPlaybackSettings());
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
-  const [sliderFlash, setSliderFlash] = useState<{ from: number; to: number } | null>(null);
   const spanBusy = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const frameIndex = data && storedIndex >= data.frame_count ? Math.max(0, data.frame_count - 1) : storedIndex;
 
-  useEffect(() => {
-    savePlaybackSettings(playback);
-  }, [playback]);
-
   const togglePlayback = useCallback(() => {
-    setPlaying((current) => !current);
+    const el = videoRef.current;
+    if (!el) return;
+    if (el.paused) {
+      void el.play().catch(() => undefined);
+    } else {
+      el.pause();
+    }
   }, []);
 
   const seekPlayhead = useCallback((index: number) => {
     scrub(index);
     const el = videoRef.current;
-    if (el && data?.kind === "video") {
-      const fps = data.fps > 0 ? data.fps : 25;
+    if (el) {
+      const fps = data?.fps && data.fps > 0 ? data.fps : 25;
       el.currentTime = index / fps;
     }
   }, [data, scrub]);
 
-  useEffect(() => {
-    if (data?.kind === "video") {
-      return;
-    }
-    if (!playing || !data || data.frame_count <= 0) {
-      return;
-    }
-    const last = data.frame_count - 1;
-    if (frameIndex >= last) {
-      setPlaying(false);
-      return;
-    }
-    const fps = data.fps > 0 ? data.fps : 25;
-    const delay = Math.max(1, Math.round(1000 / (fps * playback.rate)));
-    const id = window.setTimeout(() => {
-      const next = frameIndex + 1;
-      if (next >= last) {
-        scrub(last);
-        setPlaying(false);
-        return;
-      }
-      scrub(next);
-    }, delay);
-    return () => window.clearTimeout(id);
-  }, [data, frameIndex, playback.rate, playing, scrub]);
-
-  useEffect(() => {
-    const el = videoRef.current;
-    if (!el || data?.kind !== "video") {
-      return;
-    }
-    el.playbackRate = playback.rate;
-    if (playing) {
-      void el.play();
-    } else {
-      el.pause();
-    }
-  }, [data?.kind, playback.rate, playing]);
 
   const markedFrom = spanStart && spanStart.clipId === clipId ? spanStart.frameIndex : null;
   const { from: rangeFrom, to: rangeTo } = rangeEnds(markedFrom, frameIndex);
@@ -340,10 +237,7 @@ export function ClipDesk() {
         });
         await mutateTriplet(doc, { revalidate: false });
       }
-      setPlaying(false);
-      setSliderFlash({ from: rangeFrom, to: rangeTo });
       setSpanStart(null);
-      window.setTimeout(() => setSliderFlash(null), 700);
       setToast({
         text: `${remove ? "Removed" : "Wrote"} ${chipLabel(paintChip)} on frames ${rangeFrom}–${rangeTo}`,
         error: false,
@@ -361,6 +255,12 @@ export function ClipDesk() {
         return;
       }
       if (event.key === " " && clipId && data && data.frame_count > 0) {
+        // media-chrome handles Space when its controller has focus; only handle
+        // the body/default focus case so the two never double-toggle.
+        const inController = event.target instanceof Element && event.target.closest("media-controller");
+        if (inController) {
+          return;
+        }
         event.preventDefault();
         togglePlayback();
         return;
@@ -438,32 +338,26 @@ export function ClipDesk() {
               <div className="p-6 text-center"><h2 className="mb-2 text-lg font-semibold">{clipId}</h2><p>{error instanceof Error ? error.message : "Clip not found"}</p></div>
             ) : isLoading ? (
               <p>Loading Clip…</p>
-            ) : data?.kind === "video" && data.frame_count ? (
-              <video
-                ref={videoRef}
-                className="h-full w-full object-contain"
+            ) : data?.frame_count ? (
+              <VideoPlayer
                 src={clipMediaPath(data.id)}
-                playsInline
-                preload="metadata"
-                onLoadedMetadata={(event) => {
+                videoRef={videoRef}
+                frameLabel={`Frame ${frameIndex}`}
+                onLoadedMetadata={() => {
                   const fps = data.fps > 0 ? data.fps : 25;
-                  event.currentTarget.currentTime = frameIndex / fps;
+                  const el = videoRef.current;
+                  if (el) {
+                    el.currentTime = frameIndex / fps;
+                  }
                 }}
-                onTimeUpdate={(event) => {
+                onTimeUpdate={(currentTime) => {
                   const fps = data.fps > 0 ? data.fps : 25;
                   const last = Math.max(0, data.frame_count - 1);
-                  const index = Math.min(last, Math.max(0, Math.round(event.currentTarget.currentTime * fps)));
+                  const index = Math.min(last, Math.max(0, Math.round(currentTime * fps)));
                   if (index !== frameIndex) {
                     scrub(index);
                   }
                 }}
-                onEnded={() => setPlaying(false)}
-              />
-            ) : data?.frame_count ? (
-              <img
-                className="h-full w-full object-contain"
-                src={frameJpegPath(data.id, frameIndex)}
-                alt={`Frame ${frameIndex}`}
               />
             ) : data ? (
               <p>This Clip has no Frames.</p>
@@ -471,11 +365,6 @@ export function ClipDesk() {
               <div className="p-6 text-center"><h2 className="mb-2 text-xl font-semibold">Choose a Clip</h2><p className="text-muted-foreground">Select a Clip from the left rail to begin labeling.</p></div>
             )}
           </div>
-          {data?.frame_count ? (
-            <p data-player-clock="" className="pointer-events-none absolute right-3 top-3 text-sm tabular-nums text-white">
-              {playerClock(frameIndex, data.frame_count, data.fps)}
-            </p>
-          ) : null}
           {data?.frame_count ? (
             <TimelineBand
               frameCount={data.frame_count}
@@ -578,64 +467,8 @@ export function ClipDesk() {
         onResize={(value) => setLayout({ bottomBarHeight: value })}
       />
       <footer aria-label="Player controls" className="flex shrink-0 items-center gap-3 overflow-x-auto border-t border-border bg-card px-4 py-2" style={{ height: layout.bottomBarHeight }}>
-        <Button
-          type="button"
-          size="icon"
-          variant="secondary"
-          aria-label={playing ? "Pause" : "Play"}
-          disabled={!data || data.frame_count <= 0 || (!playing && frameIndex >= data.frame_count - 1)}
-          onClick={togglePlayback}
-        >
-          {playing ? <Pause size={16} /> : <Play size={16} />}
-        </Button>
-        <label className="flex items-center gap-1 text-sm">
-          <span className="text-muted-foreground">rate</span>
-          <select
-            aria-label="Playback rate"
-            className="h-8 rounded-md border border-input bg-background px-1 text-sm"
-            value={playback.rate}
-            onChange={(event) => {
-              const rate = Number(event.target.value);
-              if (rate === 0.5 || rate === 1 || rate === 2) {
-                setPlayback({ rate });
-              }
-            }}
-          >
-            <option value={0.5}>0.5×</option>
-            <option value={1}>1×</option>
-            <option value={2}>2×</option>
-          </select>
-        </label>
-        <div className="relative min-w-40 flex-1">
-          {(markedFrom != null || sliderFlash) && data && data.frame_count > 1 ? (
-            <span
-              aria-hidden
-              data-span-fill=""
-              data-span-flash={sliderFlash ? "true" : undefined}
-              className={`pointer-events-none absolute top-1/2 h-2 -translate-y-1/2 rounded-full ${sliderFlash ? "bg-primary" : "bg-primary/40"}`}
-              style={sliderFillStyle(
-                sliderFlash ? sliderFlash.from : markedFrom,
-                sliderFlash ? sliderFlash.to : frameIndex,
-                Math.max(0, data.frame_count - 1),
-              )}
-            />
-          ) : null}
-          <input
-            type="range"
-            aria-label="Seek"
-            className="relative w-full accent-primary"
-            min={0}
-            max={Math.max(0, (data?.frame_count ?? 0) - 1)}
-            step={1}
-            value={data?.frame_count ? frameIndex : 0}
-            disabled={!data || data.frame_count <= 0}
-            onChange={(event) => seekPlayhead(Number(event.target.value))}
-          />
-        </div>
-        <output className="shrink-0 text-sm tabular-nums" data-player-clock-bar="">
-          {data ? playerClock(frameIndex, data.frame_count, data.fps) : "0:00 / 0:00"}
-        </output>
-        <output className="w-24 shrink-0 text-right text-xs text-muted-foreground">{data ? `Frame ${frameIndex} of ${data.frame_count}` : "No Clip"}</output>
+        <span className="shrink-0 text-xs font-medium text-muted-foreground">Playback in player</span>
+        <output className="w-24 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{data ? `Frame ${frameIndex} of ${data.frame_count}` : "No Clip"}</output>
         {markedFrom != null ? (
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{rangeFrom} → {rangeTo}</span>
         ) : null}

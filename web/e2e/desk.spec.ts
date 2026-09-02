@@ -27,12 +27,18 @@ test.beforeEach(async ({ request }) => {
 });
 
 async function scrubToFrame(page: Page, index: number) {
-  const slider = page.getByRole("slider", { name: "Seek" });
-  await slider.focus();
-  await page.keyboard.press("Home");
-  for (let i = 0; i < index; i++) {
-    await page.keyboard.press("ArrowRight");
-  }
+  const video = page.locator("video").first();
+  await expect(video).toBeVisible();
+  await expect.poll(async () =>
+    video.evaluate((el, seconds) => {
+      const v = el as HTMLVideoElement;
+      if (v.readyState < 1) {
+        return "not-ready";
+      }
+      v.currentTime = seconds;
+      return "ok";
+    }, index / 25),
+  ).toBe("ok");
 }
 
 async function clipFrames(page: Page, kind: "phase" | "class" | "triplet", clipId = "CLIP_E2E") {
@@ -99,7 +105,7 @@ test("root and Clip routes share one workbench shell", async ({ page }) => {
   await expect(page).toHaveURL(/\/clips\/CLIP_E2E$/);
   await expect(page.getByRole("heading", { name: "CLIP_E2E" })).toBeVisible();
   await expect(page.getByText("Frame 0 of 2")).toBeVisible();
-  await expect(page.getByRole("img", { name: "Frame 0" })).toBeVisible();
+  await expect(page.locator("video[aria-label='Frame 0']")).toBeVisible();
 });
 
 test("Clip rail has counts, player seeks, and no Frame filmstrip", async ({ page }) => {
@@ -107,16 +113,15 @@ test("Clip rail has counts, player seeks, and no Frame filmstrip", async ({ page
   const rail = page.getByRole("navigation", { name: "Clips" });
   await expect(rail.getByRole("link", { name: "CLIP_E2E 2 Frames" })).toBeVisible();
   await expect(rail.getByRole("button")).toHaveCount(0);
-  await expect(page.getByRole("slider", { name: "Seek" })).toBeVisible();
-  await expect(page.getByRole("slider", { name: "Frame index" })).toHaveCount(0);
+  await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
 
-  const jpeg = page.getByRole("img", { name: "Frame 0" });
+  const jpeg = page.locator("video[aria-label='Frame 0']");
   await expect(jpeg).toBeVisible();
   expect(await jpeg.evaluate((el) => getComputedStyle(el).objectFit)).toBe("contain");
 
   await scrubToFrame(page, 1);
   await expect(page.getByText("Frame 1 of 2")).toBeVisible();
-  await expect(page.getByRole("img", { name: "Frame 1" })).toBeVisible();
+  await expect(page.locator("video[aria-label='Frame 1']")).toBeVisible();
 });
 
 test("Pick+Create writes this Frame and there are no HeroUI tables", async ({ page }) => {
@@ -222,33 +227,30 @@ test("empty add-name placeholder is Type to add", async ({ page }) => {
   await expect(page.getByRole("textbox", { name: "target" })).toHaveAttribute("placeholder", "target");
 });
 
-test("playback advances without looping and ignores editable controls", async ({ page }) => {
+test("playback advances without looping; media-chrome owns the transport", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
-  await expect(page.getByRole("img", { name: "Frame 0" })).toBeVisible();
+  await expect(page.locator("video[aria-label='Frame 0']")).toBeVisible();
+  await expect.poll(() => page.locator("video").evaluate((el) => (el as HTMLVideoElement).readyState)).toBeGreaterThanOrEqual(1);
+  await expect(page.locator("select")).toHaveCount(0);
+  await expect(page.locator("media-playback-rate-button")).toBeVisible();
+  await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
 
-  await page.getByLabel("Playback rate").selectOption("2");
-  await page.reload();
-  await expect(page.getByLabel("Playback rate")).toHaveValue("2");
-
-  await page.getByRole("slider", { name: "Seek" }).focus();
+  await page.locator("video[aria-label='Frame 0']").click();
   await page.keyboard.press("Space");
-  await expect(page.getByRole("img", { name: "Frame 0" })).toBeVisible();
-
-  await page.getByRole("img", { name: "Frame 0" }).click();
-  await page.keyboard.press("Space");
-  await expect(page.getByRole("img", { name: "Frame 1" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Play" })).toBeVisible();
+  await expect(page.locator("video[aria-label='Frame 1']")).toBeVisible();
 });
 
-test("jpeg player shows clock, seek, rate, and small Frame print", async ({ page }) => {
+test("jpeg player shows media-chrome transport and Frame print", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await expect(page.getByRole("region", { name: "Player" })).toBeVisible();
-  await expect(page.locator("[data-player-clock]")).toHaveText("0:00 / 0:00");
+  await expect(page.locator("video")).toBeVisible();
+  await expect(page.locator("media-control-bar")).toBeVisible();
+  await expect(page.locator("media-play-button")).toBeVisible();
+  await expect(page.locator("[data-player-clock]")).toHaveCount(0);
   await expect(page.getByLabel("Player controls").getByText("Frame 0 of 2")).toHaveClass(/text-xs/);
-  await expect(page.getByLabel("Playback rate")).toBeVisible();
   await scrubToFrame(page, 1);
   await expect(page.getByText("Frame 1 of 2")).toBeVisible();
-  await expect(page.getByRole("img", { name: "Frame 1" })).toBeVisible();
+  await expect(page.locator("video[aria-label='Frame 1']")).toBeVisible();
 });
 
 test("List rename phase and class is desk-wide", async ({ page }) => {
@@ -293,7 +295,7 @@ test("dark sitting, compact rail, no HeroUI, no filmstrip, no Arm", async ({ pag
   await expect(page.locator("main")).not.toHaveClass(/stone-/);
   await expect(page.getByLabel("Player controls")).not.toHaveClass(/stone-/);
   await expect(page.getByText("Arm class span")).toHaveCount(0);
-  await expect(page.getByRole("img")).toHaveCount(1);
+  await expect(page.locator("video[aria-label='Frame 0']")).toHaveCount(1);
   await expect(page.getByRole("grid")).toHaveCount(0);
 
   const editors = page.getByRole("region", { name: "Editors" });
@@ -371,29 +373,25 @@ test("chip, Mark from, Apply writes range, toast, chip stays", async ({ page }) 
   await pickName(page, "class", "clipper");
   await expect(page.locator("[data-paint-chip]")).toHaveText("class: clipper");
   await page.getByRole("button", { name: "Mark from" }).click();
-  await expect(page.locator("[data-span-fill]")).toBeVisible();
   await expect(page.getByText("0 → 0")).toBeVisible();
   await scrubToFrame(page, 1);
   await expect(page.getByText("0 → 1")).toBeVisible();
   await page.getByRole("button", { name: "Apply to frames 0–1" }).click();
   await expect(page.getByText("Wrote class: clipper on frames 0–1")).toBeVisible();
-  await expect(page.locator("[data-span-flash]")).toBeVisible();
   await expect.poll(async () => await clipFrames(page, "class")).toMatchObject({
     "0": expect.arrayContaining(["clipper"]),
     "1": expect.arrayContaining(["clipper"]),
   });
   await expect(page.locator("[data-paint-chip]")).toHaveText("class: clipper");
-  await expect(page.locator("[data-span-fill]")).toHaveCount(0);
+  await expect(page.getByText("0 → 0")).toHaveCount(0);
 });
 
 test("] applies; Remove without Mark from is this Frame", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await pickName(page, "phase", "ChipApplyP");
   await expect(page.locator("[data-paint-chip]")).toHaveText("phase: ChipApplyP");
-  await page.getByRole("img", { name: "Frame 0" }).click();
   await page.keyboard.press("[");
   await scrubToFrame(page, 1);
-  await page.getByRole("img", { name: "Frame 1" }).click();
   await page.keyboard.press("]");
   await expect.poll(async () => await clipFrames(page, "phase")).toMatchObject({ "0": "ChipApplyP", "1": "ChipApplyP" });
   await page.getByRole("button", { name: "Remove from frames 1–1" }).click();
@@ -401,15 +399,15 @@ test("] applies; Remove without Mark from is this Frame", async ({ page }) => {
   await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("ChipApplyP");
 });
 
-test("i/[ marks from while Seek is focused", async ({ page }) => {
+test("i/[ marks from while the player is focused", async ({ page }) => {
   await page.request.put("/api/phase/CLIP_E2E/frames/0", { data: { phase: null } });
   await page.request.put("/api/phase/CLIP_E2E/frames/1", { data: { phase: null } });
   await page.goto("/clips/CLIP_E2E");
   await pickName(page, "phase", "ChipApplyP");
   await expect(page.locator("[data-paint-chip]")).toHaveText("phase: ChipApplyP");
-  await page.getByRole("slider", { name: "Seek" }).focus();
+  await page.locator("video").click();
   await page.keyboard.press("[");
-  await expect(page.locator("[data-span-fill]")).toBeVisible();
+  await expect(page.getByText("0 → 0")).toBeVisible();
   await page.keyboard.press("i");
   await expect(page.getByText("0 → 0")).toBeVisible();
 });
@@ -439,7 +437,7 @@ test("Task-focus tabs, Library write, + does not write Frame, summary does not s
   await page.getByRole("button", { name: /class:/ }).click();
   await expect(page.locator('[data-editor-card="class"]')).toBeVisible();
   await expect(page.getByText("Frame 1 of 2")).toBeVisible();
-  await expect(page.getByRole("img", { name: "Frame 1" })).toBeVisible();
+  await expect(page.locator("video[aria-label='Frame 1']")).toBeVisible();
 });
 
 test("phase band folds span, click seeks, focus rebuilds", async ({ page }) => {
