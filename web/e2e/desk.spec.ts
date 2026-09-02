@@ -247,7 +247,8 @@ test("jpeg player shows media-chrome transport and Frame print", async ({ page }
   await expect(page.locator("media-control-bar")).toBeVisible();
   await expect(page.locator("media-play-button")).toBeVisible();
   await expect(page.locator("[data-player-clock]")).toHaveCount(0);
-  await expect(page.getByLabel("Player controls").getByText("Frame 0 of 2")).toHaveClass(/text-xs/);
+  await expect(page.getByLabel("Player controls").locator("media-control-bar")).toHaveCount(0);
+  await expect(page.getByLabel("Player controls").getByText("Frame 0 of 2")).toBeVisible();
   await scrubToFrame(page, 1);
   await expect(page.getByText("Frame 1 of 2")).toBeVisible();
   await expect(page.locator("video[aria-label='Frame 1']")).toBeVisible();
@@ -382,6 +383,8 @@ test("chip, Mark from, Apply writes range, toast, chip stays", async ({ page }) 
     "0": expect.arrayContaining(["clipper"]),
     "1": expect.arrayContaining(["clipper"]),
   });
+  await expect(page.getByRole("button", { name: "clipper 0–1" })).toBeVisible();
+  await expect(page.locator("[data-lane-head]").filter({ hasText: "clipper" })).toHaveCount(1);
   await expect(page.locator("[data-paint-chip]")).toHaveText("class: clipper");
   await expect(page.getByText("0 → 0")).toHaveCount(0);
 });
@@ -394,22 +397,34 @@ test("] applies; Remove without Mark from is this Frame", async ({ page }) => {
   await scrubToFrame(page, 1);
   await page.keyboard.press("]");
   await expect.poll(async () => await clipFrames(page, "phase")).toMatchObject({ "0": "ChipApplyP", "1": "ChipApplyP" });
+  await expect(page.getByRole("button", { name: "ChipApplyP 0–1" })).toBeVisible();
   await page.getByRole("button", { name: "Remove from frames 1–1" }).click();
   await expect.poll(async () => (await clipFrames(page, "phase"))["1"]).toBeUndefined();
   await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("ChipApplyP");
+  await expect(page.getByRole("button", { name: "ChipApplyP 0–0" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "ChipApplyP 0–1" })).toHaveCount(0);
 });
 
-test("i/[ marks from while the player is focused", async ({ page }) => {
+test("i/o/[ paint a span onto the timeline while the player is focused", async ({ page }) => {
   await page.request.put("/api/phase/CLIP_E2E/frames/0", { data: { phase: null } });
   await page.request.put("/api/phase/CLIP_E2E/frames/1", { data: { phase: null } });
   await page.goto("/clips/CLIP_E2E");
   await pickName(page, "phase", "ChipApplyP");
   await expect(page.locator("[data-paint-chip]")).toHaveText("phase: ChipApplyP");
   await page.locator("video").click();
+  await page.locator("video").evaluate((el: HTMLVideoElement) => {
+    el.pause();
+    el.currentTime = 0;
+  });
   await page.keyboard.press("[");
   await expect(page.getByText("0 → 0")).toBeVisible();
   await page.keyboard.press("i");
   await expect(page.getByText("0 → 0")).toBeVisible();
+  await scrubToFrame(page, 1);
+  await page.keyboard.press("o");
+  await expect.poll(async () => await clipFrames(page, "phase")).toMatchObject({ "0": "ChipApplyP", "1": "ChipApplyP" });
+  await expect(page.getByRole("button", { name: "ChipApplyP 0–1" })).toBeVisible();
+  await expect(page.locator("[data-lane-head]").filter({ hasText: "ChipApplyP" })).toHaveCount(1);
 });
 
 test("Task-focus tabs, Library write, + does not write Frame, summary does not seek", async ({ page }) => {
@@ -440,7 +455,7 @@ test("Task-focus tabs, Library write, + does not write Frame, summary does not s
   await expect(page.locator("video[aria-label='Frame 1']")).toBeVisible();
 });
 
-test("phase band folds span, click seeks, focus rebuilds", async ({ page }) => {
+test("timeline folds span, click seeks, focus rebuilds", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await pickName(page, "phase", "BandPhase");
   await page.getByRole("button", { name: "Mark from" }).click();
@@ -610,6 +625,18 @@ test("video Clip uses video element and seek updates Now", async ({ page }) => {
   await expect(video).toBeVisible();
   await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.readyState)).toBeGreaterThanOrEqual(1);
   await expect(page.getByRole("img")).toHaveCount(0);
+  await expect(page.locator("media-control-bar")).toBeVisible();
+  await expect(page.locator("select")).toHaveCount(0);
+  await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
+  const player = page.getByRole("region", { name: "Player", exact: true });
+  const timeline = page.getByRole("region", { name: "Timeline" });
+  await expect(timeline).toBeVisible();
+  await expect(page.locator("[data-playhead]")).toBeVisible();
+  const playerBox = await player.boundingBox();
+  const timelineBox = await timeline.boundingBox();
+  expect(playerBox).not.toBeNull();
+  expect(timelineBox).not.toBeNull();
+  expect(timelineBox!.y).toBeGreaterThanOrEqual(playerBox!.y + playerBox!.height - 1);
   await expect(page.getByText("Frame 0 of 2")).toBeVisible();
   await pickName(page, "phase", "VidPhase");
   await expect(page.getByRole("tabpanel").getByRole("paragraph").filter({ hasText: /^VidPhase$/ })).toBeVisible();

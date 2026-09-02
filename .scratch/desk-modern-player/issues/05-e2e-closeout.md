@@ -4,9 +4,15 @@
 
 **Blocked by:** 01 — JPEG Clip lazily transcodes to mp4 with cache; 02 — Both Clip kinds play in one shadcn Video Player; 03 — Timeline under the player with a draggable Playhead, label once per lane; 04 — Linear-style tokens over the shadcn kit
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Old e2e assertions adapted (no seek slider, no custom rate, timeline under the player)
-- [ ] Span paint (chip, Mark from/Apply/Remove, i/o/[]) covered on the new timeline
-- [ ] Now, Library, summary, Task focus unchanged and covered
-- [ ] pytest + vitest + tsc + playwright all green
+- [x] Old e2e assertions adapted (no seek slider, no custom rate, timeline under the player)
+- [x] Span paint (chip, Mark from/Apply/Remove, i/o/[]) covered on the new timeline
+- [x] Now, Library, summary, Task focus unchanged and covered
+- [x] pytest + vitest + tsc + playwright all green
+
+## Answer
+
+Playwright closeout only. Footer has no seek slider / media-chrome / custom rate `<select>`; JPEG and video both use media-chrome + timeline under the player + Playhead. Span paint (chip, Mark from/Apply/Remove, i/o/[] keys) writes the new lane-head timeline. Now/Library/summary/Task-focus tests kept. Retired `text-xs` class assert. Keyboard test pauses after focusing the player so mark-from cannot race playback.
+
+pytest 95 passed 1 skipped; vitest 28; tsc 0; playwright 23.
