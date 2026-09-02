@@ -155,9 +155,11 @@ def create_app(
     @app.get("/api/clips/{clip_id}/media")
     def get_clip_media(clip_id: str) -> FileResponse:
         try:
-            path = catalog.video_path(cfg, clip_id)
+            path = catalog.media_path(cfg, clip_id)
         except catalog.ClipNotFound:
             raise HTTPException(status_code=404, detail=f"Clip not found: {clip_id}") from None
+        except catalog.TranscodeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from None
         suffix = path.suffix.lower()
         media_type = "video/webm" if suffix == ".webm" else "video/mp4"
         return FileResponse(path, media_type=media_type)

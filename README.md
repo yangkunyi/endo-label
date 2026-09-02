@@ -15,6 +15,8 @@ Mask worker code was **ported** from `/data3/yky/sam3_1_label_tool/video_label_s
 
 Sitting reads **YAML only** (repo-root `config.yaml` or `--config`). No `FRAMES_ROOT` / `CLIP_ALLOWLIST` env. Missing file: process does not start. HTTP tests inject `Settings` in memory.
 
+JPEG Clip playback needs **ffmpeg on PATH** (lazy transcode to `data/video-cache/`, or `video_cache_root`). Missing ffmpeg: `/media` returns a clear 500. The Frame Pool is never written.
+
 ## Run
 
 `config.yaml` at the repo root (or pass `--config`):

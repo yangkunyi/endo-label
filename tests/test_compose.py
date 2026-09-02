@@ -112,7 +112,8 @@ def test_yaml_clips_skip_bad_path_and_unknown_kind(tmp_path: Path) -> None:
     assert client.get("/api/clips/MISSING").status_code == 404
     assert client.get("/api/clips/VID").json()["kind"] == "video"
     assert client.get("/api/clips/VID").json()["frame_count"] == 0
-    assert client.get("/api/clips/GOOD/media").status_code == 404
+    # fake-jpeg bytes cannot decode; media now attempts a transcode and 500s
+    assert client.get("/api/clips/GOOD/media").status_code == 500
 
 
 _TINY_MP4 = Path(__file__).resolve().parent / "fixtures" / "tiny.mp4"

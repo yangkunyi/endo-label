@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,6 +30,10 @@ class ClipNotFound(CatalogError):
 
 class FrameNotFound(CatalogError):
     pass
+
+
+class TranscodeError(CatalogError):
+    """JPEG Clip could not be transcoded to mp4."""
 
 
 def clip_entries(settings: Settings) -> tuple[ClipEntry, ...]:
@@ -227,6 +233,106 @@ def video_path(settings: Settings, clip_id: str) -> Path:
     if not path.is_file():
         raise ClipNotFound(clip_id)
     return path
+
+
+def video_cache_root(settings: Settings) -> Path:
+    if settings.video_cache_root is not None:
+        return settings.video_cache_root
+    return settings.labels_root.parent / "video-cache"
+
+
+def _cache_is_fresh(cache: Path, clip_dir: Path, frames: list[Path]) -> bool:
+    if not cache.is_file():
+        return False
+    cache_mtime = cache.stat().st_mtime
+    if cache_mtime < clip_dir.stat().st_mtime:
+        return False
+    return all(cache_mtime >= frame.stat().st_mtime for frame in frames)
+
+
+def _concat_escape(path: Path) -> str:
+    return str(path.resolve()).replace("'", "'\\''")
+
+
+def _run_transcode(frames: list[Path], out: Path, ffmpeg: str) -> None:
+    """Encode the Frame list (in Frame order) to a 25 fps mp4 at ``out``."""
+    list_path = out.with_suffix(".list")
+    list_path.write_text(
+        "ffconcat version 1.0\n"
+        + "\n".join(
+            f"file '{_concat_escape(frame)}'\nduration 0.04" for frame in frames
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    try:
+        proc = subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(list_path),
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-vf",
+                "scale=trunc((iw+1)/2)*2:trunc((ih+1)/2)*2",
+                "-r",
+                "25",
+                "-movflags",
+                "+faststart",
+                "-an",
+                str(out),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        if proc.returncode != 0:
+            tail = "\n".join(proc.stderr.splitlines()[-12:])
+            raise TranscodeError(f"ffmpeg transcode failed: {tail}")
+    except subprocess.TimeoutExpired as exc:
+        raise TranscodeError("ffmpeg transcode timed out") from exc
+    finally:
+        list_path.unlink(missing_ok=True)
+
+
+def ensure_transcoded(settings: Settings, clip_id: str) -> Path:
+    """Return a playable mp4 for a JPEG Clip, transcoding lazily when stale."""
+    entry = _entry(settings, clip_id)
+    if entry.kind != "jpeg":
+        raise ClipNotFound(clip_id)
+    clip_dir = _clip_dir(settings, clip_id)
+    frames = [frame.path for frame in list_frames(settings, clip_id)]
+    if not frames:
+        raise TranscodeError(f"Clip {clip_id} has no JPEG frames")
+    cache_dir = video_cache_root(settings)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache = cache_dir / f"{clip_id}.mp4"
+    if _cache_is_fresh(cache, clip_dir, frames):
+        return cache
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg is None:
+        raise TranscodeError(
+            "ffmpeg not found on PATH; install ffmpeg to play JPEG Clips"
+        )
+    tmp = cache.with_name(f"{clip_id}.tmp.mp4")
+    _run_transcode(frames, tmp, ffmpeg)
+    tmp.replace(cache)
+    return cache
+
+
+def media_path(settings: Settings, clip_id: str) -> Path:
+    """Source media for playback: video file, or the transcoded JPEG cache."""
+    entry = _entry(settings, clip_id)
+    if entry.kind == "video":
+        return video_path(settings, clip_id)
+    return ensure_transcoded(settings, clip_id)
 
 
 def _clip_row(entry: ClipEntry, settings: Settings) -> dict | None:

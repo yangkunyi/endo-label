@@ -51,6 +51,8 @@ class Settings:
     annotations_root: Path = field(default_factory=_default_annotations_root)
     labels_root: Path = field(default_factory=_default_labels_root)
     auto_save_on_propagate: bool = True
+    # Derived cache root for lazy JPEG transcode (labels_root.parent / "video-cache").
+    video_cache_root: Path | None = None
     # Worker / SAM 3.1 (ticket 07). Default backend is fake (no GPU; CI).
     predictor_backend: str = "fake"  # "fake" | "sam31"
     sam31_checkpoint: Path = field(default_factory=_default_sam31_checkpoint)
@@ -144,6 +146,12 @@ def load_settings(config_path: Path | str | None = None) -> Settings:
     else:
         annotations_root = _resolve_path(str(ann_raw).strip(), base)
 
+    cache_raw = data.get("video_cache_root")
+    if cache_raw is None or not str(cache_raw).strip():
+        video_cache_root = None
+    else:
+        video_cache_root = _resolve_path(str(cache_raw).strip(), base)
+
     allowlist = tuple(entry.id for entry in clips) if clips else _clip_allowlist(data.get("clip_allowlist"), path)
     return Settings(
         frames_root=frames_root,
@@ -151,4 +159,5 @@ def load_settings(config_path: Path | str | None = None) -> Settings:
         clips=clips,
         annotations_root=annotations_root,
         labels_root=labels_root,
+        video_cache_root=video_cache_root,
     )
