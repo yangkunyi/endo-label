@@ -332,7 +332,7 @@ export function ClipDesk() {
           value={layout.clipRailWidth}
           onResize={(value) => setLayout({ clipRailWidth: value })}
         />
-        <section aria-label="Player" className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-black">
+        <section aria-label="Player" className="relative flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-black">
           <div className="flex min-h-0 flex-1 items-center justify-center">
             {error ? (
               <div className="p-6 text-center"><h2 className="mb-2 text-lg font-semibold">{clipId}</h2><p>{error instanceof Error ? error.message : "Clip not found"}</p></div>
@@ -368,6 +368,7 @@ export function ClipDesk() {
           {data?.frame_count ? (
             <TimelineBand
               frameCount={data.frame_count}
+              frameIndex={frameIndex}
               focus={taskFocus}
               phaseFrames={phaseDoc?.frames ?? {}}
               classFrames={classDoc?.frames ?? {}}
@@ -511,6 +512,7 @@ export function ClipDesk() {
 
 function TimelineBand({
   frameCount,
+  frameIndex,
   focus,
   phaseFrames,
   classFrames,
@@ -518,6 +520,7 @@ function TimelineBand({
   onSeek,
 }: {
   frameCount: number;
+  frameIndex: number;
   focus: EditorKind;
   phaseFrames: Record<string, string>;
   classFrames: Record<string, string[]>;
@@ -531,38 +534,109 @@ function TimelineBand({
         ? foldClass(frameCount, classFrames)
         : foldTriplet(frameCount, tripletFrames);
   if (lanes.length === 0) {
-    lanes = [{ key: "empty", segs: [{ start: 0, end: frameCount - 1, label: null }] }];
+    lanes = [{ key: "unlabeled", segs: [{ start: 0, end: frameCount - 1, label: null }] }];
   }
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+
+  const seekFromClientX = useCallback(
+    (clientX: number) => {
+      const track = trackRef.current;
+      if (!track) {
+        return;
+      }
+      const rect = track.getBoundingClientRect();
+      const frac = Math.min(1, Math.max(0, (clientX - rect.left) / (rect.width || 1)));
+      const last = Math.max(0, frameCount - 1);
+      onSeek(Math.round(frac * last));
+    },
+    [frameCount, onSeek],
+  );
+
+  const stopDrag = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    dragging.current = false;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  }, []);
+
+  const frac = frameCount > 1 ? frameIndex / (frameCount - 1) : 0;
+
   return (
-    <div role="region" aria-label="Timeline" data-timeline="" className="shrink-0 border-t border-white/20 bg-black/80 px-2 py-1">
-      {lanes.map((lane) => (
-        <div key={lane.key} className="relative mb-0.5 h-5 w-full last:mb-0" data-timeline-lane={lane.key}>
-          {lane.segs.map((seg) => {
-            const unlabeled = seg.label == null;
-            const color = unlabeled || !seg.label ? undefined : labelColor(seg.label);
-            return (
-              <button
-                key={`${lane.key}-${seg.start}`}
-                type="button"
-                data-timeline-seg=""
-                data-unlabeled={unlabeled ? "true" : undefined}
-                data-label-color={color}
-                aria-label={unlabeled ? `unlabeled ${seg.start}–${seg.end}` : `${seg.label} ${seg.start}–${seg.end}`}
-                title={seg.label ?? "unlabeled"}
-                className={`absolute top-0 box-border h-full overflow-hidden border-r border-black/50 px-0.5 text-left text-[10px] leading-5 text-white ${unlabeled ? "bg-white/20" : ""}`}
-                style={{
-                  left: `${(seg.start / frameCount) * 100}%`,
-                  width: `${((seg.end - seg.start + 1) / frameCount) * 100}%`,
-                  backgroundColor: color,
-                }}
-                onClick={() => onSeek(seg.start)}
-              >
-                {unlabeled ? null : seg.label}
-              </button>
-            );
-          })}
+    <div role="region" aria-label="Timeline" data-timeline="" className="shrink-0 border-t border-border bg-card select-none">
+      <div className="max-h-44 overflow-y-auto px-3 py-1.5 [scrollbar-color:var(--color-border)_transparent] [scrollbar-width:thin]">
+        <div className="flex">
+          <div className="flex w-40 shrink-0 flex-col pr-2">
+            {lanes.map((lane) => {
+              const unlabeled = lane.key === "unlabeled";
+              return (
+                <div key={lane.key} className="flex h-6 shrink-0 items-center gap-1.5" data-lane-head title={unlabeled ? undefined : lane.key}>
+                  {unlabeled ? null : (
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: labelColor(lane.key) }} />
+                  )}
+                  <span className={`truncate text-[11px] leading-none ${unlabeled ? "text-muted-foreground" : "text-foreground"}`}>
+                    {unlabeled ? "" : lane.key}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div ref={trackRef} className="relative flex-1" data-timeline-track="">
+            {lanes.map((lane) => (
+              <div key={lane.key} className="relative h-6" data-timeline-lane={lane.key}>
+                {lane.segs.map((seg) => {
+                  const unlabeled = seg.label == null;
+                  return (
+                    <button
+                      key={`${lane.key}-${seg.start}`}
+                      type="button"
+                      draggable={false}
+                      data-timeline-seg=""
+                      data-unlabeled={unlabeled ? "true" : undefined}
+                      data-label-color={seg.label ? labelColor(seg.label) : undefined}
+                      aria-label={unlabeled ? `unlabeled ${seg.start}–${seg.end}` : `${seg.label} ${seg.start}–${seg.end}`}
+                      title={seg.label ?? "unlabeled"}
+                      className={`absolute bottom-1 top-1 box-border cursor-pointer border-r border-black/50 rounded ${unlabeled ? "bg-white/10" : ""}`}
+                      style={{
+                        left: `${(seg.start / frameCount) * 100}%`,
+                        width: `${((seg.end - seg.start + 1) / frameCount) * 100}%`,
+                        backgroundColor: seg.label ? labelColor(seg.label) : undefined,
+                      }}
+                      onClick={() => onSeek(seg.start)}
+                    />
+                  );
+                })}
+              </div>
+            ))}
+            <div
+              data-playhead=""
+              role="slider"
+              aria-label="Playhead"
+              aria-valuemin={0}
+              aria-valuemax={Math.max(0, frameCount - 1)}
+              aria-valuenow={frameIndex}
+              aria-valuetext={`Frame ${frameIndex}`}
+              className="absolute bottom-0 top-0 z-10 w-3 -translate-x-1/2 touch-none cursor-ew-resize"
+              style={{ left: `${frac * 100}%` }}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                dragging.current = true;
+                event.currentTarget.setPointerCapture(event.pointerId);
+                seekFromClientX(event.clientX);
+              }}
+              onPointerMove={(event) => {
+                if (dragging.current) {
+                  seekFromClientX(event.clientX);
+                }
+              }}
+              onPointerUp={stopDrag}
+              onPointerCancel={stopDrag}
+            >
+              <span aria-hidden="true" className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-[#5e6ad2]" />
+              <span aria-hidden="true" className="absolute left-1/2 top-0 h-2 w-2 -translate-x-1/2 rounded-full bg-[#5e6ad2]" />
+            </div>
+          </div>
         </div>
-      ))}
+      </div>
     </div>
   );
 }

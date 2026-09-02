@@ -38,11 +38,16 @@ function foldValues(frameCount: number, at: (index: number) => string | null): T
 }
 
 export function foldPhase(frameCount: number, frames: Record<string, string>): TimelineLane[] {
-  const segs = foldValues(frameCount, (index) => {
-    const name = frames[String(index)];
-    return name && name.length ? name : null;
-  });
-  return [{ key: "phase", segs }];
+  const names = new Set<string>();
+  for (const name of Object.values(frames)) {
+    if (name) {
+      names.add(name);
+    }
+  }
+  return [...names].sort().map((name) => ({
+    key: name,
+    segs: foldValues(frameCount, (index) => (frames[String(index)] === name ? name : null)),
+  }));
 }
 
 export function foldClass(frameCount: number, frames: Record<string, string[]>): TimelineLane[] {

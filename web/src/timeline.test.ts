@@ -1,13 +1,19 @@
 import { expect, test } from "vitest";
 import { foldClass, foldPhase, foldTriplet, labelColor } from "./timeline";
 
-test("phase folds consecutive names and unlabeled gaps", () => {
+test("phase folds one lane per phase name", () => {
   expect(foldPhase(4, { "0": "Calot", "1": "Calot", "3": "Pack" })).toEqual([
     {
-      key: "phase",
+      key: "Calot",
       segs: [
         { start: 0, end: 1, label: "Calot" },
-        { start: 2, end: 2, label: null },
+        { start: 2, end: 3, label: null },
+      ],
+    },
+    {
+      key: "Pack",
+      segs: [
+        { start: 0, end: 2, label: null },
         { start: 3, end: 3, label: "Pack" },
       ],
     },
