@@ -65,6 +65,10 @@ function chipIdentity(chip: PaintChip): string {
   return chip.name;
 }
 
+function nowFillStyle(identity: string) {
+  return { backgroundColor: labelColor(identity), color: "var(--color-background)" };
+}
+
 function rangeEnds(fromIndex: number | null, currentIndex: number): { from: number; to: number } {
   const start = fromIndex == null ? currentIndex : fromIndex;
   return { from: Math.min(start, currentIndex), to: Math.max(start, currentIndex) };
@@ -979,8 +983,8 @@ function ClassEditor({
           <span
             key={name}
             data-label-color={labelColor(name)}
-            className="rounded-md bg-secondary px-2 py-1 text-sm text-secondary-foreground"
-            style={{ borderLeft: `3px solid ${labelColor(name)}` }}
+            className="rounded-md px-2 py-1 text-sm"
+            style={nowFillStyle(name)}
           >
             {name}
           </span>
@@ -1052,8 +1056,8 @@ function PhaseEditor({
       <p
         data-now=""
         data-label-color={current ? labelColor(current) : undefined}
-        className="text-sm"
-        style={current ? { borderLeft: `3px solid ${labelColor(current)}`, paddingLeft: 6 } : undefined}
+        className={current ? "inline-block rounded-md px-2 py-1 text-sm" : "text-sm text-muted-foreground"}
+        style={current ? nowFillStyle(current) : undefined}
       >
         {current ?? "unlabeled"}
       </p>
@@ -1205,8 +1209,8 @@ function TripletEditor({
           {nowRows.map((row) => {
             const key = tripleIdentity(row);
             return (
-              <tr key={row.id} data-label-color={labelColor(key)}>
-                <td className="truncate px-1" style={{ borderLeft: `3px solid ${labelColor(key)}` }}>{row.instrument}</td>
+              <tr key={row.id} data-label-color={labelColor(key)} style={nowFillStyle(key)}>
+                <td className="truncate px-1">{row.instrument}</td>
                 <td className="truncate px-1">{row.verb}</td>
                 <td className="truncate px-1">{row.target}</td>
               </tr>
@@ -1239,10 +1243,12 @@ function TripletEditor({
                     aria-label={key}
                     aria-pressed={lit}
                     data-label-color={labelColor(key)}
-                    style={{ borderLeft: `3px solid ${labelColor(key)}` }}
                     onClick={() => void toggleRow(row)}
                   >
-                    <span className="truncate">{row.instrument}</span>
+                    <span className="flex min-w-0 items-center">
+                      <span aria-hidden className="mr-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: labelColor(key) }} />
+                      <span className="truncate">{row.instrument}</span>
+                    </span>
                     <span className="truncate">{row.verb}</span>
                     <span className="truncate">{row.target}</span>
                   </Button>

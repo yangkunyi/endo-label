@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext, type Page, test } from "@playwright/test";
+import { expect, type APIRequestContext, type Locator, type Page, test } from "@playwright/test";
 
 test.describe.configure({ mode: "serial" });
 
@@ -45,6 +45,10 @@ async function clipFrames(page: Page, kind: "phase" | "class" | "triplet", clipI
   const response = await page.request.get(`/api/${kind}/${clipId}`);
   expect(response.ok()).toBeTruthy();
   return (await response.json()).frames as Record<string, unknown>;
+}
+
+async function cssBackground(locator: Locator) {
+  return locator.evaluate((el) => getComputedStyle(el).backgroundColor);
 }
 
 async function focusTask(page: Page, kind: "class" | "phase" | "triplet") {
@@ -523,6 +527,66 @@ test("colored named intervals match Library and Now", async ({ page }) => {
   const gap = page.locator("[data-timeline-seg][data-unlabeled]").first();
   await expect(gap).toBeVisible();
   await expect(gap).toHaveText("");
+});
+
+test("labeled Now fills with label color; empty Now does not", async ({ page }) => {
+  await page.request.put("/api/class/CLIP_E2E/frames/0", { data: { tags: [] } });
+  await page.request.put("/api/phase/CLIP_E2E/frames/0", { data: { phase: null } });
+  const tripletDoc = (await (await page.request.get("/api/triplet/CLIP_E2E")).json()) as {
+    frames?: Record<string, { id: number }[]>;
+  };
+  for (const row of tripletDoc.frames?.["0"] ?? []) {
+    await page.request.delete(`/api/triplet/CLIP_E2E/frames/0/${row.id}`);
+  }
+  await page.goto("/clips/CLIP_E2E");
+
+  await focusTask(page, "class");
+  const classNow = page.locator('[data-editor-card="class"] [data-now]');
+  await expect(classNow.getByText("none")).toBeVisible();
+  const classEmptyBg = await cssBackground(classNow);
+  await pickName(page, "class", "FillClass");
+  const classChip = classNow.locator("[data-label-color]");
+  await expect(classChip).toHaveText("FillClass");
+  const classBar = page.getByRole("button", { name: "FillClass 0–0" });
+  await expect(classBar).toBeVisible();
+  const classFill = await cssBackground(classChip);
+  expect(classFill).toBe(await cssBackground(classBar));
+  expect(classFill).not.toBe(classEmptyBg);
+  expect(
+    await cssBackground(page.getByRole("list", { name: "Library" }).getByRole("button", { name: "FillClass", exact: true })),
+  ).not.toBe(classFill);
+  await pickName(page, "class", "FillClass");
+  await expect(classNow.getByText("none")).toBeVisible();
+  expect(await cssBackground(classNow)).not.toBe(classFill);
+
+  await pickName(page, "phase", "FillPhase");
+  const phaseNow = page.locator('[data-editor-card="phase"] [data-now]');
+  await expect(phaseNow).toHaveText("FillPhase");
+  const phaseBar = page.getByRole("button", { name: "FillPhase 0–0" });
+  await expect(phaseBar).toBeVisible();
+  const phaseFill = await cssBackground(phaseNow);
+  expect(phaseFill).toBe(await cssBackground(phaseBar));
+  expect(
+    await cssBackground(page.getByRole("list", { name: "Library" }).getByRole("button", { name: "FillPhase", exact: true })),
+  ).not.toBe(phaseFill);
+  await pickName(page, "phase", "FillPhase");
+  await expect(phaseNow).toHaveText("unlabeled");
+  expect(await cssBackground(phaseNow)).not.toBe(phaseFill);
+
+  await fillTriplet(page, "FillTool", "FillAct", "FillOrg");
+  const tripletNow = page.locator('[data-editor-card="triplet"] [data-now] tbody tr').first();
+  await expect(tripletNow).toContainText("FillTool");
+  const tripletBar = page.getByRole("button", { name: "FillTool / FillAct / FillOrg 0–0" });
+  await expect(tripletBar).toBeVisible();
+  const tripletFill = await cssBackground(tripletNow);
+  expect(tripletFill).toBe(await cssBackground(tripletBar));
+  expect(
+    await cssBackground(
+      page.getByRole("table", { name: "Library" }).getByRole("button", { name: "FillTool / FillAct / FillOrg", exact: true }),
+    ),
+  ).not.toBe(tripletFill);
+  await fillTriplet(page, "FillTool", "FillAct", "FillOrg");
+  await expect(page.locator('[data-editor-card="triplet"] [data-now] tbody tr')).toHaveCount(0);
 });
 
 test("timeline playhead drags frame-snapped; bars are display-only", async ({ page }) => {
