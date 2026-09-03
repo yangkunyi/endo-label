@@ -4,10 +4,14 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Library row selected means on this Frame; click toggles this Frame only
-- [ ] Now stays read-only; Plus does not write this Frame
-- [ ] Trash on phase/class Library rows confirms, then rewrites every Clip
-- [ ] Double-click rename lives on Library; List is gone
-- [ ] Playwright and compose cover toggle, confirm-delete, and no List
+- [x] Library row selected means on this Frame; click toggles this Frame only
+- [x] Now stays read-only; Plus does not write this Frame
+- [x] Trash on phase/class Library rows confirms, then rewrites every Clip
+- [x] Double-click rename lives on Library; List is gone
+- [x] Playwright and compose cover toggle, confirm-delete, and no List
+
+## Answer
+
+Phase/class Library rows are `aria-pressed` when that identity is on this Frame; click toggles this Frame only. Plus still POSTs vocab only. Trash confirms (`window.confirm`) then DELETE rewrites every Clip. Double-click the Library name to rename desk-wide. Folded List is gone on phase/class (triplet List stays for ticket 02). Playwright covers selected/toggle, Plus, confirm-delete, List gone; compose rename/delete tests still pass.

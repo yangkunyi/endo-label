@@ -67,7 +67,10 @@ async function pickName(page: Page, ariaLabel: "class" | "phase", name: string) 
   if (await list.getByRole("button", { name, exact: true }).count() === 0) {
     await addVocabOnly(page, ariaLabel, name);
   }
-  await list.getByRole("button", { name, exact: true }).click();
+  const row = list.getByRole("button", { name, exact: true });
+  const wasOn = await row.getAttribute("aria-pressed");
+  await row.click();
+  await expect(row).toHaveAttribute("aria-pressed", wasOn === "true" ? "false" : "true");
 }
 
 async function fillTriplet(page: Page, instrument: string, verb: string, target: string) {
@@ -202,6 +205,70 @@ test("Now is read-only; Library writes this Frame", async ({ page }) => {
   }).toBe(false);
 });
 
+test("Library selected toggles this Frame; Plus does not write; trash confirms; List gone", async ({ page }) => {
+  await page.request.put("/api/phase/CLIP_E2E/frames/0", { data: { phase: null } });
+  await page.request.put("/api/class/CLIP_E2E/frames/0", { data: { tags: [] } });
+  await page.goto("/clips/CLIP_E2E");
+
+  await focusTask(page, "phase");
+  await expect(page.locator('[data-editor-card="phase"]').getByRole("button", { name: "List" })).toHaveCount(0);
+  const phaseBefore = await clipFrames(page, "phase");
+  await addVocabOnly(page, "phase", "LibToggleP");
+  await expect.poll(async () => {
+    const vocab = await (await page.request.get("/api/vocab")).json();
+    return (vocab.phases as string[]).includes("LibToggleP");
+  }).toBe(true);
+  await expect.poll(async () => await clipFrames(page, "phase")).toEqual(phaseBefore);
+  const phaseLib = page.getByRole("list", { name: "Library" });
+  const phaseRow = phaseLib.getByRole("button", { name: "LibToggleP", exact: true });
+  await expect(phaseRow).toHaveAttribute("aria-pressed", "false");
+  await phaseRow.click();
+  await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("LibToggleP");
+  await expect(phaseRow).toHaveAttribute("aria-pressed", "true");
+  await phaseRow.click();
+  await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBeUndefined();
+  await expect(phaseRow).toHaveAttribute("aria-pressed", "false");
+
+  await phaseRow.click();
+  await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("LibToggleP");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await phaseLib.getByRole("button", { name: "Delete phase LibToggleP" }).click();
+  await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("LibToggleP");
+  page.once("dialog", (dialog) => dialog.accept());
+  await phaseLib.getByRole("button", { name: "Delete phase LibToggleP" }).click();
+  await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBeUndefined();
+  await expect(phaseRow).toHaveCount(0);
+
+  await focusTask(page, "class");
+  await expect(page.locator('[data-editor-card="class"]').getByRole("button", { name: "List" })).toHaveCount(0);
+  const classBefore = await clipFrames(page, "class");
+  await addVocabOnly(page, "class", "LibToggleC");
+  await expect.poll(async () => {
+    const vocab = await (await page.request.get("/api/vocab")).json();
+    return (vocab.class_tags as string[]).includes("LibToggleC");
+  }).toBe(true);
+  await expect.poll(async () => await clipFrames(page, "class")).toEqual(classBefore);
+  const classLib = page.getByRole("list", { name: "Library" });
+  const classRow = classLib.getByRole("button", { name: "LibToggleC", exact: true });
+  await expect(classRow).toHaveAttribute("aria-pressed", "false");
+  await classRow.click();
+  await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("LibToggleC");
+  await expect(classRow).toHaveAttribute("aria-pressed", "true");
+  await classRow.click();
+  await expect.poll(async () => (((await clipFrames(page, "class"))["0"] as string[]) ?? []).includes("LibToggleC")).toBe(false);
+  await expect(classRow).toHaveAttribute("aria-pressed", "false");
+
+  await classRow.click();
+  await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("LibToggleC");
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await classLib.getByRole("button", { name: "Delete class tag LibToggleC" }).click();
+  await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("LibToggleC");
+  page.once("dialog", (dialog) => dialog.accept());
+  await classLib.getByRole("button", { name: "Delete class tag LibToggleC" }).click();
+  await expect.poll(async () => (((await clipFrames(page, "class"))["0"] as string[]) ?? []).includes("LibToggleC")).toBe(false);
+  await expect(classRow).toHaveCount(0);
+});
+
 test("class chip and re-pick toggle off; phase re-pick clears; triplet same triple toggles", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await pickName(page, "class", "hook");
@@ -295,7 +362,7 @@ test("jpeg player shows media-chrome transport and Frame print", async ({ page }
   await expect(page.locator("video[aria-label='Frame 1']")).toBeVisible();
 });
 
-test("List rename phase and class is desk-wide", async ({ page }) => {
+test("Library double-click rename phase and class is desk-wide", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await pickName(page, "phase", "DeskRenameP1");
   await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("DeskRenameP1");
@@ -304,8 +371,8 @@ test("List rename phase and class is desk-wide", async ({ page }) => {
   await pickName(page, "phase", "DeskRenameP1");
   await expect.poll(async () => (await clipFrames(page, "phase", "CLIP_E2E_B"))["0"]).toBe("DeskRenameP1");
 
-  const phaseCard = await openList(page, "phase");
-  await phaseCard.getByRole("list", { name: "phase names" }).getByRole("button", { name: "DeskRenameP1", exact: true }).dblclick();
+  await focusTask(page, "phase");
+  await page.getByRole("list", { name: "Library" }).getByRole("button", { name: "DeskRenameP1", exact: true }).dblclick();
   const rename = page.getByLabel("Rename phase");
   await expect(rename).toBeVisible();
   await rename.fill("DeskRenameP2");
@@ -318,8 +385,8 @@ test("List rename phase and class is desk-wide", async ({ page }) => {
   await fillTriplet(page, "grasper", "retract", "gallbladder");
   await page.goto("/clips/CLIP_E2E_B");
   await pickName(page, "class", "DeskRenameC1");
-  const classCard = await openList(page, "class");
-  await classCard.getByRole("list", { name: "class names" }).getByRole("button", { name: "DeskRenameC1", exact: true }).dblclick();
+  await focusTask(page, "class");
+  await page.getByRole("list", { name: "Library" }).getByRole("button", { name: "DeskRenameC1", exact: true }).dblclick();
   const renameClass = page.getByLabel("Rename class tag");
   await renameClass.fill("DeskRenameC2");
   await renameClass.press("Enter");
@@ -346,7 +413,7 @@ test("dark sitting, compact rail, no HeroUI, no filmstrip, no Arm", async ({ pag
   expect(railBox?.width).toBeLessThanOrEqual(300);
 });
 
-test("trash vs x: chip is this Frame, List trash removes the desk name", async ({ page }) => {
+test("Library click is this Frame; Library trash confirms then removes the desk name", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await pickName(page, "phase", "DeskTrashP");
   await scrubToFrame(page, 1);
@@ -363,12 +430,14 @@ test("trash vs x: chip is this Frame, List trash removes the desk name", async (
   await expect.poll(async () => (((await clipFrames(page, "class"))["0"] as string[]) ?? []).includes("DeskTrashC")).toBe(false);
   await expect.poll(async () => ((await clipFrames(page, "class"))["1"] as string[]) ?? []).toContain("DeskTrashC");
 
-  const phaseCard = await openList(page, "phase");
-  await phaseCard.getByRole("button", { name: "Delete phase DeskTrashP" }).click();
+  await focusTask(page, "phase");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("list", { name: "Library" }).getByRole("button", { name: "Delete phase DeskTrashP" }).click();
   await expect.poll(async () => await clipFrames(page, "phase")).not.toMatchObject({ "1": "DeskTrashP" });
 
-  const classCard = await openList(page, "class");
-  await classCard.getByRole("button", { name: "Delete class tag DeskTrashC" }).click();
+  await focusTask(page, "class");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("list", { name: "Library" }).getByRole("button", { name: "Delete class tag DeskTrashC" }).click();
   await expect.poll(async () => (((await clipFrames(page, "class"))["1"] as string[]) ?? []).includes("DeskTrashC")).toBe(false);
 });
 
@@ -787,30 +856,45 @@ test("composed triplet row survives a Task focus switch", async ({ page }) => {
   await expect(row).toBeVisible();
 });
 
-test("editor hairlines divide Now, Library, and List without a Card", async ({ page }) => {
+test("editor hairlines divide Now and Library without a Card", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
-  for (const kind of ["class", "phase", "triplet"] as const) {
+  for (const kind of ["class", "phase"] as const) {
     await focusTask(page, kind);
     const editor = page.locator(`[data-editor-card="${kind}"]`);
     const now = editor.getByText("Now", { exact: true });
     const library = editor.getByText("Library", { exact: true });
-    const list = editor.getByRole("button", { name: "List" }).first();
     await expect(now).toBeVisible();
     await expect(library).toBeVisible();
-    await expect(list).toBeVisible();
+    await expect(editor.getByRole("button", { name: "List" })).toHaveCount(0);
     const seps = editor.getByRole("separator");
-    await expect(seps).toHaveCount(2);
+    await expect(seps).toHaveCount(1);
     const nowBox = await now.boundingBox();
     const libraryBox = await library.boundingBox();
-    const listBox = await list.boundingBox();
-    const first = await seps.nth(0).boundingBox();
-    const second = await seps.nth(1).boundingBox();
-    expect(nowBox && libraryBox && listBox && first && second).toBeTruthy();
+    const first = await seps.first().boundingBox();
+    expect(nowBox && libraryBox && first).toBeTruthy();
     expect(first!.y).toBeGreaterThan(nowBox!.y);
     expect(first!.y).toBeLessThan(libraryBox!.y);
-    expect(second!.y).toBeGreaterThan(libraryBox!.y);
-    expect(second!.y).toBeLessThan(listBox!.y);
   }
+  await focusTask(page, "triplet");
+  const triplet = page.locator('[data-editor-card="triplet"]');
+  const now = triplet.getByText("Now", { exact: true });
+  const library = triplet.getByText("Library", { exact: true });
+  const list = triplet.getByRole("button", { name: "List" }).first();
+  await expect(now).toBeVisible();
+  await expect(library).toBeVisible();
+  await expect(list).toBeVisible();
+  const seps = triplet.getByRole("separator");
+  await expect(seps).toHaveCount(2);
+  const nowBox = await now.boundingBox();
+  const libraryBox = await library.boundingBox();
+  const listBox = await list.boundingBox();
+  const first = await seps.nth(0).boundingBox();
+  const second = await seps.nth(1).boundingBox();
+  expect(nowBox && libraryBox && listBox && first && second).toBeTruthy();
+  expect(first!.y).toBeGreaterThan(nowBox!.y);
+  expect(first!.y).toBeLessThan(libraryBox!.y);
+  expect(second!.y).toBeGreaterThan(libraryBox!.y);
+  expect(second!.y).toBeLessThan(listBox!.y);
 });
 
 test("video Clip uses video element and seek updates Now", async ({ page }) => {

@@ -690,38 +690,146 @@ function OtherSummary({
 
 function LibraryList({
   names,
+  isOnThisFrame,
   onPick,
   disabled,
+  listName,
+  renameLabel,
+  deleteLabel,
+  mutateVocab,
+  onAfterChange,
   label = "Library",
   colorNames = true,
 }: {
   names: string[];
+  isOnThisFrame: (name: string) => boolean;
   onPick: (name: string) => void;
   disabled: boolean;
+  listName: string;
+  renameLabel: string;
+  deleteLabel: (name: string) => string;
+  mutateVocab: KeyedMutator<Vocab>;
+  onAfterChange?: () => Promise<void>;
   label?: string;
   colorNames?: boolean;
 }) {
+  const clickTimer = useRef<number | null>(null);
+  const [renameFrom, setRenameFrom] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => () => {
+    if (clickTimer.current != null) {
+      window.clearTimeout(clickTimer.current);
+    }
+  }, []);
+
+  async function run(op: () => Promise<void>) {
+    setError(null);
+    try {
+      await op();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Write failed");
+    }
+  }
+
+  function schedulePick(name: string) {
+    if (clickTimer.current != null) {
+      window.clearTimeout(clickTimer.current);
+    }
+    // ponytail: 300ms click delay so dblclick can rename; drop if rename gets its own control
+    clickTimer.current = window.setTimeout(() => {
+      clickTimer.current = null;
+      if (!disabled) {
+        onPick(name);
+      }
+    }, 300);
+  }
+
+  function startRename(name: string) {
+    if (clickTimer.current != null) {
+      window.clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+    }
+    setRenameFrom(name);
+    setRenameDraft(name);
+  }
+
   return (
-    <ul aria-label={label} className="space-y-1">
-      {names.map((name) => (
-        <li key={name}>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="w-full justify-start"
-            disabled={disabled}
-            data-label-color={colorNames ? labelColor(name) : undefined}
-            onClick={() => onPick(name)}
-          >
-            {colorNames ? (
-              <span aria-hidden className="mr-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: labelColor(name) }} />
-            ) : null}
-            {name}
-          </Button>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul aria-label={label} className="space-y-1">
+        {names.map((name) => {
+          const on = isOnThisFrame(name);
+          return (
+            <li key={name} className="flex items-center gap-1">
+              {renameFrom === name ? (
+                <Input
+                  aria-label={renameLabel}
+                  value={renameDraft}
+                  autoFocus
+                  onChange={(event) => setRenameDraft(event.target.value)}
+                  onBlur={() => setRenameFrom(null)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      const from = renameFrom;
+                      const to = renameDraft.trim();
+                      setRenameFrom(null);
+                      if (!from || to === from) {
+                        return;
+                      }
+                      void run(async () => {
+                        const next = await sendJson<Vocab>(vocabRenamePath(listName), "POST", { from, to });
+                        await mutateVocab(next, { revalidate: false });
+                        await onAfterChange?.();
+                      });
+                    }
+                    if (event.key === "Escape") {
+                      setRenameFrom(null);
+                    }
+                  }}
+                />
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={on ? "secondary" : "ghost"}
+                  className="min-w-0 flex-1 justify-start"
+                  aria-pressed={on}
+                  data-label-color={colorNames ? labelColor(name) : undefined}
+                  onClick={() => schedulePick(name)}
+                  onDoubleClick={() => startRename(name)}
+                >
+                  {colorNames ? (
+                    <span aria-hidden className="mr-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: labelColor(name) }} />
+                  ) : null}
+                  {name}
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label={deleteLabel(name)}
+                onClick={() => {
+                  if (!window.confirm(`${deleteLabel(name)} from every Clip?`)) {
+                    return;
+                  }
+                  void run(async () => {
+                    const next = await sendJson<Vocab>(vocabDeletePath(listName, name), "DELETE");
+                    await mutateVocab(next, { revalidate: false });
+                    await onAfterChange?.();
+                  });
+                }}
+              >
+                <Trash2 size={14} />
+              </Button>
+            </li>
+          );
+        })}
+      </ul>
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+    </>
   );
 }
 
@@ -996,26 +1104,21 @@ function ClassEditor({
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
       <LibraryList
         names={classTags}
+        isOnThisFrame={(name) => current.includes(name)}
         disabled={frameCount <= 0}
+        listName="class_tags"
+        renameLabel="Rename class tag"
+        deleteLabel={(name) => `Delete class tag ${name}`}
+        mutateVocab={mutateVocab}
+        onAfterChange={async () => {
+          await mutateClass();
+        }}
         onPick={(name) => {
           const on = !current.includes(name);
           void writeTags(toggleClassTag(current, name), { name, on });
         }}
       />
       <AddVocabRow listName="class_tags" names={classTags} mutateVocab={mutateVocab} ariaLabel="Add class name" />
-      <hr className="m-0 h-px border-0 bg-border" />
-      <VocabList
-        title="class names"
-        names={classTags}
-        listName="class_tags"
-        renameLabel="Rename class tag"
-        deleteLabel={(name) => `Delete class tag ${name}`}
-        canRename
-        mutateVocab={mutateVocab}
-        onAfterChange={async () => {
-          await mutateClass();
-        }}
-      />
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </section>
   );
@@ -1069,25 +1172,20 @@ function PhaseEditor({
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
       <LibraryList
         names={phases}
+        isOnThisFrame={(name) => name === current}
         disabled={frameCount <= 0}
+        listName="phases"
+        renameLabel="Rename phase"
+        deleteLabel={(name) => `Delete phase ${name}`}
+        mutateVocab={mutateVocab}
+        onAfterChange={async () => {
+          await mutatePhase();
+        }}
         onPick={(name) => {
           void writePhase(name === current ? null : name);
         }}
       />
       <AddVocabRow listName="phases" names={phases} mutateVocab={mutateVocab} ariaLabel="Add phase name" />
-      <hr className="m-0 h-px border-0 bg-border" />
-      <VocabList
-        title="phase names"
-        names={phases}
-        listName="phases"
-        renameLabel="Rename phase"
-        deleteLabel={(name) => `Delete phase ${name}`}
-        canRename
-        mutateVocab={mutateVocab}
-        onAfterChange={async () => {
-          await mutatePhase();
-        }}
-      />
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </section>
   );
