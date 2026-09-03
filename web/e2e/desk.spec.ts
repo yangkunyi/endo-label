@@ -703,6 +703,32 @@ test("composed triplet row survives a Task focus switch", async ({ page }) => {
   await expect(row).toBeVisible();
 });
 
+test("editor hairlines divide Now, Library, and List without a Card", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  for (const kind of ["class", "phase", "triplet"] as const) {
+    await focusTask(page, kind);
+    const editor = page.locator(`[data-editor-card="${kind}"]`);
+    const now = editor.getByText("Now", { exact: true });
+    const library = editor.getByText("Library", { exact: true });
+    const list = editor.getByRole("button", { name: "List" }).first();
+    await expect(now).toBeVisible();
+    await expect(library).toBeVisible();
+    await expect(list).toBeVisible();
+    const seps = editor.getByRole("separator");
+    await expect(seps).toHaveCount(2);
+    const nowBox = await now.boundingBox();
+    const libraryBox = await library.boundingBox();
+    const listBox = await list.boundingBox();
+    const first = await seps.nth(0).boundingBox();
+    const second = await seps.nth(1).boundingBox();
+    expect(nowBox && libraryBox && listBox && first && second).toBeTruthy();
+    expect(first!.y).toBeGreaterThan(nowBox!.y);
+    expect(first!.y).toBeLessThan(libraryBox!.y);
+    expect(second!.y).toBeGreaterThan(libraryBox!.y);
+    expect(second!.y).toBeLessThan(listBox!.y);
+  }
+});
+
 test("video Clip uses video element and seek updates Now", async ({ page }) => {
   await page.goto("/clips/CLIP_VID");
   const video = page.locator("video");

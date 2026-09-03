@@ -990,6 +990,7 @@ function ClassEditor({
           </span>
         ))}
       </div>
+      <hr className="m-0 h-px border-0 bg-border" />
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
       <LibraryList
         names={classTags}
@@ -1000,6 +1001,7 @@ function ClassEditor({
         }}
       />
       <AddVocabRow listName="class_tags" names={classTags} mutateVocab={mutateVocab} ariaLabel="Add class name" />
+      <hr className="m-0 h-px border-0 bg-border" />
       <VocabList
         title="class names"
         names={classTags}
@@ -1061,6 +1063,7 @@ function PhaseEditor({
       >
         {current ?? "unlabeled"}
       </p>
+      <hr className="m-0 h-px border-0 bg-border" />
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
       <LibraryList
         names={phases}
@@ -1070,6 +1073,7 @@ function PhaseEditor({
         }}
       />
       <AddVocabRow listName="phases" names={phases} mutateVocab={mutateVocab} ariaLabel="Add phase name" />
+      <hr className="m-0 h-px border-0 bg-border" />
       <VocabList
         title="phase names"
         names={phases}
@@ -1218,6 +1222,7 @@ function TripletEditor({
           })}
         </tbody>
       </table>
+      <hr className="m-0 h-px border-0 bg-border" />
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
       <table aria-label="Library" className="w-full text-left text-xs">
         <thead>
@@ -1264,6 +1269,7 @@ function TripletEditor({
         <Input aria-label="target" placeholder="target" value={draft.target} onChange={(event) => setDraft((s) => ({ ...s, target: event.target.value }))} />
         <Button type="button" size="sm" aria-label="Add triplet row" onClick={() => void addRowOnly()}>+</Button>
       </div>
+      <hr className="m-0 h-px border-0 bg-border" />
       <TripletVocabLists
         instruments={instruments}
         verbs={verbs}

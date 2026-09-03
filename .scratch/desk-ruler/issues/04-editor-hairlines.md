@@ -4,10 +4,14 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Hairline between Now and Library
-- [ ] Hairline between Library and List
-- [ ] No Card wrapper around those sections
-- [ ] Headings Now / Library stay
-- [ ] Playwright does not require a Card
+- [x] Hairline between Now and Library
+- [x] Hairline between Library and List
+- [x] No Card wrapper around those sections
+- [x] Headings Now / Library stay
+- [x] Playwright does not require a Card
+
+## Answer
+
+Native `<hr>` hairlines in class, phase, and triplet editors: one between Now and Library, one between Library (+ add) and List. Uppercase Now / Library headings unchanged. No Card, no extra shadow. Playwright checks two separators sit between those labels without requiring a Card.
