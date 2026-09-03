@@ -251,8 +251,10 @@ test("playback advances without looping; media-chrome owns the transport", async
   await expect(page.locator("video[aria-label='Frame 0']")).toBeVisible();
   await expect.poll(() => page.locator("video").evaluate((el) => (el as HTMLVideoElement).readyState)).toBeGreaterThanOrEqual(1);
   await expect(page.locator("select")).toHaveCount(0);
+  await expect(page.locator("media-time-range")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Playback rate/i })).toBeVisible();
   await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
+  await expect(page.getByRole("slider", { name: "Ruler" })).toBeVisible();
 
   await page.locator("video[aria-label='Frame 0']").click();
   await page.keyboard.press("Space");
@@ -422,8 +424,21 @@ test("chip, Mark from, Apply writes range, toast, chip stays", async ({ page }) 
     "0": expect.arrayContaining(["clipper"]),
     "1": expect.arrayContaining(["clipper"]),
   });
-  await expect(page.getByRole("button", { name: "clipper 0–1" })).toBeVisible();
-  await expect(page.locator("[data-lane-head]").filter({ hasText: "clipper" })).toHaveCount(1);
+  const bar = page.getByRole("button", { name: "clipper 0–1" });
+  const head = page.locator("[data-lane-head]").filter({ hasText: "clipper" });
+  await expect(bar).toBeVisible();
+  await expect(head).toHaveCount(1);
+  await expect(page.getByRole("slider", { name: "Ruler" })).toBeVisible();
+  const clipsBox = await page.getByRole("navigation", { name: "Clips" }).boundingBox();
+  const playerBox = await page.getByRole("region", { name: "Player", exact: true }).boundingBox();
+  const timelineBox = await page.getByRole("region", { name: "Timeline" }).boundingBox();
+  const headBox = await head.boundingBox();
+  const barBox = await bar.boundingBox();
+  expect(clipsBox && playerBox && timelineBox && headBox && barBox).toBeTruthy();
+  expect(Math.abs(timelineBox!.x - clipsBox!.x)).toBeLessThan(2);
+  expect(Math.abs(timelineBox!.x + timelineBox!.width - (playerBox!.x + playerBox!.width))).toBeLessThan(2);
+  expect(Math.abs(headBox!.width - clipsBox!.width)).toBeLessThan(2);
+  expect(barBox!.x).toBeGreaterThanOrEqual(playerBox!.x - 2);
   await expect(page.locator("[data-paint-chip]")).toHaveText("class: clipper");
   await expect(page.getByText("0 → 0")).toHaveCount(0);
 });
@@ -462,8 +477,14 @@ test("i/o/[ paint a span onto the timeline while the player is focused", async (
   await scrubToFrame(page, 1);
   await page.keyboard.press("o");
   await expect.poll(async () => await clipFrames(page, "phase")).toMatchObject({ "0": "ChipApplyP", "1": "ChipApplyP" });
-  await expect(page.getByRole("button", { name: "ChipApplyP 0–1" })).toBeVisible();
+  const bar = page.getByRole("button", { name: "ChipApplyP 0–1" });
+  await expect(bar).toBeVisible();
   await expect(page.locator("[data-lane-head]").filter({ hasText: "ChipApplyP" })).toHaveCount(1);
+  await expect(page.getByRole("slider", { name: "Ruler" })).toBeVisible();
+  const playerBox = await page.getByRole("region", { name: "Player", exact: true }).boundingBox();
+  const barBox = await bar.boundingBox();
+  expect(playerBox && barBox).toBeTruthy();
+  expect(barBox!.x).toBeGreaterThanOrEqual(playerBox!.x - 2);
 });
 
 test("Task-focus tabs, Library write, + does not write Frame, summary does not seek", async ({ page }) => {
@@ -803,15 +824,18 @@ test("video Clip uses video element and seek updates Now", async ({ page }) => {
   await expect(page.locator("media-time-range")).toHaveCount(0);
   await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
   const player = page.getByRole("region", { name: "Player", exact: true });
+  const clips = page.getByRole("navigation", { name: "Clips" });
   const timeline = page.getByRole("region", { name: "Timeline" });
   await expect(timeline).toBeVisible();
   await expect(page.getByRole("slider", { name: "Ruler" })).toBeVisible();
   await expect(page.locator("[data-playhead]")).toBeVisible();
   const playerBox = await player.boundingBox();
+  const clipsBox = await clips.boundingBox();
   const timelineBox = await timeline.boundingBox();
-  expect(playerBox).not.toBeNull();
-  expect(timelineBox).not.toBeNull();
+  expect(playerBox && clipsBox && timelineBox).toBeTruthy();
   expect(timelineBox!.y).toBeGreaterThanOrEqual(playerBox!.y + playerBox!.height - 1);
+  expect(Math.abs(timelineBox!.x - clipsBox!.x)).toBeLessThan(2);
+  expect(Math.abs(timelineBox!.x + timelineBox!.width - (playerBox!.x + playerBox!.width))).toBeLessThan(2);
   await expect(page.getByText("Frame 0 of 2")).toBeVisible();
   await pickName(page, "phase", "VidPhase");
   await expect(page.getByRole("tabpanel").getByRole("paragraph").filter({ hasText: /^VidPhase$/ })).toBeVisible();
