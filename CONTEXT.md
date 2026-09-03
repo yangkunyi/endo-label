@@ -25,12 +25,12 @@ A named flag on a Frame that can stack with others (tool present, `blurred`, …
 _Avoid_: Phase; CVS as its own task type
 
 **Triplet** (spoken **triplet**):
-A row on a Frame: instrument, verb, target. Several *different* rows per Frame. One Frame holds at most one row per exact triple; submitting that triple again toggles the row off. Does not require a Track. Vocabularies are customizable lists. The labeler may paint one row on or off across an interval; painting on skips a Frame that already holds that triple.
-_Avoid_: action, relation; subject–verb–object as the column names; two identical triples on one Frame
+A row on a Frame: instrument, verb, target. The desk-wide identity is that exact triple, not three independent name lists. Several *different* rows per Frame. One Frame holds at most one row per exact triple; submitting that triple again toggles the row off. Deleting a Vocab triple drops that row from every Clip. Renaming one cell of a Vocab triple rewrites every matching row, and is refused if a Frame would then hold two identical triples. The labeler may paint a row on or off across an interval; painting on skips a Frame that already holds that triple.
+_Avoid_: action, relation; subject–verb–object as the column names; two identical triples on one Frame; instruments/verbs/targets as separate vocabs; a cartesian product of three lists
 
 **Vocab name**:
-A string on a desk-wide list (phases, class tags, instruments, verbs, targets). Lists start empty; the labeler adds names. Renaming or deleting a phase or class-tag name rewrites every Clip of that kind (delete clears that phase or drops that flag). Deleting an instrument, verb, or target name is refused while any triplet row still uses it.
-_Avoid_: built-in seed names the labeler cannot remove; changing only the picker while leaving old strings on disk; treating a class-tag `grasper` as the same list as triplet instrument `grasper`
+A desk-wide identity: a phase name, a class tag, or an exact triple. Lists start empty; the labeler adds. Renaming or deleting a phase, class tag, or exact triple rewrites every Clip of that kind (delete clears that phase, drops that flag, or drops that triplet row). Typeahead words for a new triple come from triples that already exist.
+_Avoid_: built-in seed names the labeler cannot remove; changing only the picker while leaving old strings on disk; treating a class-tag `grasper` as the same identity as a word inside a triple; independent instrument/verb/target lists; orphan Frame strings
 
 **mask**:
 Pixel silhouette on a Track-on-Frame. Predict writes this Frame only. Propagate (SAM 3.1) fills other Frames. Propagate does not write phase, class, or triplet.
