@@ -11,7 +11,9 @@ from fastapi.testclient import TestClient
 from endo_label.app import create_app
 from endo_label.config import Settings, load_settings
 
-_VOCAB_LISTS = ("phases", "class_tags", "instruments", "verbs", "targets")
+_VOCAB_LISTS = ("phases", "class_tags", "triples")
+
+_GRASPER_RETRACT_GB = ("grasper", "retract", "gallbladder")
 
 
 def _add_names(client: TestClient, **lists: str | list[str]) -> None:
@@ -21,6 +23,15 @@ def _add_names(client: TestClient, **lists: str | list[str]) -> None:
         for name in names:
             added = client.post(f"/api/vocab/{list_name}", json={"name": name})
             assert added.status_code == 200, added.text
+
+
+def _add_triples(client: TestClient, *rows: tuple[str, str, str]) -> None:
+    for instrument, verb, target in rows:
+        added = client.post(
+            "/api/vocab/triples",
+            json={"instrument": instrument, "verb": verb, "target": target},
+        )
+        assert added.status_code == 200, added.text
 
 
 def _sitting(tmp_path: Path, clip_ids: tuple[str, ...]) -> TestClient:
@@ -223,7 +234,8 @@ def test_reading_frames_does_not_start_session_or_write_labels(client: TestClien
 
 
 def test_phase_class_triplet_without_session(client: TestClient) -> None:
-    _add_names(client, phases="Preparation", class_tags=["grasper", "blurred"], instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_names(client, phases="Preparation", class_tags=["grasper", "blurred"])
+    _add_triples(client, _GRASPER_RETRACT_GB)
     assert client.get("/api/session").json().get("active") is False
 
     span = client.post(
@@ -260,6 +272,9 @@ def test_fresh_vocab_lists_are_empty(client: TestClient) -> None:
     body = vocab.json()
     for key in _VOCAB_LISTS:
         assert body[key] == []
+    assert "instruments" not in body
+    assert "verbs" not in body
+    assert "targets" not in body
 
 
 def test_missing_vocab_list_keys_are_empty_not_old_seeds(tmp_path: Path) -> None:
@@ -270,9 +285,8 @@ def test_missing_vocab_list_keys_are_empty_not_old_seeds(tmp_path: Path) -> None
     body = client.get("/api/vocab").json()
     assert body["phases"] == ["CustomPhase"]
     assert body["class_tags"] == []
-    assert body["instruments"] == []
-    assert body["verbs"] == []
-    assert body["targets"] == []
+    assert body["triples"] == []
+    assert "instruments" not in body
 
 
 def test_existing_vocab_json_is_not_wiped_on_startup(tmp_path: Path) -> None:
@@ -287,26 +301,29 @@ def test_existing_vocab_json_is_not_wiped_on_startup(tmp_path: Path) -> None:
     }
     path = labels / "vocab.json"
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    before = path.read_text(encoding="utf-8")
     client = _sitting(tmp_path, ("CLIPA",))
     body = client.get("/api/vocab").json()
-    for key, names in payload.items():
-        assert body[key] == names
-    assert path.read_text(encoding="utf-8") == before
+    assert body["phases"] == ["KeptPhase"]
+    assert body["class_tags"] == ["KeptClass"]
+    assert body["triples"] == []
+    assert "instruments" not in body
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["phases"] == ["KeptPhase"]
+    assert "instruments" not in saved
 
 
 def test_class_tag_grasper_is_not_triplet_instrument_grasper(client: TestClient) -> None:
     _add_names(client, class_tags="grasper")
     body = client.get("/api/vocab").json()
     assert body["class_tags"] == ["grasper"]
-    assert body["instruments"] == []
+    assert body["triples"] == []
     assert client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper"]}).status_code == 200
     refused = client.post(
         "/api/triplet/CLIPA/frames/0",
         json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
     )
     assert refused.status_code == 400
-    _add_names(client, instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_triples(client, _GRASPER_RETRACT_GB)
     assert client.get("/api/vocab").json()["class_tags"] == ["grasper"]
     row = client.post(
         "/api/triplet/CLIPA/frames/0",
@@ -462,7 +479,8 @@ def test_phase_span_null_outside_clip_is_rejected(client: TestClient) -> None:
 
 
 def test_phase_span_null_leaves_class_triplet_and_session_untouched(client: TestClient) -> None:
-    _add_names(client, phases="Preparation", class_tags="grasper", instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_names(client, phases="Preparation", class_tags="grasper")
+    _add_triples(client, _GRASPER_RETRACT_GB)
     cl = client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper"]})
     assert cl.status_code == 200
     tr = client.post(
@@ -542,7 +560,8 @@ def test_add_phase_name_rejects_blank_and_duplicate(client: TestClient) -> None:
 
 
 def test_phase_write_leaves_class_triplet_and_session_untouched(client: TestClient) -> None:
-    _add_names(client, phases="Preparation", class_tags="grasper", instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_names(client, phases="Preparation", class_tags="grasper")
+    _add_triples(client, _GRASPER_RETRACT_GB)
     assert client.get("/api/session").json().get("active") is False
     cl = client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper"]})
     assert cl.status_code == 200
@@ -674,7 +693,8 @@ def test_class_span_rejects_bad_range_or_vocab_without_partial_change(client: Te
 
 
 def test_class_span_leaves_phase_triplet_and_session_untouched(client: TestClient) -> None:
-    _add_names(client, phases="Preparation", class_tags=["grasper", "blurred"], instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_names(client, phases="Preparation", class_tags=["grasper", "blurred"])
+    _add_triples(client, _GRASPER_RETRACT_GB)
     client.post(
         "/api/phase/CLIPA/span",
         json={"phase": "Preparation", "from": 0, "to": 1},
@@ -724,7 +744,7 @@ def test_class_span_is_durable_across_app_instances(tmp_path: Path) -> None:
 
 
 def test_triplet_span_add_is_idempotent_and_assigns_frame_local_ids(client: TestClient) -> None:
-    _add_names(client, instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_triples(client, _GRASPER_RETRACT_GB)
     body = {
         "instrument": "grasper",
         "verb": "retract",
@@ -753,7 +773,7 @@ def test_triplet_span_add_is_idempotent_and_assigns_frame_local_ids(client: Test
 
 
 def test_triplet_span_remove_matches_by_name_and_preserves_other_rows(client: TestClient) -> None:
-    _add_names(client, instruments=["grasper", "hook"], verbs=["retract", "dissect"], targets=["gallbladder", "omentum"])
+    _add_triples(client, _GRASPER_RETRACT_GB, ("hook", "dissect", "omentum"))
     for frame in (0, 1):
         client.post(
             f"/api/triplet/CLIPA/frames/{frame}",
@@ -786,7 +806,7 @@ def test_triplet_span_remove_matches_by_name_and_preserves_other_rows(client: Te
 
 
 def test_triplet_span_rejects_bad_range_or_vocab_without_partial_change(client: TestClient) -> None:
-    _add_names(client, instruments=["grasper", "hook"], verbs=["retract", "dissect"], targets=["gallbladder", "omentum"])
+    _add_triples(client, _GRASPER_RETRACT_GB, ("hook", "dissect", "omentum"))
     existing = client.post(
         "/api/triplet/CLIPA/frames/0",
         json={"instrument": "hook", "verb": "dissect", "target": "omentum"},
@@ -826,7 +846,8 @@ def test_triplet_span_rejects_bad_range_or_vocab_without_partial_change(client: 
 
 
 def test_triplet_span_leaves_phase_class_and_session_untouched(client: TestClient) -> None:
-    _add_names(client, phases="Preparation", class_tags=["grasper", "blurred"], instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_names(client, phases="Preparation", class_tags=["grasper", "blurred"])
+    _add_triples(client, _GRASPER_RETRACT_GB)
     client.post(
         "/api/phase/CLIPA/span",
         json={"phase": "Preparation", "from": 0, "to": 1},
@@ -866,7 +887,7 @@ def test_triplet_span_is_durable_across_app_instances(tmp_path: Path) -> None:
         predictor_backend="fake",
     )
     first = TestClient(create_app(settings))
-    _add_names(first, instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_triples(first, _GRASPER_RETRACT_GB)
     painted = first.post(
         "/api/triplet/CLIPA/span",
         json={
@@ -935,7 +956,8 @@ def test_add_class_name_rejects_blank_and_duplicate(client: TestClient) -> None:
 
 
 def test_class_write_leaves_phase_triplet_and_session_untouched(client: TestClient) -> None:
-    _add_names(client, phases="Preparation", class_tags=["grasper", "blurred"], instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_names(client, phases="Preparation", class_tags=["grasper", "blurred"])
+    _add_triples(client, _GRASPER_RETRACT_GB)
     assert client.get("/api/session").json().get("active") is False
     painted = client.post(
         "/api/phase/CLIPA/span",
@@ -992,7 +1014,7 @@ def test_class_survives_new_app_instance(tmp_path: Path) -> None:
 
 
 def test_unknown_triplet_names_are_rejected(client: TestClient) -> None:
-    _add_names(client, instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_triples(client, _GRASPER_RETRACT_GB)
     inst = client.post(
         "/api/triplet/CLIPA/frames/0",
         json={"instrument": "NotAnInstrument", "verb": "retract", "target": "gallbladder"},
@@ -1015,14 +1037,8 @@ def test_unknown_triplet_names_are_rejected(client: TestClient) -> None:
 
 
 def test_triplet_rows_stack_and_toggle_identical_triple(client: TestClient) -> None:
-    _add_names(
-        client,
-        phases="Preparation",
-        class_tags="blurred",
-        instruments=["grasper", "hook"],
-        verbs=["retract", "dissect"],
-        targets=["gallbladder", "cystic-duct"],
-    )
+    _add_names(client, phases="Preparation", class_tags="blurred")
+    _add_triples(client, _GRASPER_RETRACT_GB, ("hook", "dissect", "cystic-duct"))
     assert client.post(
         "/api/phase/CLIPA/span",
         json={"phase": "Preparation", "from": 0, "to": 0},
@@ -1068,12 +1084,7 @@ def test_triplet_rows_stack_and_toggle_identical_triple(client: TestClient) -> N
 
 def test_triplet_post_collapses_leftover_duplicate_rows(tmp_path: Path) -> None:
     client = _sitting(tmp_path, ("CLIPA",))
-    _add_names(
-        client,
-        instruments=["grasper", "hook"],
-        verbs=["retract", "dissect"],
-        targets=["gallbladder", "cystic-duct"],
-    )
+    _add_triples(client, _GRASPER_RETRACT_GB, ("hook", "dissect", "cystic-duct"))
     path = tmp_path / "labels" / "triplet" / "CLIPA.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -1122,7 +1133,12 @@ def test_triplet_post_collapses_leftover_duplicate_rows(tmp_path: Path) -> None:
 
 
 def test_triplet_row_put_updates_that_row_only(client: TestClient) -> None:
-    _add_names(client, instruments=["grasper", "hook", "bipolar"], verbs=["grasp", "retract", "dissect"], targets=["gallbladder", "cystic-duct", "omentum"])
+    _add_triples(
+        client,
+        _GRASPER_RETRACT_GB,
+        ("hook", "dissect", "cystic-duct"),
+        ("bipolar", "grasp", "omentum"),
+    )
     client.post(
         "/api/triplet/CLIPA/frames/0",
         json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
@@ -1167,7 +1183,7 @@ def test_triplet_row_put_updates_that_row_only(client: TestClient) -> None:
 
 
 def test_triplet_row_put_rejects_unknown_names_without_change(client: TestClient) -> None:
-    _add_names(client, instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_triples(client, _GRASPER_RETRACT_GB)
     client.post(
         "/api/triplet/CLIPA/frames/0",
         json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
@@ -1189,7 +1205,7 @@ def test_triplet_row_put_rejects_unknown_names_without_change(client: TestClient
 
 
 def test_triplet_row_put_missing_id_is_not_found(client: TestClient) -> None:
-    _add_names(client, instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_triples(client, _GRASPER_RETRACT_GB)
     missing = client.put(
         "/api/triplet/CLIPA/frames/0/9",
         json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
@@ -1199,7 +1215,7 @@ def test_triplet_row_put_missing_id_is_not_found(client: TestClient) -> None:
 
 
 def test_delete_one_triplet_row_by_id(client: TestClient) -> None:
-    _add_names(client, instruments=["grasper", "hook"], verbs=["retract", "dissect"], targets=["gallbladder", "cystic-duct"])
+    _add_triples(client, _GRASPER_RETRACT_GB, ("hook", "dissect", "cystic-duct"))
     client.post(
         "/api/triplet/CLIPA/frames/0",
         json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
@@ -1224,7 +1240,7 @@ def test_delete_one_triplet_row_by_id(client: TestClient) -> None:
 
 
 def test_delete_last_triplet_row_is_unlabeled(client: TestClient) -> None:
-    _add_names(client, instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_triples(client, _GRASPER_RETRACT_GB)
     added = client.post(
         "/api/triplet/CLIPA/frames/0",
         json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
@@ -1237,15 +1253,12 @@ def test_delete_last_triplet_row_is_unlabeled(client: TestClient) -> None:
 
 
 def test_added_triplet_names_can_be_used_in_a_row(client: TestClient) -> None:
-    inst = client.post("/api/vocab/instruments", json={"name": "my-tool"})
-    assert inst.status_code == 200
-    assert "my-tool" in inst.json()["instruments"]
-    verb = client.post("/api/vocab/verbs", json={"name": "my-verb"})
-    assert verb.status_code == 200
-    assert "my-verb" in verb.json()["verbs"]
-    target = client.post("/api/vocab/targets", json={"name": "my-target"})
-    assert target.status_code == 200
-    assert "my-target" in target.json()["targets"]
+    added = client.post(
+        "/api/vocab/triples",
+        json={"instrument": "my-tool", "verb": "my-verb", "target": "my-target"},
+    )
+    assert added.status_code == 200
+    assert {"instrument": "my-tool", "verb": "my-verb", "target": "my-target"} in added.json()["triples"]
     row = client.post(
         "/api/triplet/CLIPA/frames/0",
         json={"instrument": "my-tool", "verb": "my-verb", "target": "my-target"},
@@ -1260,24 +1273,22 @@ def test_added_triplet_names_can_be_used_in_a_row(client: TestClient) -> None:
 
 
 def test_add_triplet_name_rejects_blank_and_duplicate(client: TestClient) -> None:
-    _add_names(client, instruments="grasper", verbs="retract", targets="gallbladder")
-    blank = client.post("/api/vocab/instruments", json={"name": "   "})
+    _add_triples(client, _GRASPER_RETRACT_GB)
+    blank = client.post(
+        "/api/vocab/triples",
+        json={"instrument": "   ", "verb": "retract", "target": "gallbladder"},
+    )
     assert blank.status_code == 400
-    dup = client.post("/api/vocab/instruments", json={"name": "grasper"})
+    dup = client.post(
+        "/api/vocab/triples",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
     assert dup.status_code == 409
-    assert "grasper" in dup.json()["detail"]
-    blank_verb = client.post("/api/vocab/verbs", json={"name": "   "})
-    assert blank_verb.status_code == 400
-    dup_verb = client.post("/api/vocab/verbs", json={"name": "retract"})
-    assert dup_verb.status_code == 409
-    blank_target = client.post("/api/vocab/targets", json={"name": "   "})
-    assert blank_target.status_code == 400
-    dup_target = client.post("/api/vocab/targets", json={"name": "gallbladder"})
-    assert dup_target.status_code == 409
+    assert "grasper / retract / gallbladder" in dup.json()["detail"]
 
 
 def test_triplet_rows_do_not_copy_to_next_frame(client: TestClient) -> None:
-    _add_names(client, instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_triples(client, _GRASPER_RETRACT_GB)
     added = client.post(
         "/api/triplet/CLIPA/frames/0",
         json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
@@ -1298,7 +1309,8 @@ def test_triplet_rows_do_not_copy_to_next_frame(client: TestClient) -> None:
 
 
 def test_triplet_write_leaves_phase_class_and_session_untouched(client: TestClient) -> None:
-    _add_names(client, phases="Preparation", class_tags=["grasper", "blurred"], instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_names(client, phases="Preparation", class_tags=["grasper", "blurred"])
+    _add_triples(client, _GRASPER_RETRACT_GB)
     assert client.get("/api/session").json().get("active") is False
     painted = client.post(
         "/api/phase/CLIPA/span",
@@ -1335,7 +1347,7 @@ def test_triplet_survives_new_app_instance(tmp_path: Path) -> None:
         predictor_backend="fake",
     )
     first = TestClient(create_app(settings))
-    _add_names(first, instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_triples(first, _GRASPER_RETRACT_GB)
     added = first.post(
         "/api/triplet/CLIPA/frames/0",
         json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
@@ -1387,7 +1399,8 @@ def test_phase_survives_new_app_instance(tmp_path: Path) -> None:
 
 def test_phase_rename_rewrites_every_clip_of_that_kind(two_clips: TestClient) -> None:
     client = two_clips
-    _add_names(client, phases=["Preparation", "Clipping and cutting"], class_tags="grasper", instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_names(client, phases=["Preparation", "Clipping and cutting"], class_tags="grasper")
+    _add_triples(client, _GRASPER_RETRACT_GB)
     client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper"]})
     client.post(
         "/api/triplet/CLIPA/frames/0",
@@ -1452,7 +1465,8 @@ def test_phase_rename_rejects_blank_and_duplicate_without_change(two_clips: Test
 
 def test_class_tag_rename_rewrites_class_clips_not_triplet_strings(two_clips: TestClient) -> None:
     client = two_clips
-    _add_names(client, phases="Preparation", class_tags=["grasper", "hook", "blurred"], instruments=["grasper", "hook"], verbs=["grasp", "retract"], targets=["gallbladder", "omentum"])
+    _add_names(client, phases="Preparation", class_tags=["grasper", "hook", "blurred"])
+    _add_triples(client, _GRASPER_RETRACT_GB, ("grasper", "grasp", "omentum"))
     client.post("/api/phase/CLIPA/span", json={"phase": "Preparation", "from": 0, "to": 0})
     client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper", "blurred"]})
     client.put("/api/class/CLIPA/frames/1", json={"tags": ["hook"]})
@@ -1473,7 +1487,7 @@ def test_class_tag_rename_rewrites_class_clips_not_triplet_strings(two_clips: Te
     assert renamed.status_code == 200
     assert "jaw" in renamed.json()["class_tags"]
     assert "grasper" not in renamed.json()["class_tags"]
-    assert "grasper" in renamed.json()["instruments"]
+    assert {"instrument": "grasper", "verb": "retract", "target": "gallbladder"} in renamed.json()["triples"]
 
     assert client.get("/api/class/CLIPA").json()["frames"] == {
         "0": ["jaw", "blurred"],
@@ -1518,7 +1532,7 @@ def test_class_tag_rename_rejects_blank_and_duplicate_without_change(two_clips: 
 
 def test_triplet_list_rename_is_rejected_and_leaves_rows(two_clips: TestClient) -> None:
     client = two_clips
-    _add_names(client, instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_triples(client, _GRASPER_RETRACT_GB)
     client.post(
         "/api/triplet/CLIPA/frames/0",
         json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
@@ -1527,21 +1541,15 @@ def test_triplet_list_rename_is_rejected_and_leaves_rows(two_clips: TestClient) 
         "/api/vocab/instruments/rename",
         json={"from": "grasper", "to": "jaw"},
     )
-    assert refused.status_code == 400
-    assert client.get("/api/vocab").json()["instruments"][0] == "grasper"
+    assert refused.status_code == 404
+    assert client.get("/api/vocab").json()["triples"][0]["instrument"] == "grasper"
     assert client.get("/api/triplet/CLIPA").json()["frames"]["0"][0]["instrument"] == "grasper"
 
 
 def test_phase_delete_rewrites_every_clip_of_that_kind(two_clips: TestClient) -> None:
     client = two_clips
-    _add_names(
-        client,
-        phases=["Preparation", "Clipping and cutting"],
-        class_tags="grasper",
-        instruments="grasper",
-        verbs="retract",
-        targets="gallbladder",
-    )
+    _add_names(client, phases=["Preparation", "Clipping and cutting"], class_tags="grasper")
+    _add_triples(client, _GRASPER_RETRACT_GB)
     client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper"]})
     client.post(
         "/api/triplet/CLIPA/frames/0",
@@ -1605,14 +1613,8 @@ def test_phase_delete_restores_clips_on_half_failure(two_clips: TestClient, monk
 
 def test_class_tag_delete_rewrites_class_clips_not_triplet_strings(two_clips: TestClient) -> None:
     client = two_clips
-    _add_names(
-        client,
-        phases="Preparation",
-        class_tags=["grasper", "hook", "blurred"],
-        instruments=["grasper", "hook"],
-        verbs=["grasp", "retract"],
-        targets=["gallbladder", "omentum"],
-    )
+    _add_names(client, phases="Preparation", class_tags=["grasper", "hook", "blurred"])
+    _add_triples(client, _GRASPER_RETRACT_GB, ("grasper", "grasp", "omentum"))
     client.post("/api/phase/CLIPA/span", json={"phase": "Preparation", "from": 0, "to": 0})
     client.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper", "blurred"]})
     client.put("/api/class/CLIPA/frames/1", json={"tags": ["hook"]})
@@ -1630,7 +1632,7 @@ def test_class_tag_delete_rewrites_class_clips_not_triplet_strings(two_clips: Te
     assert deleted.status_code == 200
     assert "grasper" not in deleted.json()["class_tags"]
     assert "hook" in deleted.json()["class_tags"]
-    assert "grasper" in deleted.json()["instruments"]
+    assert {"instrument": "grasper", "verb": "retract", "target": "gallbladder"} in deleted.json()["triples"]
 
     assert client.get("/api/class/CLIPA").json()["frames"] == {
         "0": ["blurred"],
@@ -1656,37 +1658,40 @@ def test_class_tag_delete_rewrites_class_clips_not_triplet_strings(two_clips: Te
     ]
 
 
-def test_instrument_delete_refused_while_row_uses_it_then_allowed(two_clips: TestClient) -> None:
+def test_vocab_triple_delete_rewrites_every_clip(two_clips: TestClient) -> None:
     client = two_clips
-    _add_names(client, instruments="grasper", verbs="retract", targets="gallbladder")
+    _add_triples(client, _GRASPER_RETRACT_GB, ("hook", "dissect", "omentum"))
     client.post(
         "/api/triplet/CLIPA/frames/0",
         json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
     )
     client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "hook", "verb": "dissect", "target": "omentum"},
+    )
+    client.post(
         "/api/triplet/CLIPB/frames/1",
         json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
     )
-    before = client.get("/api/vocab").json()["instruments"]
-    rows_a = client.get("/api/triplet/CLIPA").json()["frames"]
-    rows_b = client.get("/api/triplet/CLIPB").json()["frames"]
 
-    refused = client.delete("/api/vocab/instruments/grasper")
-    assert refused.status_code == 409
-    assert "grasper" in refused.json()["detail"]
-    assert client.get("/api/vocab").json()["instruments"] == before
-    assert client.get("/api/triplet/CLIPA").json()["frames"] == rows_a
-    assert client.get("/api/triplet/CLIPB").json()["frames"] == rows_b
-
-    client.delete("/api/triplet/CLIPA/frames/0/1")
-    still = client.delete("/api/vocab/instruments/grasper")
-    assert still.status_code == 409
-    client.delete("/api/triplet/CLIPB/frames/1/1")
-
-    deleted = client.delete("/api/vocab/instruments/grasper")
+    deleted = client.delete(
+        "/api/vocab/triples",
+        params={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
     assert deleted.status_code == 200
-    assert "grasper" not in deleted.json()["instruments"]
-    assert client.get("/api/triplet/CLIPA").json()["frames"] == {}
+    assert deleted.json()["triples"] == [
+        {"instrument": "hook", "verb": "dissect", "target": "omentum"},
+    ]
+    assert client.get("/api/triplet/CLIPA").json()["frames"] == {
+        "0": [
+            {
+                "id": 2,
+                "instrument": "hook",
+                "verb": "dissect",
+                "target": "omentum",
+            }
+        ]
+    }
     assert client.get("/api/triplet/CLIPB").json()["frames"] == {}
 
 
@@ -1717,4 +1722,192 @@ def test_existing_vocab_json_seed_is_removed_only_by_delete(tmp_path: Path) -> N
     assert deleted.status_code == 200
     assert deleted.json()["phases"] == []
     assert client.get("/api/vocab").json()["class_tags"] == ["grasper"]
-    assert client.get("/api/vocab").json()["instruments"] == ["grasper"]
+    assert client.get("/api/vocab").json()["triples"] == []
+    assert "instruments" not in client.get("/api/vocab").json()
+
+
+def test_vocab_triple_migrate_keeps_frame_rows_and_drops_unused_words(tmp_path: Path) -> None:
+    client = _sitting(tmp_path, ("CLIPA", "CLIPB"))
+    labels = tmp_path / "labels"
+    triplet_dir = labels / "triplet"
+    triplet_dir.mkdir(parents=True, exist_ok=True)
+    (labels / "vocab.json").write_text(
+        json.dumps(
+            {
+                "phases": [],
+                "class_tags": [],
+                "instruments": ["grasper", "ghost-tool"],
+                "verbs": ["retract", "ghost-verb"],
+                "targets": ["gallbladder", "ghost-target"],
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (triplet_dir / "CLIPA.json").write_text(
+        json.dumps(
+            {
+                "clip_id": "CLIPA",
+                "frames": {
+                    "0": [
+                        {
+                            "id": 1,
+                            "instrument": "grasper",
+                            "verb": "retract",
+                            "target": "gallbladder",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (triplet_dir / "CLIPB.json").write_text(
+        json.dumps(
+            {
+                "clip_id": "CLIPB",
+                "frames": {
+                    "1": [
+                        {
+                            "id": 1,
+                            "instrument": "grasper",
+                            "verb": "retract",
+                            "target": "gallbladder",
+                        },
+                        {
+                            "id": 2,
+                            "instrument": "hook",
+                            "verb": "dissect",
+                            "target": "omentum",
+                        },
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    body = client.get("/api/vocab").json()
+    assert body["triples"] == [
+        {"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+        {"instrument": "hook", "verb": "dissect", "target": "omentum"},
+    ]
+    assert "instruments" not in body
+    saved = json.loads((labels / "vocab.json").read_text(encoding="utf-8"))
+    assert "instruments" not in saved
+    assert saved["triples"] == body["triples"]
+    assert client.get("/api/triplet/CLIPA").json()["frames"]["0"][0]["instrument"] == "grasper"
+    assert client.get("/api/triplet/CLIPB").json()["frames"]["1"][1]["target"] == "omentum"
+    again = client.get("/api/vocab").json()
+    assert again["triples"] == body["triples"]
+
+
+def test_vocab_triple_migrate_once_keeps_plus_row(tmp_path: Path) -> None:
+    client = _sitting(tmp_path, ("CLIPA",))
+    labels = tmp_path / "labels"
+    labels.mkdir(parents=True, exist_ok=True)
+    (labels / "vocab.json").write_text(
+        json.dumps(
+            {
+                "instruments": ["grasper"],
+                "verbs": ["retract"],
+                "targets": ["gallbladder"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    first = client.get("/api/vocab").json()
+    assert first["triples"] == []
+    added = client.post(
+        "/api/vocab/triples",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    assert added.status_code == 200
+    second = TestClient(
+        create_app(
+            Settings(
+                frames_root=tmp_path / "frames",
+                clip_allowlist=("CLIPA",),
+                annotations_root=tmp_path / "mask",
+                labels_root=labels,
+                predictor_backend="fake",
+            )
+        )
+    )
+    body = second.get("/api/vocab").json()
+    assert body["triples"] == [
+        {"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    ]
+    assert second.get("/api/triplet/CLIPA").json()["frames"] == {}
+
+
+def test_cartesian_combo_not_in_table_is_rejected(client: TestClient) -> None:
+    _add_triples(client, _GRASPER_RETRACT_GB, ("hook", "dissect", "omentum"))
+    refused = client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "dissect", "target": "omentum"},
+    )
+    assert refused.status_code == 400
+    assert "unknown triple" in refused.json()["detail"]
+    assert client.get("/api/triplet/CLIPA").json()["frames"] == {}
+
+
+def test_plus_triple_does_not_write_this_frame(client: TestClient) -> None:
+    added = client.post(
+        "/api/vocab/triples",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    assert added.status_code == 200
+    assert client.get("/api/triplet/CLIPA").json()["frames"] == {}
+
+
+def test_vocab_triple_delete_unknown_is_rejected(client: TestClient) -> None:
+    _add_triples(client, _GRASPER_RETRACT_GB)
+    missing = client.delete(
+        "/api/vocab/triples",
+        params={"instrument": "hook", "verb": "dissect", "target": "omentum"},
+    )
+    assert missing.status_code == 400
+    assert client.get("/api/vocab").json()["triples"] == [
+        {"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    ]
+
+
+def test_vocab_triple_delete_restores_clips_on_half_failure(
+    two_clips: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = two_clips
+    _add_triples(client, _GRASPER_RETRACT_GB)
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    client.post(
+        "/api/triplet/CLIPB/frames/1",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+
+    from endo_label import labels_store
+
+    original = labels_store._write
+    clip_writes = {"n": 0}
+
+    def flaky(path: Path, data: dict) -> None:
+        if path.parent.name == "triplet":
+            clip_writes["n"] += 1
+            if clip_writes["n"] >= 2:
+                raise OSError("disk full")
+        original(path, data)
+
+    monkeypatch.setattr(labels_store, "_write", flaky)
+    with pytest.raises(OSError, match="disk full"):
+        client.delete(
+            "/api/vocab/triples",
+            params={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+        )
+    assert client.get("/api/vocab").json()["triples"] == [
+        {"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    ]
+    assert client.get("/api/triplet/CLIPA").json()["frames"]["0"][0]["instrument"] == "grasper"
+    assert client.get("/api/triplet/CLIPB").json()["frames"]["1"][0]["instrument"] == "grasper"

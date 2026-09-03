@@ -26,12 +26,16 @@ export type TripletDoc = {
   frames: Record<string, TripletRow[]>;
 };
 
+export type VocabTriple = {
+  instrument: string;
+  verb: string;
+  target: string;
+};
+
 export type Vocab = {
   phases: string[];
   class_tags: string[];
-  instruments: string[];
-  verbs: string[];
-  targets: string[];
+  triples: VocabTriple[];
 };
 
 export function clipDeskPath(clipId: string): string {
@@ -104,6 +108,19 @@ export function vocabRenamePath(listName: string): string {
 
 export function vocabDeletePath(listName: string, name: string): string {
   return `/api/vocab/${encodeURIComponent(listName)}/${encodeURIComponent(name)}`;
+}
+
+export function vocabTriplesPath(): string {
+  return "/api/vocab/triples";
+}
+
+export function vocabTripleDeletePath(
+  instrument: string,
+  verb: string,
+  target: string,
+): string {
+  const query = new URLSearchParams({ instrument, verb, target });
+  return `/api/vocab/triples?${query.toString()}`;
 }
 
 export function framePhaseName(

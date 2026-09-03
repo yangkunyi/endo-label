@@ -20,9 +20,6 @@ test.beforeEach(async ({ request }) => {
   await ensureVocab(request, {
     phases: ["Preparation", "Clipping and cutting"],
     class_tags: ["grasper", "hook", "clipper", "scissors", "blurred"],
-    instruments: ["grasper", "hook", "clipper", "bipolar"],
-    verbs: ["grasp", "retract", "cut", "dissect"],
-    targets: ["gallbladder", "cystic-duct", "cystic-artery", "omentum"],
   });
 });
 
@@ -79,9 +76,9 @@ async function fillTriplet(page: Page, instrument: string, verb: string, target:
   const name = `${instrument} / ${verb} / ${target}`;
   const row = library.getByRole("button", { name, exact: true });
   if ((await row.count()) === 0) {
-    await page.getByRole("textbox", { name: "instrument" }).fill(instrument);
-    await page.getByRole("textbox", { name: "verb" }).fill(verb);
-    await page.getByRole("textbox", { name: "target" }).fill(target);
+    await page.getByRole("combobox", { name: "instrument" }).fill(instrument);
+    await page.getByRole("combobox", { name: "verb" }).fill(verb);
+    await page.getByRole("combobox", { name: "target" }).fill(target);
     await page.getByRole("button", { name: "Add triplet row" }).click();
     await expect(row).toBeVisible();
   }
@@ -101,16 +98,6 @@ async function clearClipLabels(page: Page, clipId = "CLIP_E2E") {
       await page.request.delete(`/api/triplet/${clipId}/frames/${index}/${row.id}`);
     }
   }
-}
-
-async function openList(page: Page, editor: "class" | "phase" | "triplet") {
-  await focusTask(page, editor);
-  const card = page.locator(`[data-editor-card="${editor}"]`);
-  const button = card.getByRole("button", { name: "List" }).first();
-  if ((await button.getAttribute("aria-expanded")) !== "true") {
-    await button.click();
-  }
-  return card;
 }
 
 test("root and Clip routes share one workbench shell", async ({ page }) => {
@@ -308,9 +295,9 @@ test("empty add-name placeholder is Type to add", async ({ page }) => {
   await focusTask(page, "phase");
   await expect(page.getByRole("textbox", { name: "Add phase name" })).toHaveAttribute("placeholder", "Type to add");
   await focusTask(page, "triplet");
-  await expect(page.getByRole("textbox", { name: "instrument" })).toHaveAttribute("placeholder", "instrument");
-  await expect(page.getByRole("textbox", { name: "verb" })).toHaveAttribute("placeholder", "verb");
-  await expect(page.getByRole("textbox", { name: "target" })).toHaveAttribute("placeholder", "target");
+  await expect(page.getByRole("combobox", { name: "instrument" })).toHaveAttribute("placeholder", "instrument");
+  await expect(page.getByRole("combobox", { name: "verb" })).toHaveAttribute("placeholder", "verb");
+  await expect(page.getByRole("combobox", { name: "target" })).toHaveAttribute("placeholder", "target");
 });
 
 test("playback advances without looping; media-chrome owns the transport", async ({ page }) => {
@@ -323,8 +310,7 @@ test("playback advances without looping; media-chrome owns the transport", async
   await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
   await expect(page.getByRole("slider", { name: "Ruler" })).toBeVisible();
 
-  await page.locator("video[aria-label='Frame 0']").click();
-  await page.keyboard.press("Space");
+  await page.getByRole("button", { name: "play", exact: true }).click();
   await expect(page.locator("video[aria-label='Frame 1']")).toBeVisible();
 });
 
@@ -393,7 +379,11 @@ test("Library double-click rename phase and class is desk-wide", async ({ page }
   await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("DeskRenameC2");
   const vocab = await (await page.request.get("/api/vocab")).json();
   expect(vocab.class_tags).toContain("DeskRenameC2");
-  expect(vocab.instruments).toContain("grasper");
+  expect(vocab.triples).toEqual(
+    expect.arrayContaining([
+      { instrument: "grasper", verb: "retract", target: "gallbladder" },
+    ]),
+  );
 });
 
 test("dark sitting, compact rail, no HeroUI, no filmstrip, no Arm", async ({ page }) => {
@@ -441,28 +431,34 @@ test("Library click is this Frame; Library trash confirms then removes the desk 
   await expect.poll(async () => (((await clipFrames(page, "class"))["1"] as string[]) ?? []).includes("DeskTrashC")).toBe(false);
 });
 
-test("trashing an instrument in use is refused until the row is gone", async ({ page }) => {
+test("trashing a Vocab triple confirms then drops it from every Clip", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await fillTriplet(page, "DeskTrashTool", "grasp", "gallbladder");
+  await page.goto("/clips/CLIP_E2E_B");
+  await fillTriplet(page, "DeskTrashTool", "grasp", "gallbladder");
   await expect.poll(async () => {
-    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string }[]>;
+    const frames = (await clipFrames(page, "triplet", "CLIP_E2E_B")) as Record<string, { instrument: string }[]>;
     return (frames["0"] ?? []).some((row) => row.instrument === "DeskTrashTool");
   }).toBe(true);
 
-  const triplet = await openList(page, "triplet");
-  await triplet.getByRole("button", { name: "Delete instrument DeskTrashTool" }).click();
-  await expect(page.getByText(/in use: DeskTrashTool/i)).toBeVisible();
-  const vocabBefore = await (await page.request.get("/api/vocab")).json();
-  expect(vocabBefore.instruments).toContain("DeskTrashTool");
-
-  await fillTriplet(page, "DeskTrashTool", "grasp", "gallbladder");
+  await focusTask(page, "triplet");
+  const trash = page.getByRole("button", { name: "Delete triple DeskTrashTool / grasp / gallbladder" });
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await trash.click();
   await expect.poll(async () => {
-    const frames = (await clipFrames(page, "triplet")) as Record<string, { instrument: string }[]>;
+    const frames = (await clipFrames(page, "triplet", "CLIP_E2E")) as Record<string, { instrument: string }[]>;
     return (frames["0"] ?? []).some((row) => row.instrument === "DeskTrashTool");
-  }).toBe(false);
+  }).toBe(true);
 
-  await triplet.getByRole("button", { name: "Delete instrument DeskTrashTool" }).click();
-  await expect(page.getByRole("list", { name: "instrument names" }).getByText("DeskTrashTool", { exact: true })).toHaveCount(0);
+  page.once("dialog", (dialog) => dialog.accept());
+  await trash.click();
+  await expect.poll(async () => {
+    const framesA = (await clipFrames(page, "triplet", "CLIP_E2E")) as Record<string, { instrument: string }[]>;
+    const framesB = (await clipFrames(page, "triplet", "CLIP_E2E_B")) as Record<string, { instrument: string }[]>;
+    return (framesA["0"] ?? []).some((row) => row.instrument === "DeskTrashTool")
+      || (framesB["0"] ?? []).some((row) => row.instrument === "DeskTrashTool");
+  }).toBe(false);
+  await expect(page.getByRole("button", { name: "DeskTrashTool / grasp / gallbladder", exact: true })).toHaveCount(0);
 });
 
 test("no chip: Mark from and Apply do nothing", async ({ page }) => {
@@ -812,9 +808,9 @@ test("triplet Library rows toggle; + does not write Frame", async ({ page }) => 
   await expect(page.getByRole("list", { name: "instrument library" })).toHaveCount(0);
 
   const before = await clipFrames(page, "triplet");
-  await page.getByRole("textbox", { name: "instrument" }).fill("RowTool");
-  await page.getByRole("textbox", { name: "verb" }).fill("RowAct");
-  await page.getByRole("textbox", { name: "target" }).fill("RowOrg");
+  await page.getByRole("combobox", { name: "instrument" }).fill("RowTool");
+  await page.getByRole("combobox", { name: "verb" }).fill("RowAct");
+  await page.getByRole("combobox", { name: "target" }).fill("RowOrg");
   await page.getByRole("button", { name: "Add triplet row" }).click();
   const row = library.getByRole("button", { name: "RowTool / RowAct / RowOrg", exact: true });
   await expect(row).toBeVisible();
@@ -845,9 +841,9 @@ test("triplet Library rows toggle; + does not write Frame", async ({ page }) => 
 test("composed triplet row survives a Task focus switch", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await focusTask(page, "triplet");
-  await page.getByRole("textbox", { name: "instrument" }).fill("FocusTool");
-  await page.getByRole("textbox", { name: "verb" }).fill("FocusAct");
-  await page.getByRole("textbox", { name: "target" }).fill("FocusOrg");
+  await page.getByRole("combobox", { name: "instrument" }).fill("FocusTool");
+  await page.getByRole("combobox", { name: "verb" }).fill("FocusAct");
+  await page.getByRole("combobox", { name: "target" }).fill("FocusOrg");
   await page.getByRole("button", { name: "Add triplet row" }).click();
   const row = page.getByRole("table", { name: "Library" }).getByRole("button", { name: "FocusTool / FocusAct / FocusOrg", exact: true });
   await expect(row).toBeVisible();
@@ -858,7 +854,7 @@ test("composed triplet row survives a Task focus switch", async ({ page }) => {
 
 test("editor hairlines divide Now and Library without a Card", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
-  for (const kind of ["class", "phase"] as const) {
+  for (const kind of ["class", "phase", "triplet"] as const) {
     await focusTask(page, kind);
     const editor = page.locator(`[data-editor-card="${kind}"]`);
     const now = editor.getByText("Now", { exact: true });
@@ -875,26 +871,6 @@ test("editor hairlines divide Now and Library without a Card", async ({ page }) 
     expect(first!.y).toBeGreaterThan(nowBox!.y);
     expect(first!.y).toBeLessThan(libraryBox!.y);
   }
-  await focusTask(page, "triplet");
-  const triplet = page.locator('[data-editor-card="triplet"]');
-  const now = triplet.getByText("Now", { exact: true });
-  const library = triplet.getByText("Library", { exact: true });
-  const list = triplet.getByRole("button", { name: "List" }).first();
-  await expect(now).toBeVisible();
-  await expect(library).toBeVisible();
-  await expect(list).toBeVisible();
-  const seps = triplet.getByRole("separator");
-  await expect(seps).toHaveCount(2);
-  const nowBox = await now.boundingBox();
-  const libraryBox = await library.boundingBox();
-  const listBox = await list.boundingBox();
-  const first = await seps.nth(0).boundingBox();
-  const second = await seps.nth(1).boundingBox();
-  expect(nowBox && libraryBox && listBox && first && second).toBeTruthy();
-  expect(first!.y).toBeGreaterThan(nowBox!.y);
-  expect(first!.y).toBeLessThan(libraryBox!.y);
-  expect(second!.y).toBeGreaterThan(libraryBox!.y);
-  expect(second!.y).toBeLessThan(listBox!.y);
 });
 
 test("video Clip uses video element and seek updates Now", async ({ page }) => {

@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from endo_label.config import Settings
 from endo_label import labels_store
 
-_LISTS = ("phases", "class_tags", "instruments", "verbs", "targets")
+_LISTS = ("phases", "class_tags")
 _RENAMEABLE = frozenset(labels_store.RENAME_LISTS)
 
 
@@ -23,12 +23,54 @@ class VocabRenameBody(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class VocabTripleBody(BaseModel):
+    instrument: str = Field(..., min_length=1)
+    verb: str = Field(..., min_length=1)
+    target: str = Field(..., min_length=1)
+
+
 def make_router(settings: Settings) -> APIRouter:
     router = APIRouter(tags=["vocab"])
+
+    def _stripped_triple(body: VocabTripleBody) -> tuple[str, str, str]:
+        instrument = body.instrument.strip()
+        verb = body.verb.strip()
+        target = body.target.strip()
+        if not instrument or not verb or not target:
+            raise HTTPException(status_code=400, detail="empty name")
+        return instrument, verb, target
 
     @router.get("/api/vocab")
     def get_vocab() -> dict:
         return labels_store.load_vocab(settings)
+
+    @router.post("/api/vocab/triples")
+    def add_triple(body: VocabTripleBody) -> dict:
+        instrument, verb, target = _stripped_triple(body)
+        vocab = labels_store.load_vocab(settings)
+        if labels_store.vocab_has_triple(vocab, instrument, verb, target):
+            raise HTTPException(
+                status_code=409,
+                detail=f"already present: {instrument} / {verb} / {target}",
+            )
+        triples = list(vocab.get("triples") or [])
+        triples.append({"instrument": instrument, "verb": verb, "target": target})
+        vocab["triples"] = triples
+        labels_store.save_vocab(settings, vocab)
+        return vocab
+
+    @router.delete("/api/vocab/triples")
+    def delete_triple(instrument: str, verb: str, target: str) -> dict:
+        instrument, verb, target = instrument.strip(), verb.strip(), target.strip()
+        if not instrument or not verb or not target:
+            raise HTTPException(status_code=400, detail="empty name")
+        vocab = labels_store.load_vocab(settings)
+        if not labels_store.vocab_has_triple(vocab, instrument, verb, target):
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown triple: {instrument} / {verb} / {target}",
+            )
+        return labels_store.delete_vocab_triple(settings, instrument, verb, target)
 
     @router.post("/api/vocab/{list_name}")
     def add_name(list_name: str, body: VocabAddBody) -> dict:
@@ -72,9 +114,6 @@ def make_router(settings: Settings) -> APIRouter:
         bucket = list(vocab.get(list_name) or [])
         if name not in bucket:
             raise HTTPException(status_code=400, detail=f"unknown name: {name}")
-        try:
-            return labels_store.delete_vocab_name(settings, list_name, name)
-        except labels_store.VocabNameInUse:
-            raise HTTPException(status_code=409, detail=f"in use: {name}") from None
+        return labels_store.delete_vocab_name(settings, list_name, name)
 
     return router

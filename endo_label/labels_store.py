@@ -11,18 +11,11 @@ from endo_label.config import Settings
 
 KINDS = ("phase", "class", "triplet")
 RENAME_LISTS = {"phases": "phase", "class_tags": "class"}
-TRIPLET_SLOTS = {"instruments": "instrument", "verbs": "verb", "targets": "target"}
-
-
-class VocabNameInUse(Exception):
-    """Instrument, verb, or target still appears on a triplet row."""
-
+_COLUMN_LISTS = ("instruments", "verbs", "targets")
 _DEFAULT_VOCAB = {
     "phases": [],
     "class_tags": [],
-    "instruments": [],
-    "verbs": [],
-    "targets": [],
+    "triples": [],
 }
 
 
@@ -77,15 +70,74 @@ def save_clip(settings: Settings, kind: str, clip_id: str, data: dict[str, Any])
     _write(clip_path(settings, kind, clip_id), data)
 
 
+def _same_triple(row: Any, instrument: str, verb: str, target: str) -> bool:
+    return (
+        isinstance(row, dict)
+        and row.get("instrument") == instrument
+        and row.get("verb") == verb
+        and row.get("target") == target
+    )
+
+
+def vocab_has_triple(vocab: dict[str, Any], instrument: str, verb: str, target: str) -> bool:
+    return any(_same_triple(row, instrument, verb, target) for row in vocab.get("triples") or [])
+
+
+def _canonical_vocab(data: dict[str, Any]) -> dict[str, Any]:
+    triples: list[dict[str, str]] = []
+    for row in data.get("triples") or []:
+        if not isinstance(row, dict):
+            continue
+        instrument = row.get("instrument")
+        verb = row.get("verb")
+        target = row.get("target")
+        if isinstance(instrument, str) and isinstance(verb, str) and isinstance(target, str):
+            triples.append({"instrument": instrument, "verb": verb, "target": target})
+    return {
+        "phases": list(data.get("phases") or []),
+        "class_tags": list(data.get("class_tags") or []),
+        "triples": triples,
+    }
+
+
+def _unique_triples_from_clips(settings: Settings) -> list[dict[str, str]]:
+    seen: set[tuple[str, str, str]] = set()
+    out: list[dict[str, str]] = []
+    for path in _kind_json_paths(settings, "triplet"):
+        data = _read(path, {"clip_id": path.stem, "frames": {}})
+        frames = data.get("frames") or {}
+        for key in sorted(frames, key=lambda item: int(item) if str(item).isdigit() else str(item)):
+            for row in frames.get(key) or []:
+                if not isinstance(row, dict):
+                    continue
+                instrument = row.get("instrument")
+                verb = row.get("verb")
+                target = row.get("target")
+                if not isinstance(instrument, str) or not isinstance(verb, str) or not isinstance(target, str):
+                    continue
+                item = (instrument, verb, target)
+                if item in seen:
+                    continue
+                seen.add(item)
+                out.append({"instrument": instrument, "verb": verb, "target": target})
+    return out
+
+
 def load_vocab(settings: Settings) -> dict[str, Any]:
-    data = _read(vocab_path(settings), _DEFAULT_VOCAB)
-    for key, default in _DEFAULT_VOCAB.items():
-        data.setdefault(key, list(default))
-    return data
+    raw = _read(vocab_path(settings), _DEFAULT_VOCAB)
+    if any(key in raw for key in _COLUMN_LISTS):
+        migrated = {
+            "phases": list(raw.get("phases") or []),
+            "class_tags": list(raw.get("class_tags") or []),
+            "triples": _unique_triples_from_clips(settings),
+        }
+        save_vocab(settings, migrated)
+        return migrated
+    return _canonical_vocab(raw)
 
 
 def save_vocab(settings: Settings, data: dict[str, Any]) -> None:
-    _write(vocab_path(settings), data)
+    _write(vocab_path(settings), _canonical_vocab(data))
 
 
 def _kind_json_paths(settings: Settings, kind: str) -> list[Path]:
@@ -180,40 +232,50 @@ def _drop_name_from_frames(kind: str, frames: dict[str, Any], name: str) -> dict
     return rewritten
 
 
-def _triplet_slot_in_use(settings: Settings, slot: str, name: str) -> bool:
-    for path in _kind_json_paths(settings, "triplet"):
-        data = _read(path, {"clip_id": path.stem, "frames": {}})
-        for rows in (data.get("frames") or {}).values():
-            for row in rows or []:
-                if row.get(slot) == name:
-                    return True
-    return False
+def _drop_triple_from_frames(
+    frames: dict[str, Any],
+    instrument: str,
+    verb: str,
+    target: str,
+) -> dict[str, Any]:
+    rewritten: dict[str, Any] = {}
+    for key, rows in frames.items():
+        kept = [row for row in (rows or []) if not _same_triple(row, instrument, verb, target)]
+        if kept:
+            rewritten[key] = kept
+    return rewritten
 
 
 def delete_vocab_name(settings: Settings, list_name: str, name: str) -> dict[str, Any]:
     """Remove one list entry. Phase/class rewrite every Clip of that kind.
 
-    Instrument, verb, and target names are refused while any triplet row
-    still uses that string in that slot. Clip files are written first, then
-    vocab. On failure, already-replaced Clip files are restored.
+    Clip files are written first, then vocab. On failure, already-replaced
+    Clip files are restored.
     """
     vocab = load_vocab(settings)
     bucket = list(vocab.get(list_name) or [])
-    if list_name in TRIPLET_SLOTS:
-        if _triplet_slot_in_use(settings, TRIPLET_SLOTS[list_name], name):
-            raise VocabNameInUse(name)
-        bucket.remove(name)
-        vocab[list_name] = bucket
-        save_vocab(settings, vocab)
-        return vocab
-
     bucket.remove(name)
     vocab[list_name] = bucket
-
     kind = RENAME_LISTS[list_name]
     pending = _pending_clip_rewrites(
         settings,
         kind,
         lambda frames: _drop_name_from_frames(kind, frames, name),
+    )
+    return _commit_rewritten_clips_and_vocab(settings, pending, vocab)
+
+
+def delete_vocab_triple(settings: Settings, instrument: str, verb: str, target: str) -> dict[str, Any]:
+    """Remove one exact triple from Vocab and every Clip, or restore all."""
+    vocab = load_vocab(settings)
+    triples = list(vocab.get("triples") or [])
+    kept = [row for row in triples if not _same_triple(row, instrument, verb, target)]
+    if len(kept) == len(triples):
+        raise KeyError((instrument, verb, target))
+    vocab["triples"] = kept
+    pending = _pending_clip_rewrites(
+        settings,
+        "triplet",
+        lambda frames: _drop_triple_from_frames(frames, instrument, verb, target),
     )
     return _commit_rewritten_clips_and_vocab(settings, pending, vocab)

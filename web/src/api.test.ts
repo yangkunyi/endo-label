@@ -21,6 +21,8 @@ import {
   vocabDeletePath,
   vocabListPath,
   vocabRenamePath,
+  vocabTripleDeletePath,
+  vocabTriplesPath,
 } from "./api";
 
 test("clip desk path is /clips/:clipId", () => {
@@ -98,10 +100,10 @@ test("triplet paths match compose HTTP", () => {
   expect(tripletFramePath("CLIPA", 0)).toBe("/api/triplet/CLIPA/frames/0");
   expect(tripletSpanPath("CLIPA")).toBe("/api/triplet/CLIPA/span");
   expect(tripletRowPath("CLIPA", 0, 2)).toBe("/api/triplet/CLIPA/frames/0/2");
-  expect(vocabListPath("instruments")).toBe("/api/vocab/instruments");
-  expect(vocabListPath("verbs")).toBe("/api/vocab/verbs");
-  expect(vocabListPath("targets")).toBe("/api/vocab/targets");
-  expect(vocabDeletePath("instruments", "grasper")).toBe("/api/vocab/instruments/grasper");
+  expect(vocabTriplesPath()).toBe("/api/vocab/triples");
+  expect(vocabTripleDeletePath("grasper", "retract", "gallbladder")).toBe(
+    "/api/vocab/triples?instrument=grasper&verb=retract&target=gallbladder",
+  );
 });
 
 test("missing Frame triplet is unlabeled", () => {
