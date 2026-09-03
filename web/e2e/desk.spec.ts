@@ -251,7 +251,7 @@ test("playback advances without looping; media-chrome owns the transport", async
   await expect(page.locator("video[aria-label='Frame 0']")).toBeVisible();
   await expect.poll(() => page.locator("video").evaluate((el) => (el as HTMLVideoElement).readyState)).toBeGreaterThanOrEqual(1);
   await expect(page.locator("select")).toHaveCount(0);
-  await expect(page.locator("media-time-range")).toHaveCount(0);
+  await expect(page.locator("media-time-range")).toBeVisible();
   await expect(page.getByRole("button", { name: /Playback rate/i })).toBeVisible();
   await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
   await expect(page.getByRole("slider", { name: "Ruler" })).toBeVisible();
@@ -625,7 +625,7 @@ test("labeled Now fills with label color; empty Now does not", async ({ page }) 
   await expect(page.locator('[data-editor-card="triplet"] [data-now] tbody tr')).toHaveCount(0);
 });
 
-test("empty Clip shows Ruler only; chrome has no progress range", async ({ page }) => {
+test("empty Clip shows Ruler only; player keeps chrome progress range", async ({ page }) => {
   await clearClipLabels(page);
   await page.goto("/clips/CLIP_E2E");
   const timeline = page.getByRole("region", { name: "Timeline" });
@@ -635,7 +635,7 @@ test("empty Clip shows Ruler only; chrome has no progress range", async ({ page 
   const editors = page.getByRole("region", { name: "Editors" });
   await expect(timeline).toBeVisible();
   await expect(ruler).toBeVisible();
-  await expect(page.locator("media-time-range")).toHaveCount(0);
+  await expect(page.locator("media-time-range")).toBeVisible();
   await expect(page.locator("media-play-button")).toBeVisible();
   await expect(page.locator("media-time-display")).toBeVisible();
   await expect(page.locator("media-duration-display")).toBeVisible();
@@ -821,7 +821,7 @@ test("video Clip uses video element and seek updates Now", async ({ page }) => {
   await expect(page.getByRole("img")).toHaveCount(0);
   await expect(page.locator("media-control-bar")).toBeVisible();
   await expect(page.locator("select")).toHaveCount(0);
-  await expect(page.locator("media-time-range")).toHaveCount(0);
+  await expect(page.locator("media-time-range")).toBeVisible();
   await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
   const player = page.getByRole("region", { name: "Player", exact: true });
   const clips = page.getByRole("navigation", { name: "Clips" });
