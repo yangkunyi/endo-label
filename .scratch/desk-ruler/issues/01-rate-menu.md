@@ -4,10 +4,14 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Rate control opens a list rather than cycling on click
-- [ ] The list includes `0.25`, `0.5`, `1`, `1.5`, and `2`
-- [ ] Default rate on a newly opened Clip is `1`
-- [ ] jpeg and video Clips share this control
-- [ ] Playwright covers the menu including `0.25`
+- [x] Rate control opens a list rather than cycling on click
+- [x] The list includes `0.25`, `0.5`, `1`, `1.5`, and `2`
+- [x] Default rate on a newly opened Clip is `1`
+- [x] jpeg and video Clips share this control
+- [x] Playwright covers the menu including `0.25`
+
+## Answer
+
+Replaced `MediaPlaybackRateButton` with media-chrome `MediaPlaybackRateMenu` + `MediaPlaybackRateMenuButton` (`rates={[0.25, 0.5, 1, 1.5, 2]}`). Same `VideoPlayer` for jpeg and video. Default stays browser `1`. Playwright: opening the control shows `0.25x` on CLIP_E2E and CLIP_VID; click does not cycle.

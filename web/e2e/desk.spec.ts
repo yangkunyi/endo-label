@@ -232,12 +232,32 @@ test("playback advances without looping; media-chrome owns the transport", async
   await expect(page.locator("video[aria-label='Frame 0']")).toBeVisible();
   await expect.poll(() => page.locator("video").evaluate((el) => (el as HTMLVideoElement).readyState)).toBeGreaterThanOrEqual(1);
   await expect(page.locator("select")).toHaveCount(0);
-  await expect(page.locator("media-playback-rate-button")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Playback rate/i })).toBeVisible();
   await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
 
   await page.locator("video[aria-label='Frame 0']").click();
   await page.keyboard.press("Space");
   await expect(page.locator("video[aria-label='Frame 1']")).toBeVisible();
+});
+
+test("rate menu opens a list including 0.25 on jpeg and video Clips", async ({ page }) => {
+  for (const path of ["/clips/CLIP_E2E", "/clips/CLIP_VID"]) {
+    await page.goto(path);
+    const video = page.locator("video");
+    await expect(video).toBeVisible();
+    await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.readyState)).toBeGreaterThanOrEqual(1);
+    expect(await video.evaluate((el: HTMLVideoElement) => el.playbackRate)).toBe(1);
+    const rate = page.getByRole("button", { name: /Playback rate/i });
+    await expect(rate).toBeVisible();
+    await expect(page.getByRole("menuitemradio", { name: "0.25x" })).toHaveCount(0);
+    await rate.click();
+    expect(await video.evaluate((el: HTMLVideoElement) => el.playbackRate)).toBe(1);
+    await expect(page.getByRole("menuitemradio", { name: "0.25x" })).toBeVisible();
+    await expect(page.getByRole("menuitemradio", { name: "0.5x" })).toBeVisible();
+    await expect(page.getByRole("menuitemradio", { name: "1x" })).toBeVisible();
+    await expect(page.getByRole("menuitemradio", { name: "1.5x" })).toBeVisible();
+    await expect(page.getByRole("menuitemradio", { name: "2x" })).toBeVisible();
+  }
 });
 
 test("jpeg player shows media-chrome transport and Frame print", async ({ page }) => {
