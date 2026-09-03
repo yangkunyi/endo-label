@@ -4,11 +4,17 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Embedded progress bar is gone; other player transport stays
-- [ ] Ruler is flush under the picture; lanes are below it
-- [ ] Empty Clip shows the Ruler only
-- [ ] Timeline row spans Clips+Player; lane-head width follows the Clips rail; bars align with the picture
-- [ ] Playhead drags on the Ruler; stem does not steal bar clicks; bars are not draggable
-- [ ] Playwright covers Ruler seek, empty-Clip Ruler, bar click, and no chrome range
+- [x] Embedded progress bar is gone; other player transport stays
+- [x] Ruler is flush under the picture; lanes are below it
+- [x] Empty Clip shows the Ruler only
+- [x] Timeline row spans Clips+Player; lane-head width follows the Clips rail; bars align with the picture
+- [x] Playhead drags on the Ruler; stem does not steal bar clicks; bars are not draggable
+- [x] Playwright covers Ruler seek, empty-Clip Ruler, bar click, and no chrome range
+
+## Answer
+
+Hid `MediaTimeRange`. Timeline is one row under Clips+Player: lane-heads use `clipRailWidth`, bars sit in the Player column. Always-on Ruler is flush under the picture (outside the lane scroller); empty Clip is Ruler only. Playhead drags on the Ruler (frame-snapped); stem is `pointer-events: none`; bar click seeks to interval start. Playwright: `empty Clip shows Ruler only; chrome has no progress range` and updated playhead drag/bar tests in `web/e2e/desk.spec.ts`.
+
+Commits `c9a9bbc` (geometry + Ruler) and `8deefff` (Ruler stays above scrolling lanes).
