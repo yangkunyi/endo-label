@@ -52,9 +52,13 @@ Disk store of mask silhouettes only (`data/mask/`). Not an umbrella word.
 **Frame Pool**:
 Read-only source media (JPEG Clip folders and video files). This service never writes into the pool. Transcoded JPEG caches live outside it (`data/video-cache/`).
 
+**Ruler**:
+The always-present unlabeled seek track directly under the picture. Not a label lane. An empty Clip has only this track.
+_Avoid_: progress bar; MediaTimeRange; treating an unlabeled dim lane as the seek
+
 **Playhead**:
-The cursor on the timeline showing the current Frame. Draggable to seek, frame-snapped. The timeline under the player carries it; interval bars are not draggable.
-_Avoid_: cursor (text caret); using Playhead to mean the Frame index itself
+The cursor on the Ruler showing the current Frame. Draggable on the Ruler only, frame-snapped. A display-only stem may cross label lanes; interval bars are not draggable.
+_Avoid_: cursor (text caret); using Playhead to mean the Frame index itself; dragging Playhead on interval bars
 
 **Task focus**:
 Which of phase / class / triplet the right rail is editing. One at a time. The other two show as a read-only summary on this Frame. Disk is unchanged: several Task types may exist on the same Frame. mask is not a focus tab.
