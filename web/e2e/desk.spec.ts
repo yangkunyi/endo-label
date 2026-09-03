@@ -85,6 +85,21 @@ async function fillTriplet(page: Page, instrument: string, verb: string, target:
   await row.click();
 }
 
+async function clearClipLabels(page: Page, clipId = "CLIP_E2E") {
+  for (const index of [0, 1]) {
+    await page.request.put(`/api/phase/${clipId}/frames/${index}`, { data: { phase: null } });
+    await page.request.put(`/api/class/${clipId}/frames/${index}`, { data: { tags: [] } });
+  }
+  const tripletDoc = (await (await page.request.get(`/api/triplet/${clipId}`)).json()) as {
+    frames?: Record<string, { id: number }[]>;
+  };
+  for (const [index, rows] of Object.entries(tripletDoc.frames ?? {})) {
+    for (const row of rows) {
+      await page.request.delete(`/api/triplet/${clipId}/frames/${index}/${row.id}`);
+    }
+  }
+}
+
 async function openList(page: Page, editor: "class" | "phase" | "triplet") {
   await focusTask(page, editor);
   const card = page.locator(`[data-editor-card="${editor}"]`);
@@ -589,38 +604,72 @@ test("labeled Now fills with label color; empty Now does not", async ({ page }) 
   await expect(page.locator('[data-editor-card="triplet"] [data-now] tbody tr')).toHaveCount(0);
 });
 
+test("empty Clip shows Ruler only; chrome has no progress range", async ({ page }) => {
+  await clearClipLabels(page);
+  await page.goto("/clips/CLIP_E2E");
+  const timeline = page.getByRole("region", { name: "Timeline" });
+  const ruler = page.getByRole("slider", { name: "Ruler" });
+  const clips = page.getByRole("navigation", { name: "Clips" });
+  const player = page.getByRole("region", { name: "Player", exact: true });
+  const editors = page.getByRole("region", { name: "Editors" });
+  await expect(timeline).toBeVisible();
+  await expect(ruler).toBeVisible();
+  await expect(page.locator("media-time-range")).toHaveCount(0);
+  await expect(page.locator("media-play-button")).toBeVisible();
+  await expect(page.locator("media-time-display")).toBeVisible();
+  await expect(page.locator("media-duration-display")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Playback rate/i })).toBeVisible();
+  await expect(page.locator("media-mute-button")).toBeVisible();
+  await expect(page.locator("media-volume-range")).toBeVisible();
+  await expect(page.locator("media-fullscreen-button")).toBeVisible();
+  await expect(page.locator("[data-timeline-lane]")).toHaveCount(0);
+  await expect(page.locator("[data-timeline-seg]")).toHaveCount(0);
+  await expect(page.locator("[data-lane-head]")).toHaveCount(0);
+  await expect(page.locator('[role="region"][aria-label="Editors"] [data-timeline]')).toHaveCount(0);
+  const clipsBox = await clips.boundingBox();
+  const playerBox = await player.boundingBox();
+  const timelineBox = await timeline.boundingBox();
+  const editorsBox = await editors.boundingBox();
+  expect(clipsBox && playerBox && timelineBox && editorsBox).toBeTruthy();
+  expect(timelineBox!.y).toBeGreaterThanOrEqual(playerBox!.y + playerBox!.height - 1);
+  expect(Math.abs(timelineBox!.x - clipsBox!.x)).toBeLessThan(2);
+  expect(Math.abs(timelineBox!.x + timelineBox!.width - (playerBox!.x + playerBox!.width))).toBeLessThan(2);
+  expect(timelineBox!.x + timelineBox!.width).toBeLessThanOrEqual(editorsBox!.x + 1);
+});
+
 test("timeline playhead drags frame-snapped; bars are display-only", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   const timeline = page.getByRole("region", { name: "Timeline" });
   await expect(timeline).toBeVisible();
   const player = page.getByRole("region", { name: "Player", exact: true });
+  const clips = page.getByRole("navigation", { name: "Clips" });
   await expect(page.locator('[role="region"][aria-label="Editors"] [data-timeline]')).toHaveCount(0);
   await expect(player.locator("[data-timeline]")).toHaveCount(0);
   const playerBox = await player.boundingBox();
   const timelineBox = await timeline.boundingBox();
+  const clipsBox = await clips.boundingBox();
   expect(playerBox).not.toBeNull();
   expect(timelineBox).not.toBeNull();
+  expect(clipsBox).not.toBeNull();
   expect(timelineBox!.y).toBeGreaterThanOrEqual(playerBox!.y + playerBox!.height - 1);
-  expect(Math.abs(timelineBox!.width - playerBox!.width)).toBeLessThan(2);
+  expect(Math.abs(timelineBox!.x - clipsBox!.x)).toBeLessThan(2);
+  expect(Math.abs(timelineBox!.x + timelineBox!.width - (playerBox!.x + playerBox!.width))).toBeLessThan(2);
   const video = page.locator("video");
   await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.readyState)).toBeGreaterThanOrEqual(1);
   const playhead = page.locator("[data-playhead]");
+  const ruler = page.getByRole("slider", { name: "Ruler" });
   await expect(playhead).toBeVisible();
-  const box = await page.locator("[data-timeline-track]").boundingBox();
+  await expect(ruler).toBeVisible();
+  const box = await ruler.boundingBox();
   expect(box).not.toBeNull();
-  const grabPlayhead = async () => {
-    const playheadBox = await playhead.boundingBox();
-    expect(playheadBox).not.toBeNull();
-    await page.mouse.move(playheadBox!.x + playheadBox!.width / 2, playheadBox!.y + playheadBox!.height / 2);
-  };
-  // drag playhead to ~90%: frame 1 of 2
-  await grabPlayhead();
+  // drag Ruler to ~90%: frame 1 of 2
+  await page.mouse.move(box!.x + box!.width * 0.1, box!.y + box!.height / 2);
   await page.mouse.down();
   await page.mouse.move(box!.x + box!.width * 0.9, box!.y + box!.height / 2);
   await page.mouse.up();
   await expect(page.getByText("Frame 1 of 2")).toBeVisible();
   // drag back to ~10%: frame 0
-  await grabPlayhead();
+  await page.mouse.move(box!.x + box!.width * 0.9, box!.y + box!.height / 2);
   await page.mouse.down();
   await page.mouse.move(box!.x + box!.width * 0.1, box!.y + box!.height / 2);
   await page.mouse.up();
@@ -632,12 +681,26 @@ test("timeline playhead drags frame-snapped; bars are display-only", async ({ pa
   const bar = page.getByRole("button", { name: "DragPhase 0–0" });
   await expect(bar).toBeVisible();
   await expect(bar).not.toHaveAttribute("draggable", "true");
+  const head = page.locator("[data-lane-head]").filter({ hasText: "DragPhase" });
+  const headBox = await head.boundingBox();
+  const trackBox = await page.locator("[data-timeline-track]").boundingBox();
+  expect(headBox).not.toBeNull();
+  expect(trackBox).not.toBeNull();
+  expect(Math.abs(headBox!.width - clipsBox!.width)).toBeLessThan(2);
+  expect(Math.abs(trackBox!.x - playerBox!.x)).toBeLessThan(2);
   const barBox = await bar.boundingBox();
   expect(barBox).not.toBeNull();
   await page.mouse.move(barBox!.x + barBox!.width / 2, barBox!.y + barBox!.height / 2);
   await page.mouse.down();
   await page.mouse.move(box!.x + box!.width * 0.9, barBox!.y + barBox!.height / 2);
   await page.mouse.up();
+  await expect(page.getByText("Frame 0 of 2")).toBeVisible();
+  await page.mouse.move(box!.x + box!.width * 0.9, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + box!.width * 0.9, box!.y + box!.height / 2);
+  await page.mouse.up();
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  await bar.click();
   await expect(page.getByText("Frame 0 of 2")).toBeVisible();
 });
 
@@ -737,10 +800,12 @@ test("video Clip uses video element and seek updates Now", async ({ page }) => {
   await expect(page.getByRole("img")).toHaveCount(0);
   await expect(page.locator("media-control-bar")).toBeVisible();
   await expect(page.locator("select")).toHaveCount(0);
+  await expect(page.locator("media-time-range")).toHaveCount(0);
   await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
   const player = page.getByRole("region", { name: "Player", exact: true });
   const timeline = page.getByRole("region", { name: "Timeline" });
   await expect(timeline).toBeVisible();
+  await expect(page.getByRole("slider", { name: "Ruler" })).toBeVisible();
   await expect(page.locator("[data-playhead]")).toBeVisible();
   const playerBox = await player.boundingBox();
   const timelineBox = await timeline.boundingBox();

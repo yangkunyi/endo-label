@@ -8,7 +8,6 @@ import {
   MediaMuteButton,
   MediaPlayButton,
   MediaTimeDisplay,
-  MediaTimeRange,
   MediaVolumeRange,
 } from "media-chrome/react";
 import {
@@ -55,7 +54,6 @@ export function VideoPlayer({
         <MediaPlaybackRateMenu hidden anchor="auto" rates={[0.25, 0.5, 1, 1.5, 2]} />
         <MediaControlBar className="px-2">
           <MediaPlayButton />
-          <MediaTimeRange style={{ flex: 1 }} />
           <MediaTimeDisplay />
           <MediaDurationDisplay />
           <MediaPlaybackRateMenuButton />
