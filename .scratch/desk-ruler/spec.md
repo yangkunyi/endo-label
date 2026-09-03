@@ -1,4 +1,4 @@
-Status: specified — tickets 01–05 ready-for-agent
+Status: specified — tickets 01–05 resolved
 
 # Spec: Ruler under the picture, Now fills, rate menu
 
