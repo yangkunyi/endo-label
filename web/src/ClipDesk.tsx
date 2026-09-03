@@ -569,77 +569,82 @@ function TimelineBand({
 
   return (
     <div role="region" aria-label="Timeline" data-timeline="" className="shrink-0 border-t border-border bg-card select-none">
-      <div className="max-h-44 overflow-y-auto [scrollbar-color:var(--color-border)_transparent] [scrollbar-width:thin]">
-        <div className="flex">
-          <div className="flex shrink-0 flex-col border-r border-border" style={{ width: clipRailWidth }}>
-            <div className="h-3 shrink-0" />
-            {lanes.map((lane) => (
-              <div key={lane.key} className="flex h-6 shrink-0 items-center gap-1.5 px-2" data-lane-head title={lane.key}>
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: labelColor(lane.key) }} />
-                <span className="truncate text-[11px] leading-none text-foreground">{lane.key}</span>
-              </div>
-            ))}
-          </div>
-          <div className="w-1 shrink-0" />
-          <div ref={trackRef} className="relative min-w-0 flex-1" data-timeline-track="">
-            <div
-              role="slider"
-              aria-label="Ruler"
-              aria-valuemin={0}
-              aria-valuemax={Math.max(0, frameCount - 1)}
-              aria-valuenow={frameIndex}
-              aria-valuetext={`Frame ${frameIndex}`}
-              data-ruler=""
-              className="relative h-3 touch-none cursor-ew-resize"
-              onPointerDown={(event) => {
-                event.preventDefault();
-                dragging.current = true;
-                event.currentTarget.setPointerCapture(event.pointerId);
+      <div className="flex">
+        <div className="h-3 shrink-0 border-r border-border" style={{ width: clipRailWidth }} />
+        <div className="w-1 shrink-0" />
+        <div ref={trackRef} className="relative min-w-0 flex-1" data-timeline-track="">
+          <div
+            role="slider"
+            aria-label="Ruler"
+            aria-valuemin={0}
+            aria-valuemax={Math.max(0, frameCount - 1)}
+            aria-valuenow={frameIndex}
+            aria-valuetext={`Frame ${frameIndex}`}
+            data-ruler=""
+            className="relative h-3 touch-none cursor-ew-resize"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              dragging.current = true;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              seekFromClientX(event.clientX);
+            }}
+            onPointerMove={(event) => {
+              if (dragging.current) {
                 seekFromClientX(event.clientX);
-              }}
-              onPointerMove={(event) => {
-                if (dragging.current) {
-                  seekFromClientX(event.clientX);
-                }
-              }}
-              onPointerUp={stopDrag}
-              onPointerCancel={stopDrag}
-            >
-              <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
-            </div>
-            {lanes.map((lane) => (
-              <div key={lane.key} className="relative h-6" data-timeline-lane={lane.key}>
-                {lane.segs.map((seg) => {
-                  const unlabeled = seg.label == null;
-                  return (
-                    <button
-                      key={`${lane.key}-${seg.start}`}
-                      type="button"
-                      draggable={false}
-                      data-timeline-seg=""
-                      data-unlabeled={unlabeled ? "true" : undefined}
-                      data-label-color={seg.label ? labelColor(seg.label) : undefined}
-                      aria-label={unlabeled ? `unlabeled ${seg.start}–${seg.end}` : `${seg.label} ${seg.start}–${seg.end}`}
-                      title={seg.label ?? "unlabeled"}
-                      className={`absolute bottom-1 top-1 box-border cursor-pointer border-r border-black/50 rounded ${unlabeled ? "bg-white/10" : ""}`}
-                      style={{
-                        left: `${(seg.start / frameCount) * 100}%`,
-                        width: `${((seg.end - seg.start + 1) / frameCount) * 100}%`,
-                        backgroundColor: seg.label ? labelColor(seg.label) : undefined,
-                      }}
-                      onClick={() => onSeek(seg.start)}
-                    />
-                  );
-                })}
-              </div>
-            ))}
-            <div className="pointer-events-none absolute bottom-0 top-0 z-10 w-3 -translate-x-1/2" style={{ left: playheadLeft }}>
-              <span data-playhead="" aria-hidden="true" className="absolute left-1/2 top-0.5 h-2 w-2 -translate-x-1/2 rounded-full bg-[#5e6ad2]" />
-              <span aria-hidden="true" className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-[#5e6ad2]" />
-            </div>
+              }
+            }}
+            onPointerUp={stopDrag}
+            onPointerCancel={stopDrag}
+          >
+            <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
+            <span data-playhead="" aria-hidden="true" className="pointer-events-none absolute top-0.5 h-2 w-2 -translate-x-1/2 rounded-full bg-[#5e6ad2]" style={{ left: playheadLeft }} />
           </div>
         </div>
       </div>
+      {lanes.length > 0 ? (
+        <div className="max-h-44 overflow-y-auto [scrollbar-color:var(--color-border)_transparent] [scrollbar-width:thin]">
+          <div className="flex">
+            <div className="flex shrink-0 flex-col border-r border-border" style={{ width: clipRailWidth }}>
+              {lanes.map((lane) => (
+                <div key={lane.key} className="flex h-6 shrink-0 items-center gap-1.5 px-2" data-lane-head title={lane.key}>
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: labelColor(lane.key) }} />
+                  <span className="truncate text-[11px] leading-none text-foreground">{lane.key}</span>
+                </div>
+              ))}
+            </div>
+            <div className="w-1 shrink-0" />
+            <div className="relative min-w-0 flex-1">
+              {lanes.map((lane) => (
+                <div key={lane.key} className="relative h-6" data-timeline-lane={lane.key}>
+                  {lane.segs.map((seg) => {
+                    const unlabeled = seg.label == null;
+                    return (
+                      <button
+                        key={`${lane.key}-${seg.start}`}
+                        type="button"
+                        draggable={false}
+                        data-timeline-seg=""
+                        data-unlabeled={unlabeled ? "true" : undefined}
+                        data-label-color={seg.label ? labelColor(seg.label) : undefined}
+                        aria-label={unlabeled ? `unlabeled ${seg.start}–${seg.end}` : `${seg.label} ${seg.start}–${seg.end}`}
+                        title={seg.label ?? "unlabeled"}
+                        className={`absolute bottom-1 top-1 box-border cursor-pointer border-r border-black/50 rounded ${unlabeled ? "bg-white/10" : ""}`}
+                        style={{
+                          left: `${(seg.start / frameCount) * 100}%`,
+                          width: `${((seg.end - seg.start + 1) / frameCount) * 100}%`,
+                          backgroundColor: seg.label ? labelColor(seg.label) : undefined,
+                        }}
+                        onClick={() => onSeek(seg.start)}
+                      />
+                    );
+                  })}
+                </div>
+              ))}
+              <div className="pointer-events-none absolute bottom-0 top-0 z-10 w-px -translate-x-1/2 bg-[#5e6ad2]" style={{ left: playheadLeft }} />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
