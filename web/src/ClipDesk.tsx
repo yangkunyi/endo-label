@@ -1209,10 +1209,10 @@ function TripletEditor({
           {nowRows.map((row) => {
             const key = tripleIdentity(row);
             return (
-              <tr key={row.id} data-label-color={labelColor(key)} style={nowFillStyle(key)}>
-                <td className="truncate px-1">{row.instrument}</td>
-                <td className="truncate px-1">{row.verb}</td>
-                <td className="truncate px-1">{row.target}</td>
+              <tr key={row.id} data-label-color={labelColor(key)}>
+                <td className="truncate px-1" style={nowFillStyle(key)}>{row.instrument}</td>
+                <td className="truncate px-1" style={nowFillStyle(key)}>{row.verb}</td>
+                <td className="truncate px-1" style={nowFillStyle(key)}>{row.target}</td>
               </tr>
             );
           })}

@@ -578,7 +578,7 @@ test("labeled Now fills with label color; empty Now does not", async ({ page }) 
   await expect(tripletNow).toContainText("FillTool");
   const tripletBar = page.getByRole("button", { name: "FillTool / FillAct / FillOrg 0–0" });
   await expect(tripletBar).toBeVisible();
-  const tripletFill = await cssBackground(tripletNow);
+  const tripletFill = await cssBackground(tripletNow.locator("td").first());
   expect(tripletFill).toBe(await cssBackground(tripletBar));
   expect(
     await cssBackground(
