@@ -63,3 +63,15 @@ _Avoid_: cursor (text caret); using Playhead to mean the Frame index itself; dra
 **Task focus**:
 Which of phase / class / triplet the right rail is editing. One at a time. The other two show as a read-only summary on this Frame. Disk is unchanged: several Task types may exist on the same Frame. mask is not a focus tab.
 _Avoid_: hiding another kind’s stored labels; exclusive stores; using focus to mean Session
+
+**Editor Card**:
+A bounded panel in the right rail (one for **Now**, one for **Library**) with a subtle surface background, hairline border, and header count badge.
+_Avoid_: bare unbordered text headings with plain `<hr>` dividers
+
+**Library Selection**:
+The visual state of a Library row when its identity is present on the current Frame: a soft semantic-tint background, subtle border, and a checkmark (`✓`) indicator.
+_Avoid_: aggressive indigo stripe / scale rings; unselected-indistinguishable dark fills
+
+**Triplet Grid**:
+The structured three-column table for exact triples (instrument, verb, target) with vertical hairline dividers (`divide-x`) between cells, supporting inline editing inside each cell.
+_Avoid_: unseparated text columns running together without grid lines
