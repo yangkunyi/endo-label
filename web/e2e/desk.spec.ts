@@ -957,3 +957,38 @@ test("double-clicking a Vocab triple cell rewrites desk-wide; collision is refus
   }).toBe(true);
 });
 
+test("e2e closeout: span paint preserves Vocab, Now read-only, Library trash works after span", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await pickName(page, "class", "CloseoutClass");
+  await expect(page.locator("[data-paint-chip]")).toHaveText("class: CloseoutClass");
+  await page.getByRole("button", { name: "Mark from" }).click();
+  await scrubToFrame(page, 1);
+  await page.getByRole("button", { name: "Apply to frames 0–1" }).click();
+
+  // Span wrote frames 0-1
+  await expect.poll(async () => await clipFrames(page, "class")).toMatchObject({
+    "0": expect.arrayContaining(["CloseoutClass"]),
+    "1": expect.arrayContaining(["CloseoutClass"]),
+  });
+
+  // Vocab name still in Library
+  await focusTask(page, "class");
+  const libRow = page.getByRole("list", { name: "Library" }).getByRole("button", { name: "CloseoutClass", exact: true });
+  await expect(libRow).toBeVisible();
+
+  // Now is read-only (not a button)
+  await expect(page.locator("[data-now]").getByText("CloseoutClass")).toBeVisible();
+  await expect(page.locator("[data-now]").getByRole("button", { name: "CloseoutClass" })).toHaveCount(0);
+
+  // Trash from Library confirms then removes desk-wide
+  const trashBtn = page.getByRole("list", { name: "Library" }).getByRole("button", { name: "Delete class tag CloseoutClass" });
+  page.once("dialog", (dialog) => dialog.accept());
+  await trashBtn.click();
+
+  await expect(libRow).toHaveCount(0);
+  await expect.poll(async () => {
+    const frames = (await clipFrames(page, "class")) as Record<string, string[]>;
+    return (frames["0"] ?? []).includes("CloseoutClass") || (frames["1"] ?? []).includes("CloseoutClass");
+  }).toBe(false);
+});
+

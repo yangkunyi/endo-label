@@ -1,4 +1,4 @@
-Status: specified — tickets 01–04 ready-for-agent
+Status: specified — tickets 01–04 resolved
 
 # Spec: Library toggle, Vocab delete on the row, exact-triple table
 
