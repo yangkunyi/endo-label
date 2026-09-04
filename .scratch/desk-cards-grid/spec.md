@@ -6,8 +6,8 @@ Parents: `.scratch/desk-vocab-library/spec.md`, `.scratch/desk-ruler/spec.md`. D
 
 ## Tickets
 
-- [01 — Dual Editor Cards and soft Library selection](issues/01-dual-cards-and-soft-selection.md) (`ready-for-agent`, unblocked)
-- [02 — Triplet hairline grid, in-cell edit, and Now capsule](issues/02-triplet-grid-and-now-capsule.md) (`ready-for-agent`, blocked by 01)
+- [01 — Dual Editor Cards and soft Library selection](issues/01-dual-cards-and-soft-selection.md) (`resolved`)
+- [02 — Triplet hairline grid, in-cell edit, and Now capsule](issues/02-triplet-grid-and-now-capsule.md) (`ready-for-agent`, unblocked)
 - [03 — Full desk e2e closeout](issues/03-e2e-closeout.md) (`ready-for-agent`, blocked by 01, 02)
 
 ## Problem Statement
