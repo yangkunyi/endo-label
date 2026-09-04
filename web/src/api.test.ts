@@ -22,6 +22,7 @@ import {
   vocabListPath,
   vocabRenamePath,
   vocabTripleDeletePath,
+  vocabTripleRenamePath,
   vocabTriplesPath,
 } from "./api";
 
@@ -101,6 +102,7 @@ test("triplet paths match compose HTTP", () => {
   expect(tripletSpanPath("CLIPA")).toBe("/api/triplet/CLIPA/span");
   expect(tripletRowPath("CLIPA", 0, 2)).toBe("/api/triplet/CLIPA/frames/0/2");
   expect(vocabTriplesPath()).toBe("/api/vocab/triples");
+  expect(vocabTripleRenamePath()).toBe("/api/vocab/triples/rename");
   expect(vocabTripleDeletePath("grasper", "retract", "gallbladder")).toBe(
     "/api/vocab/triples?instrument=grasper&verb=retract&target=gallbladder",
   );

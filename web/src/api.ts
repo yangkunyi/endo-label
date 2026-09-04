@@ -114,6 +114,10 @@ export function vocabTriplesPath(): string {
   return "/api/vocab/triples";
 }
 
+export function vocabTripleRenamePath(): string {
+  return "/api/vocab/triples/rename";
+}
+
 export function vocabTripleDeletePath(
   instrument: string,
   verb: string,

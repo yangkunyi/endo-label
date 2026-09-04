@@ -29,6 +29,13 @@ class VocabTripleBody(BaseModel):
     target: str = Field(..., min_length=1)
 
 
+class VocabTripleRenameBody(BaseModel):
+    from_triple: VocabTripleBody = Field(..., alias="from")
+    to_triple: VocabTripleBody = Field(..., alias="to")
+
+    model_config = {"populate_by_name": True}
+
+
 def make_router(settings: Settings) -> APIRouter:
     router = APIRouter(tags=["vocab"])
 
@@ -71,6 +78,31 @@ def make_router(settings: Settings) -> APIRouter:
                 detail=f"unknown triple: {instrument} / {verb} / {target}",
             )
         return labels_store.delete_vocab_triple(settings, instrument, verb, target)
+
+    @router.post("/api/vocab/triples/rename")
+    def rename_triple(body: VocabTripleRenameBody) -> dict:
+        from_inst, from_verb, from_targ = _stripped_triple(body.from_triple)
+        to_inst, to_verb, to_targ = _stripped_triple(body.to_triple)
+        vocab = labels_store.load_vocab(settings)
+        if not labels_store.vocab_has_triple(vocab, from_inst, from_verb, from_targ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown triple: {from_inst} / {from_verb} / {from_targ}",
+            )
+        try:
+            return labels_store.rename_vocab_triple(
+                settings,
+                from_inst,
+                from_verb,
+                from_targ,
+                to_inst,
+                to_verb,
+                to_targ,
+            )
+        except labels_store.TripletFrameCollision as err:
+            raise HTTPException(status_code=409, detail=str(err)) from None
+        except ValueError as err:
+            raise HTTPException(status_code=409, detail=str(err)) from None
 
     @router.post("/api/vocab/{list_name}")
     def add_name(list_name: str, body: VocabAddBody) -> dict:

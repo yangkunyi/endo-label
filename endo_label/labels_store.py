@@ -11,6 +11,10 @@ from endo_label.config import Settings
 
 KINDS = ("phase", "class", "triplet")
 RENAME_LISTS = {"phases": "phase", "class_tags": "class"}
+class TripletFrameCollision(Exception):
+    """Renaming a triple would duplicate an exact triple on a Frame."""
+
+
 _COLUMN_LISTS = ("instruments", "verbs", "targets")
 _DEFAULT_VOCAB = {
     "phases": [],
@@ -278,4 +282,68 @@ def delete_vocab_triple(settings: Settings, instrument: str, verb: str, target: 
         "triplet",
         lambda frames: _drop_triple_from_frames(frames, instrument, verb, target),
     )
+    return _commit_rewritten_clips_and_vocab(settings, pending, vocab)
+
+
+def rename_vocab_triple(
+    settings: Settings,
+    from_inst: str,
+    from_verb: str,
+    from_target: str,
+    to_inst: str,
+    to_verb: str,
+    to_target: str,
+) -> dict[str, Any]:
+    """Rename one exact triple and rewrite every matching triplet row across Clips.
+
+    If any Frame would hold two identical triples after rewrite, TripletFrameCollision is raised
+    and no files are changed.
+    If the target triple already exists in Vocab, ValueError is raised.
+    Clip files are written first, then vocab. On failure, modified Clip files are restored.
+    """
+    vocab = load_vocab(settings)
+    triples = list(vocab.get("triples") or [])
+    from_idx = -1
+    for idx, row in enumerate(triples):
+        if _same_triple(row, from_inst, from_verb, from_target):
+            from_idx = idx
+            break
+    if from_idx < 0:
+        raise KeyError((from_inst, from_verb, from_target))
+
+    if (from_inst, from_verb, from_target) == (to_inst, to_verb, to_target):
+        return vocab
+
+    for path in _kind_json_paths(settings, "triplet"):
+        data = _read(path, {"clip_id": path.stem, "frames": {}})
+        for frame_key, rows in (data.get("frames") or {}).items():
+            from_count = sum(1 for row in (rows or []) if _same_triple(row, from_inst, from_verb, from_target))
+            to_count = sum(1 for row in (rows or []) if _same_triple(row, to_inst, to_verb, to_target))
+            if from_count > 0 and (to_count > 0 or from_count > 1):
+                raise TripletFrameCollision(f"Frame {frame_key} would hold duplicate triple")
+
+    if vocab_has_triple(vocab, to_inst, to_verb, to_target):
+        raise ValueError(f"already present: {to_inst} / {to_verb} / {to_target}")
+
+    triples[from_idx] = {"instrument": to_inst, "verb": to_verb, "target": to_target}
+    vocab["triples"] = triples
+
+    def _rewrite_frames(frames: dict[str, Any]) -> dict[str, Any]:
+        rewritten: dict[str, Any] = {}
+        for key, rows in frames.items():
+            new_rows: list[dict[str, Any]] = []
+            for row in rows or []:
+                if _same_triple(row, from_inst, from_verb, from_target):
+                    new_rows.append({
+                        "id": row.get("id"),
+                        "instrument": to_inst,
+                        "verb": to_verb,
+                        "target": to_target,
+                    })
+                else:
+                    new_rows.append(row)
+            rewritten[key] = new_rows
+        return rewritten
+
+    pending = _pending_clip_rewrites(settings, "triplet", _rewrite_frames)
     return _commit_rewritten_clips_and_vocab(settings, pending, vocab)

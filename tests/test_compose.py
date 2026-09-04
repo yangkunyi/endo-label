@@ -1546,6 +1546,145 @@ def test_triplet_list_rename_is_rejected_and_leaves_rows(two_clips: TestClient) 
     assert client.get("/api/triplet/CLIPA").json()["frames"]["0"][0]["instrument"] == "grasper"
 
 
+def test_triplet_cell_rename_rewrites_every_clip(two_clips: TestClient) -> None:
+    client = two_clips
+    _add_triples(client, _GRASPER_RETRACT_GB, ("hook", "cut", "cystic-duct"))
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "hook", "verb": "cut", "target": "cystic-duct"},
+    )
+    client.post(
+        "/api/triplet/CLIPA/frames/1",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    client.post(
+        "/api/triplet/CLIPB/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+
+    renamed = client.post(
+        "/api/vocab/triples/rename",
+        json={
+            "from": {"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+            "to": {"instrument": "bipolar", "verb": "retract", "target": "gallbladder"},
+        },
+    )
+    assert renamed.status_code == 200
+    triples = renamed.json()["triples"]
+    assert {"instrument": "bipolar", "verb": "retract", "target": "gallbladder"} in triples
+    assert {"instrument": "grasper", "verb": "retract", "target": "gallbladder"} not in triples
+    assert client.get("/api/vocab").json()["triples"] == triples
+
+    clip_a = client.get("/api/triplet/CLIPA").json()["frames"]
+    assert clip_a["0"] == [
+        {"id": 1, "instrument": "bipolar", "verb": "retract", "target": "gallbladder"},
+        {"id": 2, "instrument": "hook", "verb": "cut", "target": "cystic-duct"},
+    ]
+    assert clip_a["1"] == [
+        {"id": 1, "instrument": "bipolar", "verb": "retract", "target": "gallbladder"},
+    ]
+    clip_b = client.get("/api/triplet/CLIPB").json()["frames"]
+    assert clip_b["0"] == [
+        {"id": 1, "instrument": "bipolar", "verb": "retract", "target": "gallbladder"},
+    ]
+
+
+def test_triplet_cell_rename_rejects_blank_and_unknown(two_clips: TestClient) -> None:
+    client = two_clips
+    _add_triples(client, _GRASPER_RETRACT_GB)
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    before_vocab = client.get("/api/vocab").json()["triples"]
+    before_frames = client.get("/api/triplet/CLIPA").json()["frames"]
+
+    blank = client.post(
+        "/api/vocab/triples/rename",
+        json={
+            "from": {"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+            "to": {"instrument": "   ", "verb": "retract", "target": "gallbladder"},
+        },
+    )
+    assert blank.status_code == 400
+    assert blank.json()["detail"] == "empty name"
+
+    unknown = client.post(
+        "/api/vocab/triples/rename",
+        json={
+            "from": {"instrument": "jaw", "verb": "retract", "target": "gallbladder"},
+            "to": {"instrument": "bipolar", "verb": "retract", "target": "gallbladder"},
+        },
+    )
+    assert unknown.status_code == 400
+    assert "unknown triple" in unknown.json()["detail"]
+
+    assert client.get("/api/vocab").json()["triples"] == before_vocab
+    assert client.get("/api/triplet/CLIPA").json()["frames"] == before_frames
+
+
+def test_triplet_cell_rename_collision_on_frame_is_refused_and_leaves_frames_unchanged(two_clips: TestClient) -> None:
+    client = two_clips
+    _add_triples(client, _GRASPER_RETRACT_GB, ("hook", "retract", "gallbladder"))
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "hook", "verb": "retract", "target": "gallbladder"},
+    )
+    before_vocab = client.get("/api/vocab").json()["triples"]
+    before_clip_a = client.get("/api/triplet/CLIPA").json()["frames"]
+
+    refused = client.post(
+        "/api/vocab/triples/rename",
+        json={
+            "from": {"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+            "to": {"instrument": "hook", "verb": "retract", "target": "gallbladder"},
+        },
+    )
+    assert refused.status_code == 409
+    assert "duplicate triple" in refused.json()["detail"]
+
+    assert client.get("/api/vocab").json()["triples"] == before_vocab
+    assert client.get("/api/triplet/CLIPA").json()["frames"] == before_clip_a
+
+
+def test_triplet_cell_rename_duplicate_in_vocab_refuses_without_change(two_clips: TestClient) -> None:
+    client = two_clips
+    _add_triples(client, _GRASPER_RETRACT_GB, ("hook", "retract", "gallbladder"))
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    client.post(
+        "/api/triplet/CLIPB/frames/0",
+        json={"instrument": "hook", "verb": "retract", "target": "gallbladder"},
+    )
+    before_vocab = client.get("/api/vocab").json()["triples"]
+    before_clip_a = client.get("/api/triplet/CLIPA").json()["frames"]
+    before_clip_b = client.get("/api/triplet/CLIPB").json()["frames"]
+
+    refused = client.post(
+        "/api/vocab/triples/rename",
+        json={
+            "from": {"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+            "to": {"instrument": "hook", "verb": "retract", "target": "gallbladder"},
+        },
+    )
+    assert refused.status_code == 409
+    assert "already present" in refused.json()["detail"]
+
+    assert client.get("/api/vocab").json()["triples"] == before_vocab
+    assert client.get("/api/triplet/CLIPA").json()["frames"] == before_clip_a
+    assert client.get("/api/triplet/CLIPB").json()["frames"] == before_clip_b
+
+
 def test_phase_delete_rewrites_every_clip_of_that_kind(two_clips: TestClient) -> None:
     client = two_clips
     _add_names(client, phases=["Preparation", "Clipping and cutting"], class_tags="grasper")
@@ -1905,6 +2044,48 @@ def test_vocab_triple_delete_restores_clips_on_half_failure(
         client.delete(
             "/api/vocab/triples",
             params={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+        )
+    assert client.get("/api/vocab").json()["triples"] == [
+        {"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    ]
+    assert client.get("/api/triplet/CLIPA").json()["frames"]["0"][0]["instrument"] == "grasper"
+    assert client.get("/api/triplet/CLIPB").json()["frames"]["1"][0]["instrument"] == "grasper"
+
+
+def test_vocab_triple_rename_restores_clips_on_half_failure(
+    two_clips: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = two_clips
+    _add_triples(client, _GRASPER_RETRACT_GB)
+    client.post(
+        "/api/triplet/CLIPA/frames/0",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+    client.post(
+        "/api/triplet/CLIPB/frames/1",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    )
+
+    from endo_label import labels_store
+
+    original = labels_store._write
+    clip_writes = {"n": 0}
+
+    def flaky(path: Path, data: dict) -> None:
+        if path.parent.name == "triplet":
+            clip_writes["n"] += 1
+            if clip_writes["n"] >= 2:
+                raise OSError("disk full")
+        original(path, data)
+
+    monkeypatch.setattr(labels_store, "_write", flaky)
+    with pytest.raises(OSError, match="disk full"):
+        client.post(
+            "/api/vocab/triples/rename",
+            json={
+                "from": {"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+                "to": {"instrument": "bipolar", "verb": "retract", "target": "gallbladder"},
+            },
         )
     assert client.get("/api/vocab").json()["triples"] == [
         {"instrument": "grasper", "verb": "retract", "target": "gallbladder"},

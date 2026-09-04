@@ -82,7 +82,9 @@ async function fillTriplet(page: Page, instrument: string, verb: string, target:
     await page.getByRole("button", { name: "Add triplet row" }).click();
     await expect(row).toBeVisible();
   }
+  const wasOn = await row.getAttribute("aria-pressed");
   await row.click();
+  await expect(row).toHaveAttribute("aria-pressed", wasOn === "true" ? "false" : "true");
 }
 
 async function clearClipLabels(page: Page, clipId = "CLIP_E2E") {
@@ -904,3 +906,54 @@ test("video Clip uses video element and seek updates Now", async ({ page }) => {
   await expect(page.getByRole("tabpanel").getByRole("paragraph").filter({ hasText: /^unlabeled$/ })).toBeVisible();
   await expect.poll(async () => await clipFrames(page, "phase", "CLIP_VID")).toMatchObject({ "0": "VidPhase" });
 });
+
+test("double-clicking a Vocab triple cell rewrites desk-wide; collision is refused", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await fillTriplet(page, "RenameTool", "RenameAct", "RenameOrg");
+  await page.goto("/clips/CLIP_E2E_B");
+  await fillTriplet(page, "RenameTool", "RenameAct", "RenameOrg");
+
+  await focusTask(page, "triplet");
+  const rowA = page
+    .getByRole("table", { name: "Library" })
+    .getByRole("button", { name: "RenameTool / RenameAct / RenameOrg", exact: true });
+  await rowA.getByText("RenameAct", { exact: true }).dblclick();
+  const input = page.getByRole("textbox", { name: "Rename verb" });
+  await expect(input).toBeVisible();
+  await input.fill("RenamedAct");
+  await input.press("Enter");
+
+  const renamedRow = page
+    .getByRole("table", { name: "Library" })
+    .getByRole("button", { name: "RenameTool / RenamedAct / RenameOrg", exact: true });
+  await expect(renamedRow).toBeVisible();
+
+  await expect.poll(async () => {
+    const framesB = (await clipFrames(page, "triplet", "CLIP_E2E_B")) as Record<string, { instrument: string; verb: string; target: string }[]>;
+    return (framesB["0"] ?? []).some((r) => r.instrument === "RenameTool" && r.verb === "RenamedAct" && r.target === "RenameOrg");
+  }).toBe(true);
+
+  await expect.poll(async () => {
+    const framesA = (await clipFrames(page, "triplet", "CLIP_E2E")) as Record<string, { instrument: string; verb: string; target: string }[]>;
+    return (framesA["0"] ?? []).some((r) => r.instrument === "RenameTool" && r.verb === "RenamedAct" && r.target === "RenameOrg");
+  }).toBe(true);
+
+  // Collision refusal: add second triple to same frame, then try renaming it to the first
+  await fillTriplet(page, "RenameTool", "CollideAct", "RenameOrg");
+  const collideRow = page
+    .getByRole("table", { name: "Library" })
+    .getByRole("button", { name: "RenameTool / CollideAct / RenameOrg", exact: true });
+  await collideRow.getByText("CollideAct", { exact: true }).dblclick();
+  const collideInput = page.getByRole("textbox", { name: "Rename verb" });
+  await expect(collideInput).toBeVisible();
+  await collideInput.fill("RenamedAct");
+  await collideInput.press("Enter");
+
+  await expect(page.locator("[data-editor-card='triplet']").getByText(/would hold duplicate triple/i)).toBeVisible();
+
+  await expect.poll(async () => {
+    const framesB = (await clipFrames(page, "triplet", "CLIP_E2E_B")) as Record<string, { instrument: string; verb: string; target: string }[]>;
+    return (framesB["0"] ?? []).some((r) => r.instrument === "RenameTool" && r.verb === "CollideAct" && r.target === "RenameOrg");
+  }).toBe(true);
+});
+

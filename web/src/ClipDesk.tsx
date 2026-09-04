@@ -25,6 +25,7 @@ import {
   vocabPath,
   vocabRenamePath,
   vocabTripleDeletePath,
+  vocabTripleRenamePath,
   vocabTriplesPath,
   type ClassDoc,
   type ClipListResponse,
@@ -1046,8 +1047,22 @@ function TripletEditor({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState({ instrument: "", verb: "", target: "" });
+  const [renameCell, setRenameCell] = useState<{
+    row: VocabTriple;
+    slot: "instrument" | "verb" | "target";
+  } | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const clickTimer = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (clickTimer.current != null) {
+      window.clearTimeout(clickTimer.current);
+    }
+  }, []);
+
   useEffect(() => {
     setDraft({ instrument: "", verb: "", target: "" });
+    setRenameCell(null);
   }, [clipId]);
   const nowRows = frameTripletRows(tripletFrames, frameIndex);
   const onKeys = new Set(nowRows.map(tripleIdentity));
@@ -1104,6 +1119,55 @@ function TripletEditor({
     }
   }
 
+  function scheduleToggle(row: VocabTriple) {
+    if (clickTimer.current != null) {
+      window.clearTimeout(clickTimer.current);
+    }
+    // ponytail: 300ms click delay so dblclick can rename; drop if rename gets its own control
+    clickTimer.current = window.setTimeout(() => {
+      clickTimer.current = null;
+      if (frameCount > 0) {
+        void toggleRow(row);
+      }
+    }, 300);
+  }
+
+  function startRename(row: VocabTriple, slot: "instrument" | "verb" | "target") {
+    if (clickTimer.current != null) {
+      window.clearTimeout(clickTimer.current);
+      clickTimer.current = null;
+    }
+    setRenameCell({ row, slot });
+    setRenameDraft(row[slot]);
+  }
+
+  function commitRename() {
+    const current = renameCell;
+    const word = renameDraft.trim();
+    setRenameCell(null);
+    if (!current) {
+      return;
+    }
+    const from = current.row;
+    if (!word || word === from[current.slot]) {
+      return;
+    }
+    const to: VocabTriple = {
+      ...from,
+      [current.slot]: word,
+    };
+    setError(null);
+    void (async () => {
+      try {
+        const next = await sendJson<Vocab>(vocabTripleRenamePath(), "POST", { from, to });
+        await mutateVocab(next, { revalidate: false });
+        await mutateTriplet();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Write failed");
+      }
+    })();
+  }
+
   return (
     <section data-editor-card="triplet" className="flex flex-col gap-2">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
@@ -1142,28 +1206,123 @@ function TripletEditor({
           {triples.map((row) => {
             const key = tripleIdentity(row);
             const lit = onKeys.has(key);
+            const isRenaming = renameCell && tripleIdentity(renameCell.row) === key;
             return (
               <tr key={key}>
                 <td colSpan={3} className="p-0">
                   <div className="flex items-center gap-1">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={lit ? "secondary" : "ghost"}
-                      className="grid h-auto min-w-0 flex-1 grid-cols-3 justify-items-start font-normal"
-                      disabled={frameCount <= 0}
-                      aria-label={key}
-                      aria-pressed={lit}
-                      data-label-color={labelColor(key)}
-                      onClick={() => void toggleRow(row)}
-                    >
-                      <span className="flex min-w-0 items-center">
-                        <span aria-hidden className="mr-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: labelColor(key) }} />
-                        <span className="truncate">{row.instrument}</span>
-                      </span>
-                      <span className="truncate">{row.verb}</span>
-                      <span className="truncate">{row.target}</span>
-                    </Button>
+                    {isRenaming ? (
+                      <div className="grid h-auto min-w-0 flex-1 grid-cols-3 items-center gap-1">
+                        {renameCell.slot === "instrument" ? (
+                          <Input
+                            aria-label="Rename instrument"
+                            value={renameDraft}
+                            autoFocus
+                            className="h-8 text-xs"
+                            onChange={(e) => setRenameDraft(e.target.value)}
+                            onBlur={() => setRenameCell(null)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                commitRename();
+                              }
+                              if (e.key === "Escape") {
+                                setRenameCell(null);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <span className="flex min-w-0 items-center px-2 text-xs truncate">
+                            <span aria-hidden className="mr-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: labelColor(key) }} />
+                            <span className="truncate">{row.instrument}</span>
+                          </span>
+                        )}
+                        {renameCell.slot === "verb" ? (
+                          <Input
+                            aria-label="Rename verb"
+                            value={renameDraft}
+                            autoFocus
+                            className="h-8 text-xs"
+                            onChange={(e) => setRenameDraft(e.target.value)}
+                            onBlur={() => setRenameCell(null)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                commitRename();
+                              }
+                              if (e.key === "Escape") {
+                                setRenameCell(null);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <span className="truncate px-2 text-xs">{row.verb}</span>
+                        )}
+                        {renameCell.slot === "target" ? (
+                          <Input
+                            aria-label="Rename target"
+                            value={renameDraft}
+                            autoFocus
+                            className="h-8 text-xs"
+                            onChange={(e) => setRenameDraft(e.target.value)}
+                            onBlur={() => setRenameCell(null)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                commitRename();
+                              }
+                              if (e.key === "Escape") {
+                                setRenameCell(null);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <span className="truncate px-2 text-xs">{row.target}</span>
+                        )}
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={lit ? "secondary" : "ghost"}
+                        className="grid h-auto min-w-0 flex-1 grid-cols-3 justify-items-start font-normal"
+                        disabled={frameCount <= 0}
+                        aria-label={key}
+                        aria-pressed={lit}
+                        data-label-color={labelColor(key)}
+                        onClick={() => scheduleToggle(row)}
+                        onDoubleClick={() => startRename(row, "instrument")}
+                      >
+                        <span
+                          className="flex min-w-0 items-center w-full"
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            startRename(row, "instrument");
+                          }}
+                        >
+                          <span aria-hidden className="mr-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: labelColor(key) }} />
+                          <span className="truncate">{row.instrument}</span>
+                        </span>
+                        <span
+                          className="truncate w-full"
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            startRename(row, "verb");
+                          }}
+                        >
+                          {row.verb}
+                        </span>
+                        <span
+                          className="truncate w-full"
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            startRename(row, "target");
+                          }}
+                        >
+                          {row.target}
+                        </span>
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       size="icon"
