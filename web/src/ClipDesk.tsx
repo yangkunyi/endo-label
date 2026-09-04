@@ -914,15 +914,14 @@ function AddVocabRow({
 
 function EditorCard({
   card,
-  title,
   count,
   children,
 }: {
   card: "now" | "library";
-  title: string;
   count: number;
   children: React.ReactNode;
 }) {
+  const title = card === "now" ? "Now" : "Library";
   return (
     <section
       data-card={card}
@@ -977,7 +976,7 @@ function ClassEditor({
 
   return (
     <section data-editor-card="class" className="flex flex-col gap-2">
-      <EditorCard card="now" title="Now" count={current.length}>
+      <EditorCard card="now" count={current.length}>
         <div data-now="" className="flex flex-wrap gap-1">
           {current.length === 0 ? (
             <p className="text-sm text-muted-foreground">{nowEmptyText("class", frameIndex)}</p>
@@ -994,7 +993,7 @@ function ClassEditor({
           ))}
         </div>
       </EditorCard>
-      <EditorCard card="library" title="Library" count={classTags.length}>
+      <EditorCard card="library" count={classTags.length}>
         <LibraryList
           names={classTags}
           isOnThisFrame={(name) => current.includes(name)}
@@ -1053,7 +1052,7 @@ function PhaseEditor({
 
   return (
     <section data-editor-card="phase" className="flex flex-col gap-2">
-      <EditorCard card="now" title="Now" count={current ? 1 : 0}>
+      <EditorCard card="now" count={current ? 1 : 0}>
         <p
           data-now=""
           data-label-color={current ? labelColor(current) : undefined}
@@ -1074,7 +1073,7 @@ function PhaseEditor({
           )}
         </p>
       </EditorCard>
-      <EditorCard card="library" title="Library" count={phases.length}>
+      <EditorCard card="library" count={phases.length}>
         <LibraryList
           names={phases}
           isOnThisFrame={(name) => name === current}
