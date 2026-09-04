@@ -1,8 +1,14 @@
-Status: ready-for-agent
+Status: specified — tickets 01–03 ready-for-agent
 
 # Spec: Dual Editor Cards for Now and Library, Triplet grid with hairline dividers, and soft semantic selection
 
 Parents: `.scratch/desk-vocab-library/spec.md`, `.scratch/desk-ruler/spec.md`. Domain: [CONTEXT.md](../../CONTEXT.md). Decision: [ADR 0020](../../docs/adr/0020-editor-cards-and-grid.md). Related ADRs: [ADR 0014](../../docs/adr/0014-unique-triplet.md), [ADR 0016](../../docs/adr/0016-player-task-focus-dual-source.md), [ADR 0017](../../docs/adr/0017-modern-player-tokens.md), [ADR 0019](../../docs/adr/0019-exact-triple-vocab.md).
+
+## Tickets
+
+- [01 — Dual Editor Cards and soft Library selection](issues/01-dual-cards-and-soft-selection.md) (`ready-for-agent`, unblocked)
+- [02 — Triplet hairline grid, in-cell edit, and Now capsule](issues/02-triplet-grid-and-now-capsule.md) (`ready-for-agent`, blocked by 01)
+- [03 — Full desk e2e closeout](issues/03-e2e-closeout.md) (`ready-for-agent`, blocked by 01, 02)
 
 ## Problem Statement
 
