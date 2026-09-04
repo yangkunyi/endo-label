@@ -1248,202 +1248,246 @@ function TripletEditor({
 
   return (
     <section data-editor-card="triplet" className="flex flex-col gap-2">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
-      <table aria-label="Now" data-now="" className="w-full text-left text-xs">
-        <thead>
-          <tr className="text-muted-foreground">
-            <th className="font-medium">instrument</th>
-            <th className="font-medium">verb</th>
-            <th className="font-medium">target</th>
-          </tr>
-        </thead>
-        <tbody>
+      <EditorCard card="now" count={nowRows.length}>
+        <div data-now="" className="flex flex-col gap-1">
+          {nowRows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{nowEmptyText("triplet", frameIndex)}</p>
+          ) : null}
           {nowRows.map((row) => {
             const key = tripleIdentity(row);
             return (
-              <tr key={row.id} data-label-color={labelColor(key)}>
-                <td className="truncate px-1" style={nowFillStyle(key)}>{row.instrument}</td>
-                <td className="truncate px-1" style={nowFillStyle(key)}>{row.verb}</td>
-                <td className="truncate px-1" style={nowFillStyle(key)}>{row.target}</td>
-              </tr>
+              <div
+                key={row.id}
+                data-label-color={labelColor(key)}
+                className="inline-flex max-w-full items-stretch overflow-hidden rounded-md border text-xs font-medium"
+                style={nowFillStyle(key)}
+              >
+                <span className="truncate px-2 py-1">{row.instrument}</span>
+                <span aria-hidden className="w-px shrink-0 bg-white/20" />
+                <span className="truncate px-2 py-1">{row.verb}</span>
+                <span aria-hidden className="w-px shrink-0 bg-white/20" />
+                <span className="truncate px-2 py-1">{row.target}</span>
+              </div>
             );
           })}
-        </tbody>
-      </table>
-      <hr className="m-0 h-px border-0 bg-border" />
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
-      <table aria-label="Library" className="w-full text-left text-xs">
-        <thead>
-          <tr className="text-muted-foreground">
-            <th className="font-medium">instrument</th>
-            <th className="font-medium">verb</th>
-            <th className="font-medium">target</th>
-          </tr>
-        </thead>
-        <tbody>
-          {triples.map((row) => {
-            const key = tripleIdentity(row);
-            const lit = onKeys.has(key);
-            const isRenaming = renameCell && tripleIdentity(renameCell.row) === key;
-            return (
-              <tr key={key}>
-                <td colSpan={3} className="p-0">
+        </div>
+      </EditorCard>
+      <EditorCard card="library" count={triples.length}>
+        <div className="overflow-x-auto">
+          <table aria-label="Library" className="w-full text-left text-xs">
+            <thead>
+              <tr className="text-muted-foreground">
+                <td colSpan={3} className="p-0 font-normal">
                   <div className="flex items-center gap-1">
-                    {isRenaming ? (
-                      <div className="grid h-auto min-w-0 flex-1 grid-cols-3 items-center gap-1">
-                        {renameCell.slot === "instrument" ? (
-                          <Input
-                            aria-label="Rename instrument"
-                            value={renameDraft}
-                            autoFocus
-                            className="h-8 text-xs"
-                            onChange={(e) => setRenameDraft(e.target.value)}
-                            onBlur={() => setRenameCell(null)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                commitRename();
-                              }
-                              if (e.key === "Escape") {
-                                setRenameCell(null);
-                              }
-                            }}
-                          />
-                        ) : (
-                          <span className="flex min-w-0 items-center px-2 text-xs truncate">
-                            <span aria-hidden className="mr-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: labelColor(key) }} />
-                            <span className="truncate">{row.instrument}</span>
-                          </span>
-                        )}
-                        {renameCell.slot === "verb" ? (
-                          <Input
-                            aria-label="Rename verb"
-                            value={renameDraft}
-                            autoFocus
-                            className="h-8 text-xs"
-                            onChange={(e) => setRenameDraft(e.target.value)}
-                            onBlur={() => setRenameCell(null)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                commitRename();
-                              }
-                              if (e.key === "Escape") {
-                                setRenameCell(null);
-                              }
-                            }}
-                          />
-                        ) : (
-                          <span className="truncate px-2 text-xs">{row.verb}</span>
-                        )}
-                        {renameCell.slot === "target" ? (
-                          <Input
-                            aria-label="Rename target"
-                            value={renameDraft}
-                            autoFocus
-                            className="h-8 text-xs"
-                            onChange={(e) => setRenameDraft(e.target.value)}
-                            onBlur={() => setRenameCell(null)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                commitRename();
-                              }
-                              if (e.key === "Escape") {
-                                setRenameCell(null);
-                              }
-                            }}
-                          />
-                        ) : (
-                          <span className="truncate px-2 text-xs">{row.target}</span>
-                        )}
-                      </div>
-                    ) : (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className={cn(
-                          "grid h-auto min-w-0 flex-1 grid-cols-3 justify-items-start border-l-2 font-normal transition-colors",
-                          lit
-                            ? "border-l-primary bg-primary/20 font-medium text-white ring-1 ring-primary/50 shadow-xs"
-                            : "border-l-transparent text-muted-foreground hover:bg-secondary hover:text-foreground",
-                        )}
-                        disabled={frameCount <= 0}
-                        aria-label={key}
-                        aria-pressed={lit}
-                        data-label-color={labelColor(key)}
-                        onClick={() => scheduleToggle(row)}
-                        onDoubleClick={() => startRename(row, "instrument")}
-                      >
-                        <span
-                          className="flex min-w-0 items-center w-full"
-                          onDoubleClick={(e) => {
-                            e.stopPropagation();
-                            startRename(row, "instrument");
-                          }}
-                        >
-                          <span
-                            aria-hidden
-                            className={cn(
-                              "mr-1.5 inline-block h-2.5 w-2.5 shrink-0 rounded-sm transition-transform",
-                              lit && "scale-110 ring-1 ring-white/60",
-                            )}
-                            style={{ backgroundColor: labelColor(key) }}
-                          />
-                          <span className="truncate">{row.instrument}</span>
-                        </span>
-                        <span
-                          className="truncate w-full"
-                          onDoubleClick={(e) => {
-                            e.stopPropagation();
-                            startRename(row, "verb");
-                          }}
-                        >
-                          {row.verb}
-                        </span>
-                        <span
-                          className="truncate w-full"
-                          onDoubleClick={(e) => {
-                            e.stopPropagation();
-                            startRename(row, "target");
-                          }}
-                        >
-                          {row.target}
-                        </span>
-                      </Button>
-                    )}
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      aria-label={`Delete triple ${key}`}
-                      onClick={() => void trashRow(row)}
-                    >
-                      <Trash2 size={14} />
-                    </Button>
+                    <div className="grid flex-1 grid-cols-3 divide-x divide-border/40 text-muted-foreground">
+                      <span role="columnheader" className="px-2 py-1 font-medium">instrument</span>
+                      <span role="columnheader" className="px-2 py-1 font-medium">verb</span>
+                      <span role="columnheader" className="px-2 py-1 font-medium">target</span>
+                    </div>
+                    <div className="w-7 shrink-0" aria-hidden="true" />
                   </div>
                 </td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <div className="mt-2 grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-1">
-        <Input aria-label="instrument" placeholder="instrument" list="triplet-instrument-words" value={draft.instrument} onChange={(event) => setDraft((s) => ({ ...s, instrument: event.target.value }))} />
-        <Input aria-label="verb" placeholder="verb" list="triplet-verb-words" value={draft.verb} onChange={(event) => setDraft((s) => ({ ...s, verb: event.target.value }))} />
-        <Input aria-label="target" placeholder="target" list="triplet-target-words" value={draft.target} onChange={(event) => setDraft((s) => ({ ...s, target: event.target.value }))} />
-        <Button type="button" size="sm" aria-label="Add triplet row" onClick={() => void addRowOnly()}>+</Button>
-      </div>
-      <datalist id="triplet-instrument-words">
-        {instrumentWords.map((word) => <option key={word} value={word} />)}
-      </datalist>
-      <datalist id="triplet-verb-words">
-        {verbWords.map((word) => <option key={word} value={word} />)}
-      </datalist>
-      <datalist id="triplet-target-words">
-        {targetWords.map((word) => <option key={word} value={word} />)}
-      </datalist>
+            </thead>
+            <tbody>
+              {triples.map((row) => {
+                const key = tripleIdentity(row);
+                const lit = onKeys.has(key);
+                const isRenaming = renameCell && tripleIdentity(renameCell.row) === key;
+                return (
+                  <tr key={key} className="group">
+                    <td colSpan={3} className="p-0">
+                      <div className="flex items-center gap-1">
+                        {isRenaming ? (
+                          <div
+                            className={cn(
+                              "grid h-7 min-w-0 flex-1 grid-cols-3 items-center divide-x divide-border/40 border p-0 text-left transition-colors",
+                              lit
+                                ? "font-medium text-foreground"
+                                : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                            )}
+                            style={libraryRowSemanticStyle(labelColor(key), lit)}
+                          >
+                            {(["instrument", "verb", "target"] as const).map((slot) => {
+                              const isCellEditing = renameCell.slot === slot;
+                              return (
+                                <div key={slot} className="flex h-full min-w-0 items-center px-2 py-1">
+                                  {isCellEditing ? (
+                                    <Input
+                                      aria-label={`Rename ${slot}`}
+                                      value={renameDraft}
+                                      autoFocus
+                                      className="h-6 px-1 text-xs"
+                                      onChange={(e) => setRenameDraft(e.target.value)}
+                                      onBlur={() => setRenameCell(null)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                          e.preventDefault();
+                                          commitRename();
+                                        }
+                                        if (e.key === "Escape") {
+                                          setRenameCell(null);
+                                        }
+                                      }}
+                                    />
+                                  ) : (
+                                    <div className="flex min-w-0 w-full items-center justify-between">
+                                      <span className="flex min-w-0 items-center truncate">
+                                        {slot === "instrument" ? (
+                                          <span
+                                            aria-hidden
+                                            className={cn(
+                                              "mr-1.5 inline-block h-2.5 w-2.5 shrink-0 rounded-sm transition-transform",
+                                              lit && "ring-1 ring-white/60",
+                                            )}
+                                            style={{ backgroundColor: labelColor(key) }}
+                                          />
+                                        ) : null}
+                                        <span className="truncate">{row[slot]}</span>
+                                      </span>
+                                      {slot === "target" && lit ? (
+                                        <Check
+                                          aria-hidden="true"
+                                          data-checkmark=""
+                                          size={14}
+                                          className="ml-auto mr-1 shrink-0 text-primary"
+                                        />
+                                      ) : null}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className={cn(
+                              "grid h-7 min-w-0 flex-1 grid-cols-3 justify-items-start divide-x divide-border/40 border p-0 font-normal transition-colors",
+                              lit
+                                ? "font-medium text-foreground"
+                                : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                            )}
+                            style={libraryRowSemanticStyle(labelColor(key), lit)}
+                            disabled={frameCount <= 0}
+                            aria-label={key}
+                            aria-pressed={lit}
+                            data-label-color={labelColor(key)}
+                            onClick={() => scheduleToggle(row)}
+                            onDoubleClick={() => startRename(row, "instrument")}
+                          >
+                            <span
+                              className="flex min-w-0 w-full items-center px-2 py-1"
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                startRename(row, "instrument");
+                              }}
+                            >
+                              <span
+                                aria-hidden
+                                className={cn(
+                                  "mr-1.5 inline-block h-2.5 w-2.5 shrink-0 rounded-sm transition-transform",
+                                  lit && "ring-1 ring-white/60",
+                                )}
+                                style={{ backgroundColor: labelColor(key) }}
+                              />
+                              <span className="truncate">{row.instrument}</span>
+                            </span>
+                            <span
+                              className="truncate w-full px-2 py-1"
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                startRename(row, "verb");
+                              }}
+                            >
+                              {row.verb}
+                            </span>
+                            <span
+                              className="flex min-w-0 w-full items-center justify-between px-2 py-1"
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                startRename(row, "target");
+                              }}
+                            >
+                              <span className="truncate">{row.target}</span>
+                              {lit ? (
+                                <Check
+                                  aria-hidden="true"
+                                  data-checkmark=""
+                                  size={14}
+                                  className="ml-auto mr-1 shrink-0 text-primary"
+                                />
+                              ) : null}
+                            </span>
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label={`Delete triple ${key}`}
+                          className="opacity-30 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                          onClick={() => void trashRow(row)}
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-2 flex flex-col gap-1 border-t border-border/50 pt-2">
+          <div className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-1">
+            <Input
+              aria-label="instrument"
+              placeholder="instrument"
+              list="triplet-instrument-words"
+              value={draft.instrument}
+              className="h-7 text-xs"
+              onChange={(event) => setDraft((s) => ({ ...s, instrument: event.target.value }))}
+            />
+            <Input
+              aria-label="verb"
+              placeholder="verb"
+              list="triplet-verb-words"
+              value={draft.verb}
+              className="h-7 text-xs"
+              onChange={(event) => setDraft((s) => ({ ...s, verb: event.target.value }))}
+            />
+            <Input
+              aria-label="target"
+              placeholder="target"
+              list="triplet-target-words"
+              value={draft.target}
+              className="h-7 text-xs"
+              onChange={(event) => setDraft((s) => ({ ...s, target: event.target.value }))}
+            />
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              aria-label="Add triplet row"
+              onClick={() => void addRowOnly()}
+            >
+              +
+            </Button>
+          </div>
+        </div>
+        <datalist id="triplet-instrument-words">
+          {instrumentWords.map((word) => <option key={word} value={word} />)}
+        </datalist>
+        <datalist id="triplet-verb-words">
+          {verbWords.map((word) => <option key={word} value={word} />)}
+        </datalist>
+        <datalist id="triplet-target-words">
+          {targetWords.map((word) => <option key={word} value={word} />)}
+        </datalist>
+      </EditorCard>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </section>
   );

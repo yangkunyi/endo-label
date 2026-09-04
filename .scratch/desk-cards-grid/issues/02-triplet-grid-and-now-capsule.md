@@ -4,13 +4,13 @@
 
 **Blocked by:** 01 — Dual Editor Cards and soft Library selection.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Triplet Library table and column headers feature vertical hairline dividers separating instrument, verb, and target columns
-- [ ] Double-clicking any cell in a Triplet row replaces only that cell with an inline `<Input>` without column jitter or layout shift
-- [ ] Pressing Enter commits cell rename desk-wide and Escape cancels, maintaining 409 collision refusal
-- [ ] Current-frame Triplet labels render in the Now card as unified three-part capsules (`[instrument | verb | target]`) with internal vertical hairlines
-- [ ] Empty Now Triplet section displays calm muted text (`No triplets on frame N`)
-- [ ] Selected Triplet Library rows use soft semantic background tint, matching border, and right-aligned checkmark icon (`✓`)
-- [ ] Triplet Add Vocab row is embedded as the Library Card footer separated by a top border hairline
-- [ ] Triplet single-click toggle and desk-wide trash continue to function seamlessly
+- [x] Triplet Library table and column headers feature vertical hairline dividers separating instrument, verb, and target columns
+- [x] Double-clicking any cell in a Triplet row replaces only that cell with an inline `<Input>` without column jitter or layout shift
+- [x] Pressing Enter commits cell rename desk-wide and Escape cancels, maintaining 409 collision refusal
+- [x] Current-frame Triplet labels render in the Now card as unified three-part capsules (`[instrument | verb | target]`) with internal vertical hairlines
+- [x] Empty Now Triplet section displays calm muted text (`No triplets on frame N`)
+- [x] Selected Triplet Library rows use soft semantic background tint, matching border, and right-aligned checkmark icon (`✓`)
+- [x] Triplet Add Vocab row is embedded as the Library Card footer separated by a top border hairline
+- [x] Triplet single-click toggle and desk-wide trash continue to function seamlessly

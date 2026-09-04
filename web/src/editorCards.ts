@@ -1,9 +1,14 @@
 import type { CSSProperties } from "react";
 
-export function nowEmptyText(kind: "phase" | "class", frameIndex: number): string {
-  return kind === "phase"
-    ? `No phase on frame ${frameIndex}`
-    : `No class tags on frame ${frameIndex}`;
+export function nowEmptyText(kind: "phase" | "class" | "triplet", frameIndex: number): string {
+  switch (kind) {
+    case "phase":
+      return `No phase on frame ${frameIndex}`;
+    case "class":
+      return `No class tags on frame ${frameIndex}`;
+    case "triplet":
+      return `No triplets on frame ${frameIndex}`;
+  }
 }
 
 const UNSELECTED_STYLE: CSSProperties = {

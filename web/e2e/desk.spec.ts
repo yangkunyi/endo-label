@@ -677,11 +677,11 @@ test("labeled Now fills with label color; empty Now does not", async ({ page }) 
   expect(await cssBackground(phaseNow)).not.toBe(phaseFill);
 
   await fillTriplet(page, "FillTool", "FillAct", "FillOrg");
-  const tripletNow = page.locator('[data-editor-card="triplet"] [data-now] tbody tr').first();
+  const tripletNow = page.locator('[data-editor-card="triplet"] [data-now] [data-label-color]').first();
   await expect(tripletNow).toContainText("FillTool");
   const tripletBar = page.getByRole("button", { name: "FillTool / FillAct / FillOrg 0–0" });
   await expect(tripletBar).toBeVisible();
-  const tripletFill = await cssBackground(tripletNow.locator("td").first());
+  const tripletFill = await cssBackground(tripletNow);
   expect(tripletFill).toBe(await cssBackground(tripletBar));
   expect(
     await cssBackground(
@@ -689,7 +689,8 @@ test("labeled Now fills with label color; empty Now does not", async ({ page }) 
     ),
   ).not.toBe(tripletFill);
   await fillTriplet(page, "FillTool", "FillAct", "FillOrg");
-  await expect(page.locator('[data-editor-card="triplet"] [data-now] tbody tr')).toHaveCount(0);
+  await expect(page.locator('[data-editor-card="triplet"] [data-now] [data-label-color]')).toHaveCount(0);
+  await expect(page.locator('[data-editor-card="triplet"] [data-now]').getByText("No triplets on frame 0")).toBeVisible();
 });
 
 test("empty Clip shows Ruler only; player keeps chrome progress range", async ({ page }) => {
@@ -854,9 +855,9 @@ test("composed triplet row survives a Task focus switch", async ({ page }) => {
   await expect(row).toBeVisible();
 });
 
-test("editor cards enclose Now and Library with micro-headers and count badges on phase and class", async ({ page }) => {
+test("editor cards enclose Now and Library with micro-headers and count badges", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
-  for (const kind of ["class", "phase"] as const) {
+  for (const kind of ["class", "phase", "triplet"] as const) {
     await focusTask(page, kind);
     const editor = page.locator(`[data-editor-card="${kind}"]`);
     const nowCard = editor.locator('[data-card="now"]');
@@ -873,10 +874,6 @@ test("editor cards enclose Now and Library with micro-headers and count badges o
     expect(nowBox && libraryBox).toBeTruthy();
     expect(libraryBox!.y).toBeGreaterThan(nowBox!.y);
   }
-  // Triplet retains hairline until ticket 02
-  await focusTask(page, "triplet");
-  const tripletEditor = page.locator('[data-editor-card="triplet"]');
-  await expect(tripletEditor.getByRole("separator")).toHaveCount(1);
 });
 
 test("video Clip uses video element and seek updates Now", async ({ page }) => {
