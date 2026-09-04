@@ -40,6 +40,7 @@ import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { VideoPlayer } from "./components/ui/video-player";
 import { useDeskStore, type EditorKind, type PaintChip } from "./deskStore";
+import { cn } from "./lib/utils";
 import { foldClass, foldPhase, foldTriplet, labelColor, type TimelineLane } from "./timeline";
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -788,17 +789,29 @@ function LibraryList({
                 <Button
                   type="button"
                   size="sm"
-                  variant={on ? "secondary" : "ghost"}
-                  className="min-w-0 flex-1 justify-start"
+                  variant="ghost"
+                  className={cn(
+                    "min-w-0 flex-1 justify-start border-l-2 transition-colors",
+                    on
+                      ? "border-l-primary bg-primary/20 font-medium text-white ring-1 ring-primary/50 shadow-xs"
+                      : "border-l-transparent text-muted-foreground hover:bg-secondary hover:text-foreground",
+                  )}
                   aria-pressed={on}
                   data-label-color={colorNames ? labelColor(name) : undefined}
                   onClick={() => schedulePick(name)}
                   onDoubleClick={() => startRename(name)}
                 >
                   {colorNames ? (
-                    <span aria-hidden className="mr-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: labelColor(name) }} />
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "mr-1.5 inline-block h-2.5 w-2.5 shrink-0 rounded-sm transition-transform",
+                        on && "scale-110 ring-1 ring-white/60",
+                      )}
+                      style={{ backgroundColor: labelColor(name) }}
+                    />
                   ) : null}
-                  {name}
+                  <span className="truncate">{name}</span>
                 </Button>
               )}
               <Button
@@ -1284,8 +1297,13 @@ function TripletEditor({
                       <Button
                         type="button"
                         size="sm"
-                        variant={lit ? "secondary" : "ghost"}
-                        className="grid h-auto min-w-0 flex-1 grid-cols-3 justify-items-start font-normal"
+                        variant="ghost"
+                        className={cn(
+                          "grid h-auto min-w-0 flex-1 grid-cols-3 justify-items-start border-l-2 font-normal transition-colors",
+                          lit
+                            ? "border-l-primary bg-primary/20 font-medium text-white ring-1 ring-primary/50 shadow-xs"
+                            : "border-l-transparent text-muted-foreground hover:bg-secondary hover:text-foreground",
+                        )}
                         disabled={frameCount <= 0}
                         aria-label={key}
                         aria-pressed={lit}
@@ -1300,7 +1318,14 @@ function TripletEditor({
                             startRename(row, "instrument");
                           }}
                         >
-                          <span aria-hidden className="mr-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: labelColor(key) }} />
+                          <span
+                            aria-hidden
+                            className={cn(
+                              "mr-1.5 inline-block h-2.5 w-2.5 shrink-0 rounded-sm transition-transform",
+                              lit && "scale-110 ring-1 ring-white/60",
+                            )}
+                            style={{ backgroundColor: labelColor(key) }}
+                          />
                           <span className="truncate">{row.instrument}</span>
                         </span>
                         <span
