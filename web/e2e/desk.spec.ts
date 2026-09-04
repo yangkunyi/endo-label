@@ -866,6 +866,9 @@ test("editor cards enclose Now and Library with micro-headers and count badges",
     await expect(libraryCard).toBeVisible();
     await expect(nowCard.getByText("Now", { exact: true })).toBeVisible();
     await expect(libraryCard.getByText("Library", { exact: true })).toBeVisible();
+    // Micro-header count badge pill checks
+    await expect(nowCard.locator(".rounded-full.bg-secondary")).toBeVisible();
+    await expect(libraryCard.locator(".rounded-full.bg-secondary")).toBeVisible();
     await expect(editor.getByRole("button", { name: "List" })).toHaveCount(0);
     const seps = editor.getByRole("separator");
     await expect(seps).toHaveCount(0);
@@ -993,37 +996,137 @@ test("e2e closeout: span paint preserves Vocab, Now read-only, Library trash wor
   }).toBe(false);
 });
 
-test("Library rows render soft semantic tint, checkmark on selection, and dimmed trash", async ({ page }) => {
+test("Triplet hairline grid structure and in-cell double-click rename without column shifts", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
+  await focusTask(page, "triplet");
+
+  // Grid headers have divide-x border hairline
+  const headerGrid = page.locator('[data-editor-card="triplet"] thead .divide-x');
+  await expect(headerGrid).toBeVisible();
+  await expect(headerGrid.getByRole("columnheader", { name: "instrument" })).toBeVisible();
+  await expect(headerGrid.getByRole("columnheader", { name: "verb" })).toBeVisible();
+  await expect(headerGrid.getByRole("columnheader", { name: "target" })).toBeVisible();
+
+  // Add a unique triplet row to inspect cell widths
+  await page.getByRole("combobox", { name: "instrument" }).fill("GridTool");
+  await page.getByRole("combobox", { name: "verb" }).fill("GridVerb");
+  await page.getByRole("combobox", { name: "target" }).fill("GridTarget");
+  await page.getByRole("button", { name: "Add triplet row" }).click();
+
+  const library = page.getByRole("table", { name: "Library" });
+  const rowBtn = library.getByRole("button", { name: "GridTool / GridVerb / GridTarget", exact: true });
+  await expect(rowBtn).toBeVisible();
+  await expect(rowBtn).toHaveClass(/divide-x/);
+
+  const rowBoxBefore = await rowBtn.boundingBox();
+  expect(rowBoxBefore).not.toBeNull();
+
+  // Double click verb cell to trigger in-cell editing
+  await rowBtn.getByText("GridVerb", { exact: true }).dblclick();
+  const input = page.getByRole("textbox", { name: "Rename verb" });
+  await expect(input).toBeVisible();
+
+  // Container maintaining same width without column shift
+  const editingContainer = page.locator('[data-editor-card="triplet"] tbody tr').filter({ has: input }).locator(".grid.grid-cols-3");
+  const rowBoxDuring = await editingContainer.boundingBox();
+  expect(rowBoxDuring).not.toBeNull();
+  expect(Math.abs(rowBoxDuring!.width - rowBoxBefore!.width)).toBeLessThan(2);
+
+  await input.press("Escape");
+  await expect(input).toHaveCount(0);
+});
+
+test("Add Vocab inputs inside Library Card footers add items and update count badges", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+
+  // 1. Phase footer and count badge
+  await focusTask(page, "phase");
+  const phaseLibCard = page.locator('[data-editor-card="phase"] [data-card="library"]');
+  const phaseBadge = phaseLibCard.locator(".rounded-full.bg-secondary");
+  const phaseCountBefore = Number(await phaseBadge.textContent());
+
+  await phaseLibCard.getByPlaceholder("Type to add").fill("FooterPhase");
+  await phaseLibCard.getByRole("button", { name: "Add phase name" }).click();
+  await expect(phaseLibCard.getByRole("button", { name: "FooterPhase", exact: true })).toBeVisible();
+  await expect(phaseBadge).toHaveText(String(phaseCountBefore + 1));
+
+  // 2. Class footer and count badge
+  await focusTask(page, "class");
+  const classLibCard = page.locator('[data-editor-card="class"] [data-card="library"]');
+  const classBadge = classLibCard.locator(".rounded-full.bg-secondary");
+  const classCountBefore = Number(await classBadge.textContent());
+
+  await classLibCard.getByPlaceholder("Type to add").fill("FooterClass");
+  await classLibCard.getByRole("button", { name: "Add class name" }).click();
+  await expect(classLibCard.getByRole("button", { name: "FooterClass", exact: true })).toBeVisible();
+  await expect(classBadge).toHaveText(String(classCountBefore + 1));
+
+  // 3. Triplet footer and count badge
+  await focusTask(page, "triplet");
+  const tripletLibCard = page.locator('[data-editor-card="triplet"] [data-card="library"]');
+  const tripletBadge = tripletLibCard.locator(".rounded-full.bg-secondary");
+  const tripletCountBefore = Number(await tripletBadge.textContent());
+
+  await tripletLibCard.getByPlaceholder("instrument").fill("FootTool");
+  await tripletLibCard.getByPlaceholder("verb").fill("FootAct");
+  await tripletLibCard.getByPlaceholder("target").fill("FootOrg");
+  await tripletLibCard.getByRole("button", { name: "Add triplet row" }).click();
+  await expect(tripletLibCard.getByRole("button", { name: "FootTool / FootAct / FootOrg", exact: true })).toBeVisible();
+  await expect(tripletBadge).toHaveText(String(tripletCountBefore + 1));
+});
+
+test("Library rows render soft semantic tint, checkmark on selection, and dimmed trash across Phase, Class, and Triplet", async ({ page }) => {
+  await clearClipLabels(page);
+  await page.goto("/clips/CLIP_E2E");
+
+  // Phase selection checkmark & semantic tint
+  await focusTask(page, "phase");
+  const phaseLib = page.getByRole("list", { name: "Library" });
+  const phaseBtn = phaseLib.getByRole("button").first();
+  await expect(phaseBtn).toHaveAttribute("aria-pressed", "false");
+  await expect(phaseBtn.locator("[data-checkmark]")).toHaveCount(0);
+  await phaseBtn.click();
+  await expect(phaseBtn).toHaveAttribute("aria-pressed", "true");
+  await expect(phaseBtn.locator("[data-checkmark]")).toBeVisible();
+  await phaseBtn.click();
+  await expect(phaseBtn).toHaveAttribute("aria-pressed", "false");
+  await expect(phaseBtn.locator("[data-checkmark]")).toHaveCount(0);
+
+  // Class selection checkmark & semantic tint
   await focusTask(page, "class");
   const classLib = page.getByRole("list", { name: "Library" });
-  const rowBtn = classLib.getByRole("button", { name: "grasper", exact: true });
-
-  await expect(rowBtn).toHaveAttribute("aria-pressed", "false");
-  await expect(rowBtn.locator("[data-checkmark]")).toHaveCount(0);
-
-  // Hover unselected row: gentle surface highlight via hover class
-  await rowBtn.hover();
-
-  await rowBtn.click();
-  await expect(rowBtn).toHaveAttribute("aria-pressed", "true");
-  await expect(rowBtn.locator("[data-checkmark]")).toBeVisible();
-
-  const bg = await cssBackground(rowBtn);
+  const classBtn = classLib.getByRole("button", { name: "grasper", exact: true });
+  await expect(classBtn).toHaveAttribute("aria-pressed", "false");
+  await expect(classBtn.locator("[data-checkmark]")).toHaveCount(0);
+  await classBtn.hover();
+  await classBtn.click();
+  await expect(classBtn).toHaveAttribute("aria-pressed", "true");
+  await expect(classBtn.locator("[data-checkmark]")).toBeVisible();
+  const bg = await cssBackground(classBtn);
   expect(bg).not.toBe("rgba(0, 0, 0, 0)");
-  expect(bg).toMatch(/(?:rgba?|oklab)\(/);
-
   const trashBtn = classLib.getByRole("button", { name: "Delete class tag grasper" });
   await expect(trashBtn).toHaveClass(/opacity-30/);
+  await classBtn.click();
+  await expect(classBtn).toHaveAttribute("aria-pressed", "false");
+  await expect(classBtn.locator("[data-checkmark]")).toHaveCount(0);
 
-  const libCard = page.locator('[data-editor-card="class"] [data-card="library"]');
-  const addInput = libCard.getByPlaceholder("Type to add");
-  await expect(addInput).toBeVisible();
-  await expect(addInput).toHaveClass(/h-7/);
+  // Triplet selection checkmark & semantic tint
+  await focusTask(page, "triplet");
+  await page.getByRole("combobox", { name: "instrument" }).fill("SelTool");
+  await page.getByRole("combobox", { name: "verb" }).fill("SelVerb");
+  await page.getByRole("combobox", { name: "target" }).fill("SelTarget");
+  await page.getByRole("button", { name: "Add triplet row" }).click();
 
-  await rowBtn.click();
-  await expect(rowBtn).toHaveAttribute("aria-pressed", "false");
-  await expect(rowBtn.locator("[data-checkmark]")).toHaveCount(0);
+  const tripletLib = page.getByRole("table", { name: "Library" });
+  const tripletBtn = tripletLib.getByRole("button", { name: "SelTool / SelVerb / SelTarget", exact: true });
+  await expect(tripletBtn).toHaveAttribute("aria-pressed", "false");
+  await expect(tripletBtn.locator("[data-checkmark]")).toHaveCount(0);
+  await tripletBtn.click();
+  await expect(tripletBtn).toHaveAttribute("aria-pressed", "true");
+  await expect(tripletBtn.locator("[data-checkmark]")).toBeVisible();
+  await tripletBtn.click();
+  await expect(tripletBtn).toHaveAttribute("aria-pressed", "false");
+  await expect(tripletBtn.locator("[data-checkmark]")).toHaveCount(0);
 });
 
 

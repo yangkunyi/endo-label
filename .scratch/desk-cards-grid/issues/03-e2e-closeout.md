@@ -4,14 +4,14 @@
 
 **Blocked by:** 01 — Dual Editor Cards and soft Library selection, 02 — Triplet hairline grid, in-cell edit, and Now capsule.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Playwright tests verify Now and Library Editor Cards with micro-headers and count badges on Phase, Class, and Triplet
-- [ ] Playwright tests verify calm empty state messages (`No labels on frame N`) on unannotated frames
-- [ ] Playwright tests verify selected Library rows show checkmark icons and correct selection attributes
-- [ ] Playwright tests verify Triplet hairline grid structure and in-cell double-click rename without column shifts
-- [ ] Playwright tests verify Add Vocab inputs inside Library Card footers add items and update count badges
-- [ ] Full Playwright test suite (`web/e2e/desk.spec.ts`) passes with 0 failures
-- [ ] Vitest test suite (`pnpm test`) passes with 0 failures
-- [ ] TypeScript compiler (`tsc`) passes with 0 errors
-- [ ] Backend test suite (`pytest`) passes with 0 failures
+- [x] Playwright tests verify Now and Library Editor Cards with micro-headers and count badges on Phase, Class, and Triplet
+- [x] Playwright tests verify calm empty state messages (`No labels on frame N`) on unannotated frames
+- [x] Playwright tests verify selected Library rows show checkmark icons and correct selection attributes
+- [x] Playwright tests verify Triplet hairline grid structure and in-cell double-click rename without column shifts
+- [x] Playwright tests verify Add Vocab inputs inside Library Card footers add items and update count badges
+- [x] Full Playwright test suite (`web/e2e/desk.spec.ts`) passes with 0 failures
+- [x] Vitest test suite (`pnpm test`) passes with 0 failures
+- [x] TypeScript compiler (`tsc`) passes with 0 errors
+- [x] Backend test suite (`pytest`) passes with 0 failures
