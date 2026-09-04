@@ -1021,19 +1021,38 @@ test("Triplet hairline grid structure and in-cell double-click rename without co
   const rowBoxBefore = await rowBtn.boundingBox();
   expect(rowBoxBefore).not.toBeNull();
 
+  // Measure initial column cell slots before edit
+  const instColBefore = await rowBtn.locator("> span").nth(0).boundingBox();
+  const targetColBefore = await rowBtn.locator("> span").nth(2).boundingBox();
+  expect(instColBefore).not.toBeNull();
+  expect(targetColBefore).not.toBeNull();
+
   // Double click verb cell to trigger in-cell editing
   await rowBtn.getByText("GridVerb", { exact: true }).dblclick();
   const input = page.getByRole("textbox", { name: "Rename verb" });
   await expect(input).toBeVisible();
 
-  // Container maintaining same width without column shift
-  const editingContainer = page.locator('[data-editor-card="triplet"] tbody tr').filter({ has: input }).locator(".grid.grid-cols-3");
+  // Container and adjacent columns maintaining width without significant column shift (< 4px)
+  const editingRow = page.locator('[data-editor-card="triplet"] tbody tr').filter({ has: input });
+  const editingContainer = editingRow.locator(".grid.grid-cols-3");
   const rowBoxDuring = await editingContainer.boundingBox();
   expect(rowBoxDuring).not.toBeNull();
   expect(Math.abs(rowBoxDuring!.width - rowBoxBefore!.width)).toBeLessThan(2);
 
-  await input.press("Escape");
+  const instColDuring = await editingContainer.locator("> div").nth(0).boundingBox();
+  const targetColDuring = await editingContainer.locator("> div").nth(2).boundingBox();
+  expect(instColDuring).not.toBeNull();
+  expect(targetColDuring).not.toBeNull();
+  expect(Math.abs(instColDuring!.width - instColBefore!.width)).toBeLessThan(4);
+  expect(Math.abs(targetColDuring!.width - targetColBefore!.width)).toBeLessThan(4);
+
+  // Commit rename desk-wide
+  await input.fill("ShiftVerb");
+  await input.press("Enter");
   await expect(input).toHaveCount(0);
+
+  const renamedRow = library.getByRole("button", { name: "GridTool / ShiftVerb / GridTarget", exact: true });
+  await expect(renamedRow).toBeVisible();
 });
 
 test("Add Vocab inputs inside Library Card footers add items and update count badges", async ({ page }) => {
@@ -1075,11 +1094,25 @@ test("Add Vocab inputs inside Library Card footers add items and update count ba
   await expect(tripletBadge).toHaveText(String(tripletCountBefore + 1));
 });
 
+test("calm empty state messages render on unannotated frames across Phase, Class, and Triplet", async ({ page }) => {
+  await clearClipLabels(page);
+  await page.goto("/clips/CLIP_E2E");
+
+  await focusTask(page, "phase");
+  await expect(page.locator('[data-editor-card="phase"] [data-now]')).toHaveText("No phase on frame 0");
+
+  await focusTask(page, "class");
+  await expect(page.locator('[data-editor-card="class"] [data-now]')).toHaveText("No class tags on frame 0");
+
+  await focusTask(page, "triplet");
+  await expect(page.locator('[data-editor-card="triplet"] [data-now]')).toHaveText("No triplets on frame 0");
+});
+
 test("Library rows render soft semantic tint, checkmark on selection, and dimmed trash across Phase, Class, and Triplet", async ({ page }) => {
   await clearClipLabels(page);
   await page.goto("/clips/CLIP_E2E");
 
-  // Phase selection checkmark & semantic tint
+  // Phase selection checkmark & semantic tint & dimmed trash
   await focusTask(page, "phase");
   const phaseLib = page.getByRole("list", { name: "Library" });
   const phaseBtn = phaseLib.getByRole("button").first();
@@ -1088,11 +1121,15 @@ test("Library rows render soft semantic tint, checkmark on selection, and dimmed
   await phaseBtn.click();
   await expect(phaseBtn).toHaveAttribute("aria-pressed", "true");
   await expect(phaseBtn.locator("[data-checkmark]")).toBeVisible();
+  const phaseBg = await cssBackground(phaseBtn);
+  expect(phaseBg).not.toBe("rgba(0, 0, 0, 0)");
+  const phaseTrash = phaseLib.locator("button").filter({ has: page.locator("svg.lucide-trash-2") }).first();
+  await expect(phaseTrash).toHaveClass(/opacity-30/);
   await phaseBtn.click();
   await expect(phaseBtn).toHaveAttribute("aria-pressed", "false");
   await expect(phaseBtn.locator("[data-checkmark]")).toHaveCount(0);
 
-  // Class selection checkmark & semantic tint
+  // Class selection checkmark & semantic tint & dimmed trash
   await focusTask(page, "class");
   const classLib = page.getByRole("list", { name: "Library" });
   const classBtn = classLib.getByRole("button", { name: "grasper", exact: true });
@@ -1102,15 +1139,15 @@ test("Library rows render soft semantic tint, checkmark on selection, and dimmed
   await classBtn.click();
   await expect(classBtn).toHaveAttribute("aria-pressed", "true");
   await expect(classBtn.locator("[data-checkmark]")).toBeVisible();
-  const bg = await cssBackground(classBtn);
-  expect(bg).not.toBe("rgba(0, 0, 0, 0)");
-  const trashBtn = classLib.getByRole("button", { name: "Delete class tag grasper" });
-  await expect(trashBtn).toHaveClass(/opacity-30/);
+  const classBg = await cssBackground(classBtn);
+  expect(classBg).not.toBe("rgba(0, 0, 0, 0)");
+  const classTrash = classLib.getByRole("button", { name: "Delete class tag grasper" });
+  await expect(classTrash).toHaveClass(/opacity-30/);
   await classBtn.click();
   await expect(classBtn).toHaveAttribute("aria-pressed", "false");
   await expect(classBtn.locator("[data-checkmark]")).toHaveCount(0);
 
-  // Triplet selection checkmark & semantic tint
+  // Triplet selection checkmark & semantic tint & dimmed trash
   await focusTask(page, "triplet");
   await page.getByRole("combobox", { name: "instrument" }).fill("SelTool");
   await page.getByRole("combobox", { name: "verb" }).fill("SelVerb");
@@ -1124,6 +1161,10 @@ test("Library rows render soft semantic tint, checkmark on selection, and dimmed
   await tripletBtn.click();
   await expect(tripletBtn).toHaveAttribute("aria-pressed", "true");
   await expect(tripletBtn.locator("[data-checkmark]")).toBeVisible();
+  const tripletBg = await cssBackground(tripletBtn);
+  expect(tripletBg).not.toBe("rgba(0, 0, 0, 0)");
+  const tripletTrash = tripletLib.getByRole("button", { name: "Delete triple SelTool / SelVerb / SelTarget" });
+  await expect(tripletTrash).toHaveClass(/opacity-30/);
   await tripletBtn.click();
   await expect(tripletBtn).toHaveAttribute("aria-pressed", "false");
   await expect(tripletBtn.locator("[data-checkmark]")).toHaveCount(0);
