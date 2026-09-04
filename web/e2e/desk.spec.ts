@@ -854,9 +854,9 @@ test("composed triplet row survives a Task focus switch", async ({ page }) => {
   await expect(row).toBeVisible();
 });
 
-test("editor cards enclose Now and Library with micro-headers and count badges", async ({ page }) => {
+test("editor cards enclose Now and Library with micro-headers and count badges on phase and class", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
-  for (const kind of ["class", "phase", "triplet"] as const) {
+  for (const kind of ["class", "phase"] as const) {
     await focusTask(page, kind);
     const editor = page.locator(`[data-editor-card="${kind}"]`);
     const nowCard = editor.locator('[data-card="now"]');
@@ -873,6 +873,10 @@ test("editor cards enclose Now and Library with micro-headers and count badges",
     expect(nowBox && libraryBox).toBeTruthy();
     expect(libraryBox!.y).toBeGreaterThan(nowBox!.y);
   }
+  // Triplet retains hairline until ticket 02
+  await focusTask(page, "triplet");
+  const tripletEditor = page.locator('[data-editor-card="triplet"]');
+  await expect(tripletEditor.getByRole("separator")).toHaveCount(1);
 });
 
 test("video Clip uses video element and seek updates Now", async ({ page }) => {
@@ -1001,12 +1005,16 @@ test("Library rows render soft semantic tint, checkmark on selection, and dimmed
   await expect(rowBtn).toHaveAttribute("aria-pressed", "false");
   await expect(rowBtn.locator("[data-checkmark]")).toHaveCount(0);
 
+  // Hover unselected row: gentle surface highlight via hover class
+  await rowBtn.hover();
+
   await rowBtn.click();
   await expect(rowBtn).toHaveAttribute("aria-pressed", "true");
   await expect(rowBtn.locator("[data-checkmark]")).toBeVisible();
 
   const bg = await cssBackground(rowBtn);
-  expect(bg).toMatch(/^rgba?\(/);
+  expect(bg).not.toBe("rgba(0, 0, 0, 0)");
+  expect(bg).toMatch(/(?:rgba?|oklab)\(/);
 
   const trashBtn = classLib.getByRole("button", { name: "Delete class tag grasper" });
   await expect(trashBtn).toHaveClass(/opacity-30/);

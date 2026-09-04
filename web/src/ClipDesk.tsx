@@ -912,15 +912,31 @@ function AddVocabRow({
   );
 }
 
-function EditorCardHeader({ title, count }: { title: string; count: number }) {
+function EditorCard({
+  card,
+  title,
+  count,
+  children,
+}: {
+  card: "now" | "library";
+  title: string;
+  count: number;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</span>
-      <span className="text-xs text-muted-foreground">·</span>
-      <span className="rounded-full bg-secondary px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
-        {count}
-      </span>
-    </div>
+    <section
+      data-card={card}
+      className="flex flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3"
+    >
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</span>
+        <span className="text-xs text-muted-foreground">·</span>
+        <span className="rounded-full bg-secondary px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
+          {count}
+        </span>
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -961,11 +977,7 @@ function ClassEditor({
 
   return (
     <section data-editor-card="class" className="flex flex-col gap-2">
-      <section
-        data-card="now"
-        className="flex flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3"
-      >
-        <EditorCardHeader title="Now" count={current.length} />
+      <EditorCard card="now" title="Now" count={current.length}>
         <div data-now="" className="flex flex-wrap gap-1">
           {current.length === 0 ? (
             <p className="text-sm text-muted-foreground">{nowEmptyText("class", frameIndex)}</p>
@@ -981,12 +993,8 @@ function ClassEditor({
             </span>
           ))}
         </div>
-      </section>
-      <section
-        data-card="library"
-        className="flex flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3"
-      >
-        <EditorCardHeader title="Library" count={classTags.length} />
+      </EditorCard>
+      <EditorCard card="library" title="Library" count={classTags.length}>
         <LibraryList
           names={classTags}
           isOnThisFrame={(name) => current.includes(name)}
@@ -1004,7 +1012,7 @@ function ClassEditor({
           }}
         />
         <AddVocabRow listName="class_tags" names={classTags} mutateVocab={mutateVocab} ariaLabel="Add class name" />
-      </section>
+      </EditorCard>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </section>
   );
@@ -1045,11 +1053,7 @@ function PhaseEditor({
 
   return (
     <section data-editor-card="phase" className="flex flex-col gap-2">
-      <section
-        data-card="now"
-        className="flex flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3"
-      >
-        <EditorCardHeader title="Now" count={current ? 1 : 0} />
+      <EditorCard card="now" title="Now" count={current ? 1 : 0}>
         <p
           data-now=""
           data-label-color={current ? labelColor(current) : undefined}
@@ -1069,12 +1073,8 @@ function PhaseEditor({
             nowEmptyText("phase", frameIndex)
           )}
         </p>
-      </section>
-      <section
-        data-card="library"
-        className="flex flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3"
-      >
-        <EditorCardHeader title="Library" count={phases.length} />
+      </EditorCard>
+      <EditorCard card="library" title="Library" count={phases.length}>
         <LibraryList
           names={phases}
           isOnThisFrame={(name) => name === current}
@@ -1091,7 +1091,7 @@ function PhaseEditor({
           }}
         />
         <AddVocabRow listName="phases" names={phases} mutateVocab={mutateVocab} ariaLabel="Add phase name" />
-      </section>
+      </EditorCard>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </section>
   );
@@ -1249,39 +1249,31 @@ function TripletEditor({
 
   return (
     <section data-editor-card="triplet" className="flex flex-col gap-2">
-      <section
-        data-card="now"
-        className="flex flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3"
-      >
-        <EditorCardHeader title="Now" count={nowRows.length} />
-        <table aria-label="Now" data-now="" className="w-full text-left text-xs">
-          <thead>
-            <tr className="text-muted-foreground">
-              <th className="font-medium">instrument</th>
-              <th className="font-medium">verb</th>
-              <th className="font-medium">target</th>
-            </tr>
-          </thead>
-          <tbody>
-            {nowRows.map((row) => {
-              const key = tripleIdentity(row);
-              return (
-                <tr key={row.id} data-label-color={labelColor(key)}>
-                  <td className="truncate px-1" style={nowFillStyle(key)}>{row.instrument}</td>
-                  <td className="truncate px-1" style={nowFillStyle(key)}>{row.verb}</td>
-                  <td className="truncate px-1" style={nowFillStyle(key)}>{row.target}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </section>
-      <section
-        data-card="library"
-        className="flex flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3"
-      >
-        <EditorCardHeader title="Library" count={triples.length} />
-        <table aria-label="Library" className="w-full text-left text-xs">
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
+      <table aria-label="Now" data-now="" className="w-full text-left text-xs">
+        <thead>
+          <tr className="text-muted-foreground">
+            <th className="font-medium">instrument</th>
+            <th className="font-medium">verb</th>
+            <th className="font-medium">target</th>
+          </tr>
+        </thead>
+        <tbody>
+          {nowRows.map((row) => {
+            const key = tripleIdentity(row);
+            return (
+              <tr key={row.id} data-label-color={labelColor(key)}>
+                <td className="truncate px-1" style={nowFillStyle(key)}>{row.instrument}</td>
+                <td className="truncate px-1" style={nowFillStyle(key)}>{row.verb}</td>
+                <td className="truncate px-1" style={nowFillStyle(key)}>{row.target}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <hr className="m-0 h-px border-0 bg-border" />
+      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
+      <table aria-label="Library" className="w-full text-left text-xs">
         <thead>
           <tr className="text-muted-foreground">
             <th className="font-medium">instrument</th>
@@ -1438,11 +1430,11 @@ function TripletEditor({
           })}
         </tbody>
       </table>
-      <div className="mt-2 grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-1 border-t border-border/50 pt-2">
-        <Input aria-label="instrument" placeholder="instrument" list="triplet-instrument-words" value={draft.instrument} onChange={(event) => setDraft((s) => ({ ...s, instrument: event.target.value }))} className="h-7 text-xs" />
-        <Input aria-label="verb" placeholder="verb" list="triplet-verb-words" value={draft.verb} onChange={(event) => setDraft((s) => ({ ...s, verb: event.target.value }))} className="h-7 text-xs" />
-        <Input aria-label="target" placeholder="target" list="triplet-target-words" value={draft.target} onChange={(event) => setDraft((s) => ({ ...s, target: event.target.value }))} className="h-7 text-xs" />
-        <Button type="button" size="sm" className="h-7 px-2 text-xs" aria-label="Add triplet row" onClick={() => void addRowOnly()}>+</Button>
+      <div className="mt-2 grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-1">
+        <Input aria-label="instrument" placeholder="instrument" list="triplet-instrument-words" value={draft.instrument} onChange={(event) => setDraft((s) => ({ ...s, instrument: event.target.value }))} />
+        <Input aria-label="verb" placeholder="verb" list="triplet-verb-words" value={draft.verb} onChange={(event) => setDraft((s) => ({ ...s, verb: event.target.value }))} />
+        <Input aria-label="target" placeholder="target" list="triplet-target-words" value={draft.target} onChange={(event) => setDraft((s) => ({ ...s, target: event.target.value }))} />
+        <Button type="button" size="sm" aria-label="Add triplet row" onClick={() => void addRowOnly()}>+</Button>
       </div>
       <datalist id="triplet-instrument-words">
         {instrumentWords.map((word) => <option key={word} value={word} />)}
@@ -1453,7 +1445,6 @@ function TripletEditor({
       <datalist id="triplet-target-words">
         {targetWords.map((word) => <option key={word} value={word} />)}
       </datalist>
-      </section>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </section>
   );
