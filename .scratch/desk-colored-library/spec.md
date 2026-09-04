@@ -1,4 +1,4 @@
-Status: specified — tickets 01–03 ready-for-agent
+Status: specified — tickets 01–03 resolved
 
 # Spec: colored labels, named timeline bars, read-only Now, triplet rows
 

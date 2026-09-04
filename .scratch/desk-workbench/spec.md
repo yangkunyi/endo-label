@@ -1,4 +1,4 @@
-Status: specified — not ticketed
+Status: specified — tickets 01–06 resolved
 
 # Spec: desk workbench (Clip rail, slider, span keys, HeroUI)
 
