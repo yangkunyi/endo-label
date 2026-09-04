@@ -1,4 +1,4 @@
-Status: specified — tickets 01–03 ready-for-agent
+Status: specified — tickets 01–03 resolved
 
 # Spec: Dual Editor Cards for Now and Library, Triplet grid with hairline dividers, and soft semantic selection
 
