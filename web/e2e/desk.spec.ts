@@ -645,7 +645,7 @@ test("labeled Now fills with label color; empty Now does not", async ({ page }) 
 
   await focusTask(page, "class");
   const classNow = page.locator('[data-editor-card="class"] [data-now]');
-  await expect(classNow.getByText("none")).toBeVisible();
+  await expect(classNow.getByText("No class tags on frame 0")).toBeVisible();
   const classEmptyBg = await cssBackground(classNow);
   await pickName(page, "class", "FillClass");
   const classChip = classNow.locator("[data-label-color]");
@@ -659,7 +659,7 @@ test("labeled Now fills with label color; empty Now does not", async ({ page }) 
     await cssBackground(page.getByRole("list", { name: "Library" }).getByRole("button", { name: "FillClass", exact: true })),
   ).not.toBe(classFill);
   await pickName(page, "class", "FillClass");
-  await expect(classNow.getByText("none")).toBeVisible();
+  await expect(classNow.getByText("No class tags on frame 0")).toBeVisible();
   expect(await cssBackground(classNow)).not.toBe(classFill);
 
   await pickName(page, "phase", "FillPhase");
@@ -673,7 +673,7 @@ test("labeled Now fills with label color; empty Now does not", async ({ page }) 
     await cssBackground(page.getByRole("list", { name: "Library" }).getByRole("button", { name: "FillPhase", exact: true })),
   ).not.toBe(phaseFill);
   await pickName(page, "phase", "FillPhase");
-  await expect(phaseNow).toHaveText("unlabeled");
+  await expect(phaseNow).toHaveText("No phase on frame 0");
   expect(await cssBackground(phaseNow)).not.toBe(phaseFill);
 
   await fillTriplet(page, "FillTool", "FillAct", "FillOrg");
@@ -854,24 +854,24 @@ test("composed triplet row survives a Task focus switch", async ({ page }) => {
   await expect(row).toBeVisible();
 });
 
-test("editor hairlines divide Now and Library without a Card", async ({ page }) => {
+test("editor cards enclose Now and Library with micro-headers and count badges", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   for (const kind of ["class", "phase", "triplet"] as const) {
     await focusTask(page, kind);
     const editor = page.locator(`[data-editor-card="${kind}"]`);
-    const now = editor.getByText("Now", { exact: true });
-    const library = editor.getByText("Library", { exact: true });
-    await expect(now).toBeVisible();
-    await expect(library).toBeVisible();
+    const nowCard = editor.locator('[data-card="now"]');
+    const libraryCard = editor.locator('[data-card="library"]');
+    await expect(nowCard).toBeVisible();
+    await expect(libraryCard).toBeVisible();
+    await expect(nowCard.getByText("Now", { exact: true })).toBeVisible();
+    await expect(libraryCard.getByText("Library", { exact: true })).toBeVisible();
     await expect(editor.getByRole("button", { name: "List" })).toHaveCount(0);
     const seps = editor.getByRole("separator");
-    await expect(seps).toHaveCount(1);
-    const nowBox = await now.boundingBox();
-    const libraryBox = await library.boundingBox();
-    const first = await seps.first().boundingBox();
-    expect(nowBox && libraryBox && first).toBeTruthy();
-    expect(first!.y).toBeGreaterThan(nowBox!.y);
-    expect(first!.y).toBeLessThan(libraryBox!.y);
+    await expect(seps).toHaveCount(0);
+    const nowBox = await nowCard.boundingBox();
+    const libraryBox = await libraryCard.boundingBox();
+    expect(nowBox && libraryBox).toBeTruthy();
+    expect(libraryBox!.y).toBeGreaterThan(nowBox!.y);
   }
 });
 
@@ -903,7 +903,7 @@ test("video Clip uses video element and seek updates Now", async ({ page }) => {
   await expect(page.getByRole("tabpanel").getByRole("paragraph").filter({ hasText: /^VidPhase$/ })).toBeVisible();
   await scrubToFrame(page, 1);
   await expect(page.getByText("Frame 1 of 2")).toBeVisible();
-  await expect(page.getByRole("tabpanel").getByRole("paragraph").filter({ hasText: /^unlabeled$/ })).toBeVisible();
+  await expect(page.getByRole("tabpanel").getByRole("paragraph").filter({ hasText: /^No phase on frame 1$/ })).toBeVisible();
   await expect.poll(async () => await clipFrames(page, "phase", "CLIP_VID")).toMatchObject({ "0": "VidPhase" });
 });
 
@@ -991,4 +991,34 @@ test("e2e closeout: span paint preserves Vocab, Now read-only, Library trash wor
     return (frames["0"] ?? []).includes("CloseoutClass") || (frames["1"] ?? []).includes("CloseoutClass");
   }).toBe(false);
 });
+
+test("Library rows render soft semantic tint, checkmark on selection, and dimmed trash", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await focusTask(page, "class");
+  const classLib = page.getByRole("list", { name: "Library" });
+  const rowBtn = classLib.getByRole("button", { name: "grasper", exact: true });
+
+  await expect(rowBtn).toHaveAttribute("aria-pressed", "false");
+  await expect(rowBtn.locator("[data-checkmark]")).toHaveCount(0);
+
+  await rowBtn.click();
+  await expect(rowBtn).toHaveAttribute("aria-pressed", "true");
+  await expect(rowBtn.locator("[data-checkmark]")).toBeVisible();
+
+  const bg = await cssBackground(rowBtn);
+  expect(bg).toMatch(/^rgba?\(/);
+
+  const trashBtn = classLib.getByRole("button", { name: "Delete class tag grasper" });
+  await expect(trashBtn).toHaveClass(/opacity-30/);
+
+  const libCard = page.locator('[data-editor-card="class"] [data-card="library"]');
+  const addInput = libCard.getByPlaceholder("Type to add");
+  await expect(addInput).toBeVisible();
+  await expect(addInput).toHaveClass(/h-7/);
+
+  await rowBtn.click();
+  await expect(rowBtn).toHaveAttribute("aria-pressed", "false");
+  await expect(rowBtn.locator("[data-checkmark]")).toHaveCount(0);
+});
+
 

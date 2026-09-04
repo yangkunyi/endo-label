@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
-import { Trash2 } from "lucide-react";
+import { Check, Trash2 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
 import {
@@ -40,6 +40,7 @@ import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { VideoPlayer } from "./components/ui/video-player";
 import { useDeskStore, type EditorKind, type PaintChip } from "./deskStore";
+import { libraryRowSemanticStyle, nowEmptyText } from "./editorCards";
 import { cn } from "./lib/utils";
 import { foldClass, foldPhase, foldTriplet, labelColor, type TimelineLane } from "./timeline";
 
@@ -757,12 +758,13 @@ function LibraryList({
         {names.map((name) => {
           const on = isOnThisFrame(name);
           return (
-            <li key={name} className="flex items-center gap-1">
+            <li key={name} className="group flex items-center gap-1">
               {renameFrom === name ? (
                 <Input
                   aria-label={renameLabel}
                   value={renameDraft}
                   autoFocus
+                  className="h-7 text-xs"
                   onChange={(event) => setRenameDraft(event.target.value)}
                   onBlur={() => setRenameFrom(null)}
                   onKeyDown={(event) => {
@@ -791,11 +793,12 @@ function LibraryList({
                   size="sm"
                   variant="ghost"
                   className={cn(
-                    "min-w-0 flex-1 justify-start border-l-2 transition-colors",
+                    "min-w-0 flex-1 justify-start border transition-colors",
                     on
-                      ? "border-l-primary bg-primary/20 font-medium text-white ring-1 ring-primary/50 shadow-xs"
-                      : "border-l-transparent text-muted-foreground hover:bg-secondary hover:text-foreground",
+                      ? "font-medium text-foreground"
+                      : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
                   )}
+                  style={libraryRowSemanticStyle(labelColor(name), on)}
                   aria-pressed={on}
                   data-label-color={colorNames ? labelColor(name) : undefined}
                   onClick={() => schedulePick(name)}
@@ -806,12 +809,20 @@ function LibraryList({
                       aria-hidden
                       className={cn(
                         "mr-1.5 inline-block h-2.5 w-2.5 shrink-0 rounded-sm transition-transform",
-                        on && "scale-110 ring-1 ring-white/60",
+                        on && "ring-1 ring-white/60",
                       )}
                       style={{ backgroundColor: labelColor(name) }}
                     />
                   ) : null}
                   <span className="truncate">{name}</span>
+                  {on ? (
+                    <Check
+                      aria-hidden="true"
+                      data-checkmark=""
+                      size={14}
+                      className="ml-auto mr-1 shrink-0 text-primary"
+                    />
+                  ) : null}
                 </Button>
               )}
               <Button
@@ -819,6 +830,7 @@ function LibraryList({
                 size="icon"
                 variant="ghost"
                 aria-label={deleteLabel(name)}
+                className="opacity-30 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
                 onClick={() => {
                   if (!window.confirm(`${deleteLabel(name)} from every Clip?`)) {
                     return;
@@ -870,21 +882,44 @@ function AddVocabRow({
   }
 
   return (
-    <div className="mt-2 flex items-center gap-1">
-      <Input
-        aria-label={ariaLabel}
-        placeholder="Type to add"
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            void addOnly();
-          }
-        }}
-      />
-      <Button type="button" size="sm" aria-label={ariaLabel} onClick={() => void addOnly()}>+</Button>
+    <div className="mt-2 flex flex-col gap-1 border-t border-border/50 pt-2">
+      <div className="flex items-center gap-1">
+        <Input
+          aria-label={ariaLabel}
+          placeholder="Type to add"
+          value={draft}
+          className="h-7 text-xs"
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void addOnly();
+            }
+          }}
+        />
+        <Button
+          type="button"
+          size="sm"
+          className="h-7 px-2 text-xs"
+          aria-label={ariaLabel}
+          onClick={() => void addOnly()}
+        >
+          +
+        </Button>
+      </div>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+function EditorCardHeader({ title, count }: { title: string; count: number }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</span>
+      <span className="text-xs text-muted-foreground">·</span>
+      <span className="rounded-full bg-secondary px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
+        {count}
+      </span>
     </div>
   );
 }
@@ -926,39 +961,50 @@ function ClassEditor({
 
   return (
     <section data-editor-card="class" className="flex flex-col gap-2">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
-      <div data-now="" className="flex flex-wrap gap-1">
-        {current.length === 0 ? <p className="text-sm text-muted-foreground">none</p> : null}
-        {current.map((name) => (
-          <span
-            key={name}
-            data-label-color={labelColor(name)}
-            className="rounded-md px-2 py-1 text-sm"
-            style={nowFillStyle(name)}
-          >
-            {name}
-          </span>
-        ))}
-      </div>
-      <hr className="m-0 h-px border-0 bg-border" />
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
-      <LibraryList
-        names={classTags}
-        isOnThisFrame={(name) => current.includes(name)}
-        disabled={frameCount <= 0}
-        listName="class_tags"
-        renameLabel="Rename class tag"
-        deleteLabel={(name) => `Delete class tag ${name}`}
-        mutateVocab={mutateVocab}
-        onAfterChange={async () => {
-          await mutateClass();
-        }}
-        onPick={(name) => {
-          const on = !current.includes(name);
-          void writeTags(toggleClassTag(current, name), { name, on });
-        }}
-      />
-      <AddVocabRow listName="class_tags" names={classTags} mutateVocab={mutateVocab} ariaLabel="Add class name" />
+      <section
+        data-card="now"
+        className="flex flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3"
+      >
+        <EditorCardHeader title="Now" count={current.length} />
+        <div data-now="" className="flex flex-wrap gap-1">
+          {current.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{nowEmptyText("class", frameIndex)}</p>
+          ) : null}
+          {current.map((name) => (
+            <span
+              key={name}
+              data-label-color={labelColor(name)}
+              className="rounded-md px-2 py-1 text-sm font-medium"
+              style={nowFillStyle(name)}
+            >
+              {name}
+            </span>
+          ))}
+        </div>
+      </section>
+      <section
+        data-card="library"
+        className="flex flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3"
+      >
+        <EditorCardHeader title="Library" count={classTags.length} />
+        <LibraryList
+          names={classTags}
+          isOnThisFrame={(name) => current.includes(name)}
+          disabled={frameCount <= 0}
+          listName="class_tags"
+          renameLabel="Rename class tag"
+          deleteLabel={(name) => `Delete class tag ${name}`}
+          mutateVocab={mutateVocab}
+          onAfterChange={async () => {
+            await mutateClass();
+          }}
+          onPick={(name) => {
+            const on = !current.includes(name);
+            void writeTags(toggleClassTag(current, name), { name, on });
+          }}
+        />
+        <AddVocabRow listName="class_tags" names={classTags} mutateVocab={mutateVocab} ariaLabel="Add class name" />
+      </section>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </section>
   );
@@ -999,33 +1045,53 @@ function PhaseEditor({
 
   return (
     <section data-editor-card="phase" className="flex flex-col gap-2">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
-      <p
-        data-now=""
-        data-label-color={current ? labelColor(current) : undefined}
-        className={current ? "inline-block rounded-md px-2 py-1 text-sm" : "text-sm text-muted-foreground"}
-        style={current ? nowFillStyle(current) : undefined}
+      <section
+        data-card="now"
+        className="flex flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3"
       >
-        {current ?? "unlabeled"}
-      </p>
-      <hr className="m-0 h-px border-0 bg-border" />
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
-      <LibraryList
-        names={phases}
-        isOnThisFrame={(name) => name === current}
-        disabled={frameCount <= 0}
-        listName="phases"
-        renameLabel="Rename phase"
-        deleteLabel={(name) => `Delete phase ${name}`}
-        mutateVocab={mutateVocab}
-        onAfterChange={async () => {
-          await mutatePhase();
-        }}
-        onPick={(name) => {
-          void writePhase(name === current ? null : name);
-        }}
-      />
-      <AddVocabRow listName="phases" names={phases} mutateVocab={mutateVocab} ariaLabel="Add phase name" />
+        <EditorCardHeader title="Now" count={current ? 1 : 0} />
+        <p
+          data-now=""
+          data-label-color={current ? labelColor(current) : undefined}
+          className={
+            current
+              ? "inline-flex items-center rounded-md px-2 py-1 text-sm font-medium"
+              : "text-sm text-muted-foreground"
+          }
+          style={current ? nowFillStyle(current) : undefined}
+        >
+          {current ? (
+            <>
+              <span aria-hidden className="mr-1.5 inline-block h-2 w-2 shrink-0 rounded-full bg-white/70" />
+              {current}
+            </>
+          ) : (
+            nowEmptyText("phase", frameIndex)
+          )}
+        </p>
+      </section>
+      <section
+        data-card="library"
+        className="flex flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3"
+      >
+        <EditorCardHeader title="Library" count={phases.length} />
+        <LibraryList
+          names={phases}
+          isOnThisFrame={(name) => name === current}
+          disabled={frameCount <= 0}
+          listName="phases"
+          renameLabel="Rename phase"
+          deleteLabel={(name) => `Delete phase ${name}`}
+          mutateVocab={mutateVocab}
+          onAfterChange={async () => {
+            await mutatePhase();
+          }}
+          onPick={(name) => {
+            void writePhase(name === current ? null : name);
+          }}
+        />
+        <AddVocabRow listName="phases" names={phases} mutateVocab={mutateVocab} ariaLabel="Add phase name" />
+      </section>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </section>
   );
@@ -1183,31 +1249,39 @@ function TripletEditor({
 
   return (
     <section data-editor-card="triplet" className="flex flex-col gap-2">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Now</p>
-      <table aria-label="Now" data-now="" className="w-full text-left text-xs">
-        <thead>
-          <tr className="text-muted-foreground">
-            <th className="font-medium">instrument</th>
-            <th className="font-medium">verb</th>
-            <th className="font-medium">target</th>
-          </tr>
-        </thead>
-        <tbody>
-          {nowRows.map((row) => {
-            const key = tripleIdentity(row);
-            return (
-              <tr key={row.id} data-label-color={labelColor(key)}>
-                <td className="truncate px-1" style={nowFillStyle(key)}>{row.instrument}</td>
-                <td className="truncate px-1" style={nowFillStyle(key)}>{row.verb}</td>
-                <td className="truncate px-1" style={nowFillStyle(key)}>{row.target}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      <hr className="m-0 h-px border-0 bg-border" />
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Library</p>
-      <table aria-label="Library" className="w-full text-left text-xs">
+      <section
+        data-card="now"
+        className="flex flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3"
+      >
+        <EditorCardHeader title="Now" count={nowRows.length} />
+        <table aria-label="Now" data-now="" className="w-full text-left text-xs">
+          <thead>
+            <tr className="text-muted-foreground">
+              <th className="font-medium">instrument</th>
+              <th className="font-medium">verb</th>
+              <th className="font-medium">target</th>
+            </tr>
+          </thead>
+          <tbody>
+            {nowRows.map((row) => {
+              const key = tripleIdentity(row);
+              return (
+                <tr key={row.id} data-label-color={labelColor(key)}>
+                  <td className="truncate px-1" style={nowFillStyle(key)}>{row.instrument}</td>
+                  <td className="truncate px-1" style={nowFillStyle(key)}>{row.verb}</td>
+                  <td className="truncate px-1" style={nowFillStyle(key)}>{row.target}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </section>
+      <section
+        data-card="library"
+        className="flex flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3"
+      >
+        <EditorCardHeader title="Library" count={triples.length} />
+        <table aria-label="Library" className="w-full text-left text-xs">
         <thead>
           <tr className="text-muted-foreground">
             <th className="font-medium">instrument</th>
@@ -1364,11 +1438,11 @@ function TripletEditor({
           })}
         </tbody>
       </table>
-      <div className="mt-2 grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-1">
-        <Input aria-label="instrument" placeholder="instrument" list="triplet-instrument-words" value={draft.instrument} onChange={(event) => setDraft((s) => ({ ...s, instrument: event.target.value }))} />
-        <Input aria-label="verb" placeholder="verb" list="triplet-verb-words" value={draft.verb} onChange={(event) => setDraft((s) => ({ ...s, verb: event.target.value }))} />
-        <Input aria-label="target" placeholder="target" list="triplet-target-words" value={draft.target} onChange={(event) => setDraft((s) => ({ ...s, target: event.target.value }))} />
-        <Button type="button" size="sm" aria-label="Add triplet row" onClick={() => void addRowOnly()}>+</Button>
+      <div className="mt-2 grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-1 border-t border-border/50 pt-2">
+        <Input aria-label="instrument" placeholder="instrument" list="triplet-instrument-words" value={draft.instrument} onChange={(event) => setDraft((s) => ({ ...s, instrument: event.target.value }))} className="h-7 text-xs" />
+        <Input aria-label="verb" placeholder="verb" list="triplet-verb-words" value={draft.verb} onChange={(event) => setDraft((s) => ({ ...s, verb: event.target.value }))} className="h-7 text-xs" />
+        <Input aria-label="target" placeholder="target" list="triplet-target-words" value={draft.target} onChange={(event) => setDraft((s) => ({ ...s, target: event.target.value }))} className="h-7 text-xs" />
+        <Button type="button" size="sm" className="h-7 px-2 text-xs" aria-label="Add triplet row" onClick={() => void addRowOnly()}>+</Button>
       </div>
       <datalist id="triplet-instrument-words">
         {instrumentWords.map((word) => <option key={word} value={word} />)}
@@ -1379,6 +1453,7 @@ function TripletEditor({
       <datalist id="triplet-target-words">
         {targetWords.map((word) => <option key={word} value={word} />)}
       </datalist>
+      </section>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </section>
   );
