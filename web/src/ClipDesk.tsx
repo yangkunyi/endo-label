@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
-import { Brush, Check, Trash2, X } from "lucide-react";
+import { Brush, Check, Eye, EyeOff, Trash2, X } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
 import {
@@ -39,7 +39,7 @@ import {
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { VideoPlayer } from "./components/ui/video-player";
-import { brushOfKind, useDeskStore, type BrushIdentity, type EditorKind } from "./deskStore";
+import { brushOfKind, laneIsVisible, laneVisibilityKey, useDeskStore, type BrushIdentity, type EditorKind } from "./deskStore";
 import { libraryRowSemanticStyle, nowEmptyText } from "./editorCards";
 import { cn } from "./lib/utils";
 import { foldClass, foldPhase, foldTriplet, frameFromClientX, labelColor, type TimelineLane } from "./timeline";
@@ -97,6 +97,74 @@ function orderBrushByVocab(identities: BrushIdentity[], order: string[]): BrushI
 
 function nowFillStyle(identity: string) {
   return { backgroundColor: labelColor(identity), color: "var(--color-background)" };
+}
+
+/** Lane-visibility keys of identities that have at least one Frame on this Clip. */
+function presentLaneKeys(
+  focus: EditorKind,
+  phaseFrames: Record<string, string>,
+  classFrames: Record<string, string[]>,
+  tripletFrames: Record<string, TripletRow[]>,
+): Set<string> {
+  const keys = new Set<string>();
+  if (focus === "phase") {
+    for (const name of Object.values(phaseFrames)) {
+      if (name) {
+        keys.add(laneVisibilityKey("phase", name));
+      }
+    }
+  } else if (focus === "class") {
+    for (const tags of Object.values(classFrames)) {
+      for (const tag of tags ?? []) {
+        if (tag) {
+          keys.add(laneVisibilityKey("class", tag));
+        }
+      }
+    }
+  } else {
+    for (const rows of Object.values(tripletFrames)) {
+      for (const row of rows ?? []) {
+        keys.add(laneVisibilityKey("triplet", tripleIdentity(row)));
+      }
+    }
+  }
+  return keys;
+}
+
+/** Visible Lanes of the focused kind in Vocab order, including unused-but-eye-on empty Lanes. */
+function visibleLanes(
+  focus: EditorKind,
+  frameCount: number,
+  phaseFrames: Record<string, string>,
+  classFrames: Record<string, string[]>,
+  tripletFrames: Record<string, TripletRow[]>,
+  vocab: Vocab | undefined,
+  presentKeys: Set<string>,
+  stored: Record<string, boolean>,
+): TimelineLane[] {
+  const folded =
+    focus === "phase"
+      ? foldPhase(frameCount, phaseFrames)
+      : focus === "class"
+        ? foldClass(frameCount, classFrames)
+        : foldTriplet(frameCount, tripletFrames);
+  const byKey = new Map(folded.map((lane) => [lane.key, lane]));
+  const keys: string[] = [];
+  for (const identity of vocabOrderKeys(focus, vocab)) {
+    const key = laneVisibilityKey(focus, identity);
+    if (laneIsVisible(stored, key, presentKeys.has(key))) {
+      keys.push(identity);
+    }
+  }
+  for (const lane of folded) {
+    if (!keys.includes(lane.key)) {
+      const key = laneVisibilityKey(focus, lane.key);
+      if (laneIsVisible(stored, key, true)) {
+        keys.push(lane.key);
+      }
+    }
+  }
+  return keys.map((identity) => byKey.get(identity) ?? { key: identity, segs: [] });
 }
 
 function rangeEnds(fromIndex: number | null, currentIndex: number): { from: number; to: number } {
@@ -259,6 +327,8 @@ export function ClipDesk() {
   const setSpanStart = useDeskStore((s) => s.setSpanStart);
   const brush = useDeskStore((s) => s.brush);
   const dropBrush = useDeskStore((s) => s.dropBrush);
+  const laneVisibility = useDeskStore((s) => s.laneVisibility);
+  const setLaneVisible = useDeskStore((s) => s.setLaneVisible);
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
   const [barSelection, setBarSelection] = useState<LaneBar[]>([]);
   const selectionScope = `${clipId ?? ""}:${taskFocus}`;
@@ -297,6 +367,33 @@ export function ClipDesk() {
   const focusedBrush = orderBrushByVocab(brushOfKind(brush, taskFocus), vocabOrderKeys(taskFocus, vocab));
   const hasBrush = focusedBrush.length > 0;
   const previewRange = hasBrush && markedFrom != null ? { from: rangeFrom, to: rangeTo } : null;
+
+  const lanePresentKeys = presentLaneKeys(
+    taskFocus,
+    phaseDoc?.frames ?? {},
+    classDoc?.frames ?? {},
+    tripletDoc?.frames ?? {},
+  );
+  const laneVisibleFor = (identity: string) => {
+    const key = laneVisibilityKey(taskFocus, identity);
+    return laneIsVisible(laneVisibility, key, lanePresentKeys.has(key));
+  };
+  const toggleLaneFor = (identity: string) => {
+    const key = laneVisibilityKey(taskFocus, identity);
+    setLaneVisible(key, !laneIsVisible(laneVisibility, key, lanePresentKeys.has(key)));
+  };
+  const lanes = data
+    ? visibleLanes(
+        taskFocus,
+        data.frame_count,
+        phaseDoc?.frames ?? {},
+        classDoc?.frames ?? {},
+        tripletDoc?.frames ?? {},
+        vocab,
+        lanePresentKeys,
+        laneVisibility,
+      )
+    : [];
 
   const commitIdentityRange = useCallback(
     async (identity: BrushIdentity, from: number, to: number, remove: boolean) => {
@@ -557,10 +654,7 @@ export function ClipDesk() {
               clipRailWidth={layout.clipRailWidth}
               frameCount={data.frame_count}
               frameIndex={frameIndex}
-              focus={taskFocus}
-              phaseFrames={phaseDoc?.frames ?? {}}
-              classFrames={classDoc?.frames ?? {}}
-              tripletFrames={tripletDoc?.frames ?? {}}
+              lanes={lanes}
               previewRange={previewRange}
               brushKeys={focusedBrush.map(brushColorKey)}
               barSelection={barSelection}
@@ -617,6 +711,8 @@ export function ClipDesk() {
                   classTags={vocab?.class_tags ?? []}
                   mutateClass={mutateClass}
                   mutateVocab={mutateVocab}
+                  laneVisible={laneVisibleFor}
+                  onToggleLane={toggleLaneFor}
                 />
               ) : taskFocus === "triplet" ? (
                 <TripletEditor
@@ -627,6 +723,8 @@ export function ClipDesk() {
                   triples={vocab?.triples ?? []}
                   mutateTriplet={mutateTriplet}
                   mutateVocab={mutateVocab}
+                  laneVisible={laneVisibleFor}
+                  onToggleLane={toggleLaneFor}
                 />
               ) : (
                 <PhaseEditor
@@ -637,6 +735,8 @@ export function ClipDesk() {
                   phases={vocab?.phases ?? []}
                   mutatePhase={mutatePhase}
                   mutateVocab={mutateVocab}
+                  laneVisible={laneVisibleFor}
+                  onToggleLane={toggleLaneFor}
                 />
               )
             ) : (
@@ -725,10 +825,7 @@ function TimelineBand({
   clipRailWidth,
   frameCount,
   frameIndex,
-  focus,
-  phaseFrames,
-  classFrames,
-  tripletFrames,
+  lanes,
   previewRange,
   brushKeys,
   barSelection,
@@ -741,10 +838,7 @@ function TimelineBand({
   clipRailWidth: number;
   frameCount: number;
   frameIndex: number;
-  focus: EditorKind;
-  phaseFrames: Record<string, string>;
-  classFrames: Record<string, string[]>;
-  tripletFrames: Record<string, TripletRow[]>;
+  lanes: TimelineLane[];
   previewRange: { from: number; to: number } | null;
   brushKeys: string[];
   barSelection: LaneBar[];
@@ -754,12 +848,6 @@ function TimelineBand({
   onPaintLane: (laneKey: string, from: number, to: number) => void;
   onTrimBar: (laneKey: string, oldStart: number, oldEnd: number, newStart: number, newEnd: number) => void;
 }) {
-  const lanes: TimelineLane[] =
-    focus === "phase"
-      ? foldPhase(frameCount, phaseFrames)
-      : focus === "class"
-        ? foldClass(frameCount, classFrames)
-        : foldTriplet(frameCount, tripletFrames);
   const trackRef = useRef<HTMLDivElement>(null);
   const laneTrackRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -1158,6 +1246,8 @@ function LibraryList({
   inBrush,
   onPick,
   onToggleBrush,
+  laneVisible,
+  onToggleLane,
   disabled,
   listName,
   renameLabel,
@@ -1172,6 +1262,8 @@ function LibraryList({
   inBrush: (name: string) => boolean;
   onPick: (name: string) => void;
   onToggleBrush: (name: string) => void;
+  laneVisible: (name: string) => boolean;
+  onToggleLane: (name: string) => void;
   disabled: boolean;
   listName: string;
   renameLabel: string;
@@ -1296,6 +1388,16 @@ function LibraryList({
                   ) : null}
                 </Button>
               )}
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label={laneVisible(name) ? "Hide lane" : "Show lane"}
+                className={laneVisible(name) ? "text-foreground" : "text-muted-foreground"}
+                onClick={() => onToggleLane(name)}
+              >
+                {laneVisible(name) ? <Eye size={14} /> : <EyeOff size={14} />}
+              </Button>
               <Button
                 type="button"
                 size="icon"
@@ -1429,6 +1531,8 @@ function ClassEditor({
   classTags,
   mutateClass,
   mutateVocab,
+  laneVisible,
+  onToggleLane,
 }: {
   clipId: string;
   frameIndex: number;
@@ -1437,6 +1541,8 @@ function ClassEditor({
   classTags: string[];
   mutateClass: KeyedMutator<ClassDoc>;
   mutateVocab: KeyedMutator<Vocab>;
+  laneVisible: (name: string) => boolean;
+  onToggleLane: (name: string) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const current = frameClassTags(classFrames, frameIndex);
@@ -1477,6 +1583,8 @@ function ClassEditor({
           names={classTags}
           isOnThisFrame={(name) => current.includes(name)}
           inBrush={(name) => brush.class.includes(name)}
+          laneVisible={laneVisible}
+          onToggleLane={onToggleLane}
           disabled={frameCount <= 0}
           listName="class_tags"
           renameLabel="Rename class tag"
@@ -1505,6 +1613,8 @@ function PhaseEditor({
   phases,
   mutatePhase,
   mutateVocab,
+  laneVisible,
+  onToggleLane,
 }: {
   clipId: string;
   frameIndex: number;
@@ -1513,6 +1623,8 @@ function PhaseEditor({
   phases: string[];
   mutatePhase: KeyedMutator<PhaseDoc>;
   mutateVocab: KeyedMutator<Vocab>;
+  laneVisible: (name: string) => boolean;
+  onToggleLane: (name: string) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const current = framePhaseName(phaseFrames, frameIndex);
@@ -1557,6 +1669,8 @@ function PhaseEditor({
           names={phases}
           isOnThisFrame={(name) => name === current}
           inBrush={(name) => brush.phase === name}
+          laneVisible={laneVisible}
+          onToggleLane={onToggleLane}
           disabled={frameCount <= 0}
           listName="phases"
           renameLabel="Rename phase"
@@ -1593,6 +1707,8 @@ function TripletEditor({
   triples,
   mutateTriplet,
   mutateVocab,
+  laneVisible,
+  onToggleLane,
 }: {
   clipId: string;
   frameIndex: number;
@@ -1601,6 +1717,8 @@ function TripletEditor({
   triples: VocabTriple[];
   mutateTriplet: KeyedMutator<TripletDoc>;
   mutateVocab: KeyedMutator<Vocab>;
+  laneVisible: (key: string) => boolean;
+  onToggleLane: (key: string) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState({ instrument: "", verb: "", target: "" });
@@ -1760,7 +1878,7 @@ function TripletEditor({
                       <span role="columnheader" className="px-2 py-1 font-medium">verb</span>
                       <span role="columnheader" className="px-2 py-1 font-medium">target</span>
                     </div>
-                    <div className="w-14 shrink-0" aria-hidden="true" />
+                    <div className="w-[84px] shrink-0" aria-hidden="true" />
                   </div>
                 </td>
               </tr>
@@ -1900,6 +2018,16 @@ function TripletEditor({
                             </span>
                           </Button>
                         )}
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label={laneVisible(key) ? "Hide lane" : "Show lane"}
+                          className={laneVisible(key) ? "text-foreground" : "text-muted-foreground"}
+                          onClick={() => onToggleLane(key)}
+                        >
+                          {laneVisible(key) ? <Eye size={14} /> : <EyeOff size={14} />}
+                        </Button>
                         <Button
                           type="button"
                           size="icon"

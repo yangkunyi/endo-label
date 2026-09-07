@@ -64,6 +64,58 @@ function dropBrushIdentity(brush: DeskBrush, identity: BrushIdentity): DeskBrush
   return { ...brush, triplet: brush.triplet.filter((row) => tripleKey(row) !== key) };
 }
 
+export function laneVisibilityKey(kind: EditorKind, identity: string): string {
+  return `${kind}:${identity}`;
+}
+
+/** Missing key falls back to present-on-Clip; any stored boolean wins. */
+export function laneIsVisible(
+  stored: Record<string, boolean>,
+  key: string,
+  presentOnClip: boolean,
+): boolean {
+  const value = stored[key];
+  return typeof value === "boolean" ? value : presentOnClip;
+}
+
+export const LANE_VISIBILITY_STORAGE_KEY = "endo_label:lane-visibility-v1";
+
+export function normalizeLaneVisibility(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  const out: Record<string, boolean> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (key && typeof entry === "boolean") {
+      out[key] = entry;
+    }
+  }
+  return out;
+}
+
+function readStoredLaneVisibility(): Record<string, boolean> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const raw = window.localStorage.getItem(LANE_VISIBILITY_STORAGE_KEY);
+    return normalizeLaneVisibility(raw ? JSON.parse(raw) : null);
+  } catch {
+    return {};
+  }
+}
+
+function saveLaneVisibility(map: Record<string, boolean>) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(LANE_VISIBILITY_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // localStorage can be unavailable in private browsing or a restricted iframe.
+  }
+}
+
 export type DeskLayout = {
   clipRailWidth: number;
   editorRailWidth: number;
@@ -167,6 +219,7 @@ type DeskState = {
   layout: DeskLayout;
   spanStart: SpanStart | null;
   brush: DeskBrush;
+  laneVisibility: Record<string, boolean>;
   openClip: (clipId: string, frameCount: number) => void;
   scrub: (frameIndex: number) => void;
   setLayout: (patch: Partial<DeskLayout>) => void;
@@ -175,6 +228,7 @@ type DeskState = {
   clearSpanStart: () => void;
   toggleBrush: (identity: BrushIdentity) => void;
   dropBrush: (identity: BrushIdentity) => void;
+  setLaneVisible: (key: string, visible: boolean) => void;
 };
 
 export const useDeskStore = create<DeskState>((set, get) => ({
@@ -185,6 +239,7 @@ export const useDeskStore = create<DeskState>((set, get) => ({
   layout: readStoredLayout(),
   spanStart: null,
   brush: { class: [], triplet: [], phase: null },
+  laneVisibility: readStoredLaneVisibility(),
   openClip: (clipId, frameCount) =>
     set((s) => {
       if (s.clipId === clipId) {
@@ -225,4 +280,10 @@ export const useDeskStore = create<DeskState>((set, get) => ({
   clearSpanStart: () => set({ spanStart: null }),
   toggleBrush: (identity) => set((s) => ({ brush: toggleBrushMembership(s.brush, identity) })),
   dropBrush: (identity) => set((s) => ({ brush: dropBrushIdentity(s.brush, identity) })),
+  setLaneVisible: (key, visible) =>
+    set((s) => {
+      const laneVisibility = { ...s.laneVisibility, [key]: visible };
+      saveLaneVisibility(laneVisibility);
+      return { laneVisibility };
+    }),
 }));
