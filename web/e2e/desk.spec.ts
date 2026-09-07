@@ -541,7 +541,8 @@ test("i/o/[ paint a span onto the timeline while the player is focused", async (
   await page.goto("/clips/CLIP_E2E");
   await pickName(page, "phase", "ChipApplyP");
   await expect(page.locator("[data-paint-chip]")).toHaveText("phase: ChipApplyP");
-  await page.locator("video").click();
+  // The picture is the mask canvas now (ADR 0022); focus off inputs via the footer chip instead.
+  await page.locator("[data-paint-chip]").click();
   await page.locator("video").evaluate((el: HTMLVideoElement) => {
     el.pause();
     el.currentTime = 0;

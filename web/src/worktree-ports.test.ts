@@ -16,10 +16,10 @@ test("Playwright e2e is isolated 7892/5192, strict, and does not reuse a foreign
   const servers = playwrightConfig.webServer;
   expect(Array.isArray(servers)).toBe(true);
   if (!Array.isArray(servers)) {
-    throw new Error("expected two webServer entries");
+    throw new Error("expected three webServer entries");
   }
-  expect(servers).toHaveLength(2);
-  const [api, vite] = servers;
+  expect(servers).toHaveLength(3);
+  const [api, vite, downApi] = servers;
   expect(api.url).toBe("http://127.0.0.1:7892/api/health");
   expect(api.command).toContain("--port 7892");
   expect(api.reuseExistingServer).toBe(false);
@@ -28,4 +28,8 @@ test("Playwright e2e is isolated 7892/5192, strict, and does not reuse a foreign
   expect(vite.command).toContain("--strictPort");
   expect(vite.env?.ENDO_LABEL_API).toBe("http://127.0.0.1:7892");
   expect(vite.reuseExistingServer).toBe(false);
+  // Worker-down sitting (mask desk e2e): same strictness, own port.
+  expect(downApi.url).toBe("http://127.0.0.1:7893/api/health");
+  expect(downApi.command).toContain("worker_down_sitting.py");
+  expect(downApi.reuseExistingServer).toBe(false);
 });
