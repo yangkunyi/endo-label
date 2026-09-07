@@ -102,6 +102,40 @@ async function clearClipLabels(page: Page, clipId = "CLIP_E2E") {
   }
 }
 
+function libraryRow(page: Page, name: string) {
+  return page.getByRole("list", { name: "Library" }).locator("li").filter({ hasText: name });
+}
+
+/** Toggle the Brush membership of a class/phase identity; adds the Vocab name if missing. Never writes a Frame. */
+async function setBrush(page: Page, kind: "class" | "phase", name: string) {
+  await focusTask(page, kind);
+  const list = page.getByRole("list", { name: "Library" });
+  if ((await list.getByRole("button", { name, exact: true }).count()) === 0) {
+    await addVocabOnly(page, kind, name);
+  }
+  const button = libraryRow(page, name).getByRole("button", { name: "Brush", exact: true });
+  const pressed = await button.getAttribute("aria-pressed");
+  if (pressed !== "true") {
+    await button.click();
+  }
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+}
+
+async function seedClassTags(
+  request: APIRequestContext,
+  frames: Record<number, string[]>,
+  clipId = "CLIP_E2E",
+) {
+  for (const [index, tags] of Object.entries(frames)) {
+    const response = await request.put(`/api/class/${clipId}/frames/${index}`, { data: { tags } });
+    expect(response.ok()).toBeTruthy();
+  }
+}
+
+async function expectClassFrames(page: Page, expected: unknown, clipId = "CLIP_E2E") {
+  await expect.poll(async () => await clipFrames(page, "class", clipId)).toEqual(expected);
+}
+
 test("root and Clip routes share one workbench shell", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Choose a Clip" })).toBeVisible();
@@ -258,7 +292,7 @@ test("Library selected toggles this Frame; Plus does not write; trash confirms; 
   await expect(classRow).toHaveCount(0);
 });
 
-test("class chip and re-pick toggle off; phase re-pick clears; triplet same triple toggles", async ({ page }) => {
+test("class re-pick toggles off; phase re-pick clears; triplet same triple toggles", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await pickName(page, "class", "hook");
   await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("hook");
@@ -463,24 +497,30 @@ test("trashing a Vocab triple confirms then drops it from every Clip", async ({ 
   await expect(page.getByRole("button", { name: "DeskTrashTool / grasp / gallbladder", exact: true })).toHaveCount(0);
 });
 
-test("no chip: Mark from and Apply do nothing", async ({ page }) => {
+test("empty Brush: span keys and commit controls do nothing", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
-  await expect(page.locator("[data-paint-chip]")).toHaveText("No paint chip");
+  await expect(page.locator("[data-paint-chip]")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Mark from" })).toBeDisabled();
   await expect(page.getByRole("button", { name: /Apply to frames/ })).toBeDisabled();
   await expect(page.getByRole("button", { name: /Remove from frames/ })).toBeDisabled();
   const before = await clipFrames(page, "class");
   await page.keyboard.press("]");
   await expect.poll(async () => await clipFrames(page, "class")).toEqual(before);
-  await expect(page.getByText("Write to span")).toHaveCount(0);
-  await expect(page.getByText("span mode", { exact: false })).toHaveCount(0);
+  await page.keyboard.press("o");
+  await expect.poll(async () => await clipFrames(page, "class")).toEqual(before);
+  await page.keyboard.press("[");
+  await page.keyboard.press("i");
+  await expect(page.getByText(/→/)).toHaveCount(0);
   await expect(page.getByText("Arm class span")).toHaveCount(0);
 });
 
-test("chip, Mark from, Apply writes range, toast, chip stays", async ({ page }) => {
+test("Brush arm does not write this Frame; Mark from + Apply writes the range, toasts, Brush stays", async ({ page }) => {
+  await clearClipLabels(page);
   await page.goto("/clips/CLIP_E2E");
-  await pickName(page, "class", "clipper");
-  await expect(page.locator("[data-paint-chip]")).toHaveText("class: clipper");
+  const before = await clipFrames(page, "class");
+  await setBrush(page, "class", "clipper");
+  await expectClassFrames(page, before);
+  await expect(page.locator("[data-brush]").getByText("class: clipper", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Mark from" }).click();
   await expect(page.getByText("0 → 0")).toBeVisible();
   await scrubToFrame(page, 1);
@@ -506,32 +546,29 @@ test("chip, Mark from, Apply writes range, toast, chip stays", async ({ page }) 
   expect(Math.abs(timelineBox!.x + timelineBox!.width - (playerBox!.x + playerBox!.width))).toBeLessThan(2);
   expect(Math.abs(headBox!.width - clipsBox!.width)).toBeLessThan(2);
   expect(barBox!.x).toBeGreaterThanOrEqual(playerBox!.x - 2);
-  await expect(page.locator("[data-paint-chip]")).toHaveText("class: clipper");
-  await expect(page.getByText("0 → 0")).toHaveCount(0);
+  await expect(page.locator("[data-brush]").getByText("class: clipper", { exact: true })).toBeVisible();
+  await expect(page.getByText("0 → 1")).toHaveCount(0);
+  await expect(page.locator("[data-ruler-range]")).toHaveCount(0);
 });
 
-test("] applies; Remove without Mark from is this Frame", async ({ page }) => {
+test("] applies this Frame; Remove without Mark from erases this Frame", async ({ page }) => {
+  await clearClipLabels(page);
   await page.goto("/clips/CLIP_E2E");
-  await pickName(page, "phase", "ChipApplyP");
-  await expect(page.locator("[data-paint-chip]")).toHaveText("phase: ChipApplyP");
-  await page.keyboard.press("[");
-  await scrubToFrame(page, 1);
+  await setBrush(page, "phase", "ChipApplyP");
+  await expect(page.locator("[data-brush]").getByText("phase: ChipApplyP", { exact: true })).toBeVisible();
   await page.keyboard.press("]");
-  await expect.poll(async () => await clipFrames(page, "phase")).toMatchObject({ "0": "ChipApplyP", "1": "ChipApplyP" });
-  await expect(page.getByRole("button", { name: "ChipApplyP 0–1" })).toBeVisible();
-  await page.getByRole("button", { name: "Remove from frames 1–1" }).click();
-  await expect.poll(async () => (await clipFrames(page, "phase"))["1"]).toBeUndefined();
-  await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("ChipApplyP");
+  await expect.poll(async () => await clipFrames(page, "phase")).toMatchObject({ "0": "ChipApplyP" });
+  expect((await clipFrames(page, "phase"))["1"]).toBeUndefined();
   await expect(page.getByRole("button", { name: "ChipApplyP 0–0" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "ChipApplyP 0–1" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Remove from frames 0–0" }).click();
+  await expect.poll(async () => await clipFrames(page, "phase")).toEqual({});
+  await expect(page.getByRole("button", { name: "ChipApplyP 0–0" })).toHaveCount(0);
 });
 
 test("i/o/[ paint a span onto the timeline while the player is focused", async ({ page }) => {
-  await page.request.put("/api/phase/CLIP_E2E/frames/0", { data: { phase: null } });
-  await page.request.put("/api/phase/CLIP_E2E/frames/1", { data: { phase: null } });
+  await clearClipLabels(page);
   await page.goto("/clips/CLIP_E2E");
-  await pickName(page, "phase", "ChipApplyP");
-  await expect(page.locator("[data-paint-chip]")).toHaveText("phase: ChipApplyP");
+  await setBrush(page, "phase", "ChipApplyP");
   await page.locator("video").click();
   await page.locator("video").evaluate((el: HTMLVideoElement) => {
     el.pause();
@@ -552,6 +589,218 @@ test("i/o/[ paint a span onto the timeline while the player is focused", async (
   const barBox = await bar.boundingBox();
   expect(playerBox && barBox).toBeTruthy();
   expect(barBox!.x).toBeGreaterThanOrEqual(playerBox!.x - 2);
+});
+
+test("two class tags in one Apply; tags outside the Brush stay", async ({ page }) => {
+  await clearClipLabels(page);
+  await seedClassTags(page.request, { 1: ["hook"] });
+  await page.goto("/clips/CLIP_E2E");
+  const before = await clipFrames(page, "class");
+  await setBrush(page, "class", "grasper");
+  await expectClassFrames(page, before);
+  await setBrush(page, "class", "blurred");
+  await expectClassFrames(page, before);
+  await expect(page.locator("[data-brush]").getByText("class: grasper", { exact: true })).toBeVisible();
+  await expect(page.locator("[data-brush]").getByText("class: blurred", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Mark from" }).click();
+  await scrubToFrame(page, 1);
+  await page.getByRole("button", { name: "Apply to frames 0–1" }).click();
+  await expect(page.getByText("Wrote class: grasper, class: blurred on frames 0–1")).toBeVisible();
+  await expect.poll(async () => await clipFrames(page, "class")).toMatchObject({
+    "0": expect.arrayContaining(["grasper", "blurred"]),
+    "1": expect.arrayContaining(["hook", "grasper", "blurred"]),
+  });
+  await expect(page.locator("[data-brush]").getByText("class: grasper", { exact: true })).toBeVisible();
+  await expect(page.locator("[data-brush]").getByText("class: blurred", { exact: true })).toBeVisible();
+  await expect(page.getByText("0 → 1")).toHaveCount(0);
+});
+
+test("Ruler shows from–to and ghost bars while Mark from is set; both go after Apply", async ({ page }) => {
+  await clearClipLabels(page);
+  await page.goto("/clips/CLIP_E2E");
+  await focusTask(page, "class");
+  // grasper is unused on this Clip: its Lane starts hidden, the labeler shows it
+  await libraryRow(page, "grasper").getByRole("button", { name: "Show lane" }).click();
+  const lane = page.locator('[data-timeline-lane="grasper"]');
+  await expect(lane).toBeVisible();
+  await expect(lane.locator("[data-timeline-seg]")).toHaveCount(0);
+  await setBrush(page, "class", "grasper");
+  await page.getByRole("button", { name: "Mark from" }).click();
+  await expect(page.getByText("0 → 0")).toBeVisible();
+  const rulerRange = page.locator("[data-ruler-range]");
+  await expect(rulerRange).toBeVisible();
+  const ghost = page.locator('[data-timeline-lane="grasper"] [data-ghost]');
+  await expect(ghost).toHaveCount(1);
+  expect(await ghost.evaluate((el) => getComputedStyle(el).pointerEvents)).toBe("none");
+  await scrubToFrame(page, 1);
+  await expect(page.getByText("0 → 1")).toBeVisible();
+  await page.getByRole("button", { name: "Apply to frames 0–1" }).click();
+  await expect(page.getByText("Wrote class: grasper on frames 0–1")).toBeVisible();
+  await expectClassFrames(page, { "0": ["grasper"], "1": ["grasper"] });
+  await expect(rulerRange).toHaveCount(0);
+  await expect(page.locator("[data-ghost]")).toHaveCount(0);
+  await expect(page.getByText("0 → 1")).toHaveCount(0);
+});
+
+test("clicking a Lane bar seeks to the Frame under the pointer and clears selection", async ({ page }) => {
+  await clearClipLabels(page);
+  await seedClassTags(page.request, { 0: ["grasper", "hook"], 1: ["grasper", "hook"] });
+  await page.goto("/clips/CLIP_E2E");
+  const grasperBar = page.getByRole("button", { name: "grasper 0–1" });
+  const hookBar = page.getByRole("button", { name: "hook 0–1" });
+  await expect(grasperBar).toBeVisible();
+  const barBox = await grasperBar.boundingBox();
+  expect(barBox).not.toBeNull();
+  // right quarter of the bar is Frame 1: a bar click must not jump to the bar start
+  await grasperBar.click({ position: { x: barBox!.width * 0.75, y: barBox!.height / 2 } });
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  // Shift-click selects without seeking
+  await grasperBar.click({ modifiers: ["Shift"], position: { x: barBox!.width * 0.25, y: barBox!.height / 2 } });
+  await expect(grasperBar).toHaveAttribute("data-selected", "true");
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  // unmodified click on another bar seeks and drops the stale selection
+  await hookBar.click({ position: { x: barBox!.width * 0.25, y: barBox!.height / 2 } });
+  await expect(page.getByText("Frame 0 of 2")).toBeVisible();
+  await expect(page.locator('[data-timeline-seg][data-selected="true"]')).toHaveCount(0);
+});
+
+test("Shift-click selects bars; Backspace drops the selected segments", async ({ page }) => {
+  await clearClipLabels(page);
+  await seedClassTags(page.request, { 0: ["grasper", "hook"], 1: ["grasper", "hook"] });
+  await page.goto("/clips/CLIP_E2E");
+  await scrubToFrame(page, 1);
+  const grasperBar = page.getByRole("button", { name: "grasper 0–1" });
+  const hookBar = page.getByRole("button", { name: "hook 0–1" });
+  await grasperBar.click({ modifiers: ["Shift"] });
+  await expect(grasperBar).toHaveAttribute("data-selected", "true");
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  await hookBar.click({ modifiers: ["Shift"] });
+  await expect(hookBar).toHaveAttribute("data-selected", "true");
+  await page.keyboard.press("Backspace");
+  await expectClassFrames(page, {});
+  await expect(grasperBar).toHaveCount(0);
+  await expect(hookBar).toHaveCount(0);
+});
+
+test("Backspace/Delete drops only the selected identity; other Lanes stay", async ({ page }) => {
+  await clearClipLabels(page);
+  await seedClassTags(page.request, { 0: ["grasper", "hook"], 1: ["grasper", "hook"] });
+  await page.goto("/clips/CLIP_E2E");
+  const grasperBar = page.getByRole("button", { name: "grasper 0–1" });
+  const hookBar = page.getByRole("button", { name: "hook 0–1" });
+  await grasperBar.click({ modifiers: ["Shift"] });
+  await expect(grasperBar).toHaveAttribute("data-selected", "true");
+  await page.keyboard.press("Delete");
+  await expectClassFrames(page, { "0": ["hook"], "1": ["hook"] });
+  await expect(hookBar).toBeVisible();
+  await expect(grasperBar).toHaveCount(0);
+});
+
+test("Escape clears bar selection without writing disk", async ({ page }) => {
+  await clearClipLabels(page);
+  await seedClassTags(page.request, { 0: ["grasper", "hook"], 1: ["grasper", "hook"] });
+  await page.goto("/clips/CLIP_E2E");
+  const grasperBar = page.getByRole("button", { name: "grasper 0–1" });
+  await grasperBar.click({ modifiers: ["Shift"] });
+  await expect(grasperBar).toHaveAttribute("data-selected", "true");
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-timeline-seg][data-selected="true"]')).toHaveCount(0);
+  await page.keyboard.press("Backspace");
+  await expectClassFrames(page, { "0": ["grasper", "hook"], "1": ["grasper", "hook"] });
+});
+
+test("show an unused Lane, click it to seek, drag-paint it; visibility persists", async ({ page }) => {
+  await clearClipLabels(page);
+  await page.goto("/clips/CLIP_E2E");
+  await focusTask(page, "class");
+  // an unused identity starts hidden
+  await expect(page.locator('[data-timeline-lane="blurred"]')).toHaveCount(0);
+  await libraryRow(page, "blurred").getByRole("button", { name: "Show lane" }).click();
+  const lane = page.locator('[data-timeline-lane="blurred"]');
+  await expect(lane).toBeVisible();
+  await expect(lane.locator("[data-timeline-seg]")).toHaveCount(0);
+
+  // click without drag on empty track seeks and paints nothing
+  const laneBox = await lane.boundingBox();
+  expect(laneBox).not.toBeNull();
+  await lane.click({ position: { x: laneBox!.width * 0.75, y: laneBox!.height / 2 } });
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  await expectClassFrames(page, {});
+
+  // drag on empty track paints the identity on the dragged inclusive range
+  await page.mouse.move(laneBox!.x + laneBox!.width * 0.25, laneBox!.y + laneBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(laneBox!.x + laneBox!.width * 0.75, laneBox!.y + laneBox!.height / 2);
+  await page.mouse.up();
+  await expectClassFrames(page, { "0": ["blurred"], "1": ["blurred"] });
+  await expect(page.getByRole("button", { name: "blurred 0–1" })).toBeVisible();
+
+  // visibility persists on this machine across reloads
+  await expect.poll(() =>
+    page.evaluate(() => window.localStorage.getItem("endo_label:lane-visibility-v1")),
+  ).toContain('"class:blurred":true');
+  await page.reload();
+  await expect(page.locator('[data-timeline-lane="blurred"]')).toBeVisible();
+  await expect(page.getByRole("button", { name: "blurred 0–1" })).toBeVisible();
+});
+
+test("dragging the end of a selected bar trims the segment", async ({ page }) => {
+  await clearClipLabels(page);
+  await seedClassTags(page.request, { 0: ["grasper"] });
+  await page.goto("/clips/CLIP_E2E");
+  const lane = page.locator('[data-timeline-lane="grasper"]');
+  const laneBox = await lane.boundingBox();
+  expect(laneBox).not.toBeNull();
+  const bar = page.getByRole("button", { name: "grasper 0–0" });
+  await bar.click({ modifiers: ["Shift"] });
+  await expect(bar).toHaveAttribute("data-selected", "true");
+  const endHandle = bar.locator('[data-trim="end"]');
+  const handleBox = await endHandle.boundingBox();
+  expect(handleBox).not.toBeNull();
+  // widen 0–0 to 0–1: release paints the grown Frames
+  await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(laneBox!.x + laneBox!.width * 0.75, handleBox!.y + handleBox!.height / 2);
+  await page.mouse.up();
+  await expectClassFrames(page, { "0": ["grasper"], "1": ["grasper"] });
+  const grown = page.getByRole("button", { name: "grasper 0–1" });
+  await expect(grown).toBeVisible();
+  await expect(grown).toHaveAttribute("data-selected", "true");
+
+  // shrink back to 0–0: release removes the cut Frames
+  const grownHandle = grown.locator('[data-trim="end"]');
+  const grownHandleBox = await grownHandle.boundingBox();
+  expect(grownHandleBox).not.toBeNull();
+  await page.mouse.move(grownHandleBox!.x + grownHandleBox!.width / 2, grownHandleBox!.y + grownHandleBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(laneBox!.x + laneBox!.width * 0.25, grownHandleBox!.y + grownHandleBox!.height / 2);
+  await page.mouse.up();
+  await expectClassFrames(page, { "0": ["grasper"] });
+  await expect(page.getByRole("button", { name: "grasper 0–0" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "grasper 0–1" })).toHaveCount(0);
+});
+
+test("eye hides a labeled Lane (well omits it, disk keeps it); hidden Brush identity still writes", async ({ page }) => {
+  await clearClipLabels(page);
+  await seedClassTags(page.request, { 0: ["grasper"], 1: ["grasper"] });
+  await page.goto("/clips/CLIP_E2E");
+  await expect(page.getByRole("button", { name: "grasper 0–1" })).toBeVisible();
+  await libraryRow(page, "grasper").getByRole("button", { name: "Hide lane" }).click();
+  await expect(page.locator('[data-timeline-lane="grasper"]')).toHaveCount(0);
+  await expect(page.locator("[data-lane-head]").filter({ hasText: "grasper" })).toHaveCount(0);
+  await expectClassFrames(page, { "0": ["grasper"], "1": ["grasper"] });
+  // an explicit stored hide wins over present-on-Clip after reload
+  await page.reload();
+  await expect(page.locator('[data-timeline-lane="grasper"]')).toHaveCount(0);
+  await expectClassFrames(page, { "0": ["grasper"], "1": ["grasper"] });
+
+  // Brush writes still reach disk for a hidden identity
+  await setBrush(page, "class", "grasper");
+  await page.getByRole("button", { name: "Mark from" }).click();
+  await scrubToFrame(page, 1);
+  await page.getByRole("button", { name: "Remove from frames 0–1" }).click();
+  await expect(page.getByText("Removed class: grasper on frames 0–1")).toBeVisible();
+  await expectClassFrames(page, {});
 });
 
 test("Task-focus tabs, Library write, + does not write Frame, summary does not seek", async ({ page }) => {
@@ -582,20 +831,51 @@ test("Task-focus tabs, Library write, + does not write Frame, summary does not s
   await expect(page.locator("video[aria-label='Frame 1']")).toBeVisible();
 });
 
-test("timeline folds span, click seeks, focus rebuilds", async ({ page }) => {
+test("Task focus switch rebuilds the well, clears bar selection, and keeps each kind's Brush", async ({ page }) => {
+  await clearClipLabels(page);
+  await seedClassTags(page.request, { 0: ["grasper"], 1: ["grasper"] });
   await page.goto("/clips/CLIP_E2E");
-  await pickName(page, "phase", "BandPhase");
+  await setBrush(page, "class", "grasper");
+  const grasperBar = page.getByRole("button", { name: "grasper 0–1" });
+  await grasperBar.click({ modifiers: ["Shift"] });
+  await expect(grasperBar).toHaveAttribute("data-selected", "true");
+
+  await focusTask(page, "phase");
+  await expect(page.locator('[data-timeline-lane="grasper"]')).toHaveCount(0);
+  await expect(page.locator("[data-brush] span[data-label-color]")).toHaveCount(0);
+  await page.keyboard.press("Backspace");
+  await expectClassFrames(page, { "0": ["grasper"], "1": ["grasper"] });
+
+  await setBrush(page, "phase", "Preparation");
+  await expect(page.locator("[data-brush]").getByText("phase: Preparation", { exact: true })).toBeVisible();
+
+  await focusTask(page, "class");
+  await expect(page.locator('[data-timeline-lane="grasper"]')).toBeVisible();
+  await expect(page.locator('[data-timeline-seg][data-selected="true"]')).toHaveCount(0);
+  await expect(page.locator("[data-brush]").getByText("class: grasper", { exact: true })).toBeVisible();
+  await focusTask(page, "phase");
+  await expect(page.locator("[data-brush]").getByText("phase: Preparation", { exact: true })).toBeVisible();
+});
+
+test("timeline folds span, click seeks under the pointer, focus rebuilds", async ({ page }) => {
+  await clearClipLabels(page);
+  await page.goto("/clips/CLIP_E2E");
+  await setBrush(page, "phase", "BandPhase");
   await page.getByRole("button", { name: "Mark from" }).click();
   await scrubToFrame(page, 1);
   await page.getByRole("button", { name: "Apply to frames 0–1" }).click();
   await expect(page.getByText("Wrote phase: BandPhase on frames 0–1")).toBeVisible();
   await expect.poll(async () => await clipFrames(page, "phase")).toMatchObject({ "0": "BandPhase", "1": "BandPhase" });
-  await expect(page.getByRole("button", { name: "BandPhase 0–1" })).toBeVisible();
+  const bar = page.getByRole("button", { name: "BandPhase 0–1" });
+  await expect(bar).toBeVisible();
   await expect(page.locator("[data-lane-head]").filter({ hasText: "BandPhase" })).toHaveCount(1);
-  await scrubToFrame(page, 1);
-  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
-  await page.getByRole("button", { name: "BandPhase 0–1" }).click();
+  const barBox = await bar.boundingBox();
+  expect(barBox).not.toBeNull();
+  // a bar click seeks to the Frame under the pointer, not the bar start
+  await bar.click({ position: { x: barBox!.width * 0.25, y: barBox!.height / 2 } });
   await expect(page.getByText("Frame 0 of 2")).toBeVisible();
+  await bar.click({ position: { x: barBox!.width * 0.75, y: barBox!.height / 2 } });
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
   await focusTask(page, "class");
   await expect(page.getByRole("button", { name: "BandPhase 0–1" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Timeline" })).toBeVisible();
@@ -625,7 +905,6 @@ test("colored named intervals match Library and Now", async ({ page }) => {
   await expect(barA).toHaveAttribute("data-label-color", colorA!);
   await expect(barB).toHaveAttribute("data-label-color", colorB!);
   await expect(page.locator("[data-now]")).toHaveAttribute("data-label-color", colorB!);
-  await expect(page.locator("[data-paint-chip]")).toHaveAttribute("data-label-color", colorB!);
   await lib.getByRole("button", { name: "ColorPhaseB", exact: true }).click();
   const gap = page.locator("[data-timeline-seg][data-unlabeled]").first();
   await expect(gap).toBeVisible();
@@ -780,7 +1059,8 @@ test("empty Clip shows Ruler and Lane well; picture height stays put when a Lane
   expect(Math.abs(videoWellBox!.height - emptyWellHeight)).toBeLessThan(2);
 });
 
-test("timeline playhead drags frame-snapped; bars are display-only", async ({ page }) => {
+test("Ruler drag stays frame-snapped; a bar drag seeks but never relocates or paints", async ({ page }) => {
+  await clearClipLabels(page);
   await page.goto("/clips/CLIP_E2E");
   const timeline = page.getByRole("region", { name: "Timeline" });
   await expect(timeline).toBeVisible();
@@ -817,10 +1097,9 @@ test("timeline playhead drags frame-snapped; bars are display-only", async ({ pa
   await page.mouse.move(box!.x + box!.width * 0.1, box!.y + box!.height / 2);
   await page.mouse.up();
   await expect(page.getByText("Frame 0 of 2")).toBeVisible();
-  // bars are display-only: dragging a bar must not move the playhead to the mouse x
+
+  // a bar is not display-only and not relocatable: unmodified drag seeks along the pointer, paints nothing
   await pickName(page, "phase", "DragPhase");
-  await page.getByRole("button", { name: "Mark from" }).click();
-  await page.getByRole("button", { name: "Apply to frames 0–0" }).click();
   const bar = page.getByRole("button", { name: "DragPhase 0–0" });
   await expect(bar).toBeVisible();
   await expect(bar).not.toHaveAttribute("draggable", "true");
@@ -833,16 +1112,15 @@ test("timeline playhead drags frame-snapped; bars are display-only", async ({ pa
   expect(Math.abs(trackBox!.x - playerBox!.x)).toBeLessThan(2);
   const barBox = await bar.boundingBox();
   expect(barBox).not.toBeNull();
-  await page.mouse.move(barBox!.x + barBox!.width / 2, barBox!.y + barBox!.height / 2);
+  await page.mouse.move(barBox!.x + barBox!.width * 0.5, barBox!.y + barBox!.height / 2);
   await page.mouse.down();
   await page.mouse.move(box!.x + box!.width * 0.9, barBox!.y + barBox!.height / 2);
   await page.mouse.up();
-  await expect(page.getByText("Frame 0 of 2")).toBeVisible();
-  await page.mouse.move(box!.x + box!.width * 0.9, box!.y + box!.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box!.x + box!.width * 0.9, box!.y + box!.height / 2);
-  await page.mouse.up();
   await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  await expect(page.getByRole("button", { name: "DragPhase 0–0" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "DragPhase 0–1" })).toHaveCount(0);
+  await expect.poll(async () => await clipFrames(page, "phase")).toEqual({ "0": "DragPhase" });
+
   await bar.click();
   await expect(page.getByText("Frame 0 of 2")).toBeVisible();
 });
@@ -1015,30 +1293,79 @@ test("double-clicking a Vocab triple cell rewrites desk-wide; collision is refus
   }).toBe(true);
 });
 
-test("e2e closeout: span paint preserves Vocab, Now read-only, Library trash works after span", async ({ page }) => {
+test("span keys and Backspace/Delete are ignored while typing in an input or combobox", async ({ page }) => {
+  await clearClipLabels(page);
+  await seedClassTags(page.request, { 0: ["grasper"], 1: ["grasper"] });
   await page.goto("/clips/CLIP_E2E");
-  await pickName(page, "class", "CloseoutClass");
-  await expect(page.locator("[data-paint-chip]")).toHaveText("class: CloseoutClass");
+  const grasperBar = page.getByRole("button", { name: "grasper 0–1" });
+  await grasperBar.click({ modifiers: ["Shift"] });
+  await expect(grasperBar).toHaveAttribute("data-selected", "true");
+
+  const addName = page.getByRole("textbox", { name: "Add class name" });
+  await addName.click();
+  await addName.fill("draft");
+  for (const key of ["i", "[", "o", "]"]) {
+    await addName.press(key);
+  }
+  await expect(addName).toHaveValue("drafti[o]");
+  await expect(page.getByText(/→/)).toHaveCount(0);
+  await expectClassFrames(page, { "0": ["grasper"], "1": ["grasper"] });
+  await addName.press("Backspace");
+  await expect(addName).toHaveValue("drafti[o");
+  await addName.press("Home");
+  await addName.press("Delete");
+  await expect(addName).toHaveValue("rafti[o");
+  await expect(grasperBar).toHaveAttribute("data-selected", "true");
+  await addName.press("End");
+  await addName.press(" ");
+  await expect(addName).toHaveValue("rafti[o ");
+  expect(await page.locator("video").evaluate((el) => (el as HTMLVideoElement).paused)).toBe(true);
+
+  await focusTask(page, "triplet");
+  const instrument = page.getByRole("combobox", { name: "instrument" });
+  await instrument.click();
+  await instrument.press("[");
+  await instrument.press("o");
+  await expect(instrument).toHaveValue("[o");
+  await expectClassFrames(page, { "0": ["grasper"], "1": ["grasper"] });
+  await expect.poll(async () => await clipFrames(page, "triplet")).toEqual({});
+});
+
+test("new controls use English copy: Brush, Show lane, Hide lane", async ({ page }) => {
+  await clearClipLabels(page);
+  await page.goto("/clips/CLIP_E2E");
+  await focusTask(page, "class");
+  const row = libraryRow(page, "grasper");
+  await expect(row.getByRole("button", { name: "Brush", exact: true })).toBeVisible();
+  const eye = row.getByRole("button", { name: "Show lane" });
+  await expect(eye).toBeVisible();
+  await eye.click();
+  await expect(row.getByRole("button", { name: "Hide lane" })).toBeVisible();
+  await expect(page.locator("[data-paint-chip]")).toHaveCount(0);
+  await expect(page.getByText("Arm class span")).toHaveCount(0);
+  await expect(page.getByText("Write to span")).toHaveCount(0);
+});
+
+test("e2e closeout: span paint preserves Vocab, Now read-only, Library trash works after span", async ({ page }) => {
+  await clearClipLabels(page);
+  await page.goto("/clips/CLIP_E2E");
+  await setBrush(page, "class", "CloseoutClass");
   await page.getByRole("button", { name: "Mark from" }).click();
   await scrubToFrame(page, 1);
   await page.getByRole("button", { name: "Apply to frames 0–1" }).click();
 
-  // Span wrote frames 0-1
   await expect.poll(async () => await clipFrames(page, "class")).toMatchObject({
     "0": expect.arrayContaining(["CloseoutClass"]),
     "1": expect.arrayContaining(["CloseoutClass"]),
   });
 
-  // Vocab name still in Library
   await focusTask(page, "class");
   const libRow = page.getByRole("list", { name: "Library" }).getByRole("button", { name: "CloseoutClass", exact: true });
   await expect(libRow).toBeVisible();
 
-  // Now is read-only (not a button)
   await expect(page.locator("[data-now]").getByText("CloseoutClass")).toBeVisible();
   await expect(page.locator("[data-now]").getByRole("button", { name: "CloseoutClass" })).toHaveCount(0);
 
-  // Trash from Library confirms then removes desk-wide
   const trashBtn = page.getByRole("list", { name: "Library" }).getByRole("button", { name: "Delete class tag CloseoutClass" });
   page.once("dialog", (dialog) => dialog.accept());
   await trashBtn.click();
@@ -1223,5 +1550,3 @@ test("Library rows render soft semantic tint, checkmark on selection, and dimmed
   await expect(tripletBtn).toHaveAttribute("aria-pressed", "false");
   await expect(tripletBtn.locator("[data-checkmark]")).toHaveCount(0);
 });
-
-
