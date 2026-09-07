@@ -38,6 +38,49 @@ export type Vocab = {
   triples: VocabTriple[];
 };
 
+export type MaskRle = {
+  format: string;
+  size: number[];
+  counts: number[];
+  source?: string;
+  track_id?: number;
+};
+
+export type TrackRow = {
+  track_id: number;
+  label: string;
+  color: string;
+  score: number | null;
+  mask?: MaskRle;
+};
+
+export type SessionPublic = {
+  active: boolean;
+  session_id?: string;
+  clip_id?: string;
+  tracks?: TrackRow[];
+};
+
+export type AnnotationSummary = {
+  clip_id: string;
+  tracks: TrackRow[];
+  frame_count: number;
+};
+
+export type FrameAnnotations = {
+  clip_id: string;
+  frame_index: number;
+  frame_stem: string;
+  masks: Array<MaskRle & { track_id: number }>;
+};
+
+export type PredictResult = {
+  frame_index: number;
+  empty: boolean;
+  message: string | null;
+  tracks: TrackRow[];
+};
+
 export function clipDeskPath(clipId: string): string {
   return `/clips/${encodeURIComponent(clipId)}`;
 }
@@ -96,6 +139,22 @@ export function tripletRowPath(
 
 export function vocabPath(): string {
   return "/api/vocab";
+}
+
+export function sessionPath(): string {
+  return "/api/session";
+}
+
+export function sessionPredictPath(): string {
+  return "/api/session/predict";
+}
+
+export function annotationSummaryPath(clipId: string): string {
+  return `/api/clips/${encodeURIComponent(clipId)}/annotations`;
+}
+
+export function annotationFramePath(clipId: string, frameIndex: number): string {
+  return `/api/clips/${encodeURIComponent(clipId)}/annotations/frames/${frameIndex}`;
 }
 
 export function vocabListPath(listName: string): string {
@@ -180,6 +239,17 @@ async function readError(response: Response): Promise<string> {
 
 export async function getJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json() as Promise<T>;
+}
+
+export async function getJsonAllow404<T>(url: string): Promise<T | null> {
+  const response = await fetch(url);
+  if (response.status === 404) {
+    return null;
+  }
   if (!response.ok) {
     throw new Error(await readError(response));
   }

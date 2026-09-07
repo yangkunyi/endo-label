@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import {
   MediaContainer,
   MediaControlBar,
@@ -28,12 +28,14 @@ export function VideoPlayer({
   frameLabel,
   onTimeUpdate,
   onLoadedMetadata,
+  children,
 }: {
   src: string;
   videoRef: RefObject<HTMLVideoElement | null>;
   frameLabel: string;
   onTimeUpdate: (currentTime: number) => void;
   onLoadedMetadata: (currentTime: number) => void;
+  children?: ReactNode;
 }) {
   return (
     <MediaContainer className="h-full w-full bg-black">
@@ -52,6 +54,7 @@ export function VideoPlayer({
           onTimeUpdate={(event) => onTimeUpdate(event.currentTarget.currentTime)}
           onLoadedMetadata={(event) => onLoadedMetadata(event.currentTarget.currentTime)}
         />
+        {children}
         <MediaPlaybackRateMenu hidden anchor="auto" rates={[0.25, 0.5, 1, 1.5, 2]} />
         <MediaControlBar className="px-2">
           <MediaPlayButton />

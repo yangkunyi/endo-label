@@ -3,6 +3,8 @@ import { Check, Trash2 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
 import {
+  annotationFramePath,
+  annotationSummaryPath,
   classClipPath,
   classFramePath,
   classSpanPath,
@@ -12,10 +14,13 @@ import {
   framePhaseName,
   frameTripletRows,
   getJson,
+  getJsonAllow404,
   phaseClipPath,
   phaseFramePath,
   phaseSpanPath,
   sendJson,
+  sessionPath,
+  sessionPredictPath,
   toggleClassTag,
   tripletClipPath,
   tripletFramePath,
@@ -27,10 +32,15 @@ import {
   vocabTripleDeletePath,
   vocabTripleRenamePath,
   vocabTriplesPath,
+  type AnnotationSummary,
   type ClassDoc,
   type ClipListResponse,
   type ClipMeta,
+  type FrameAnnotations,
   type PhaseDoc,
+  type PredictResult,
+  type SessionPublic,
+  type TrackRow,
   type TripletDoc,
   type TripletRow,
   type Vocab,
@@ -39,7 +49,13 @@ import {
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { VideoPlayer } from "./components/ui/video-player";
+import { MaskOverlay } from "./MaskOverlay";
 import { useDeskStore, type EditorKind, type PaintChip } from "./deskStore";
+import {
+  PREDICT_DEBOUNCE_MS,
+  dropPendingOnFrameChange,
+  type PendingPoint,
+} from "./overlayCoords";
 import { libraryRowSemanticStyle, nowEmptyText } from "./editorCards";
 import { cn } from "./lib/utils";
 import { foldClass, foldPhase, foldTriplet, labelColor, type TimelineLane } from "./timeline";
@@ -173,6 +189,10 @@ export function ClipDesk() {
     getJson<TripletDoc>,
   );
   const { data: vocab, mutate: mutateVocab } = useSWR(vocabPath(), getJson<Vocab>);
+  const { data: annotation, mutate: mutateAnnotation } = useSWR(
+    clipId ? annotationSummaryPath(clipId) : null,
+    getJsonAllow404<AnnotationSummary>,
+  );
   const [taskFocus, setTaskFocus] = useState<EditorKind>("class");
   const storedIndex = useDeskStore((s) => s.frameIndex);
   const openClip = useDeskStore((s) => s.openClip);
@@ -186,8 +206,21 @@ export function ClipDesk() {
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
   const spanBusy = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const pendingRef = useRef<PendingPoint[]>([]);
+  const debounceRef = useRef<number | null>(null);
+  const activeTrackId = useRef<number | null>(null);
+  const prevClipId = useRef<string | undefined>(undefined);
+  const predicting = useRef(false);
+  const pendingFrame = useRef(0);
+  const [pending, setPending] = useState<PendingPoint[]>([]);
 
   const frameIndex = data && storedIndex >= data.frame_count ? Math.max(0, data.frame_count - 1) : storedIndex;
+  const { data: frameAnn, mutate: mutateFrameAnn } = useSWR(
+    clipId ? annotationFramePath(clipId, frameIndex) : null,
+    getJsonAllow404<FrameAnnotations>,
+  );
+  const tracks: TrackRow[] = annotation?.tracks ?? [];
+  const frameMasks = frameAnn?.masks ?? [];
 
   const togglePlayback = useCallback(() => {
     const el = videoRef.current;
@@ -198,6 +231,82 @@ export function ClipDesk() {
       el.pause();
     }
   }, []);
+
+  const pausePlayback = useCallback(() => {
+    videoRef.current?.pause();
+  }, []);
+
+  const clearPredictTimer = useCallback(() => {
+    if (debounceRef.current != null) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+  }, []);
+
+  const runPredict = useCallback(async () => {
+    if (!clipId || predicting.current || pendingRef.current.length === 0) {
+      return;
+    }
+    predicting.current = true;
+    clearPredictTimer();
+    const marks = pendingRef.current;
+    setToast(null);
+    try {
+      const session = await getJson<SessionPublic>(sessionPath());
+      if (!session.active) {
+        await sendJson<SessionPublic>(sessionPath(), "POST", {
+          clip_id: clipId,
+          load_annotations: true,
+        });
+      } else if (session.clip_id !== clipId) {
+        await sendJson(sessionPath(), "DELETE");
+        await sendJson<SessionPublic>(sessionPath(), "POST", {
+          clip_id: clipId,
+          load_annotations: true,
+        });
+      }
+      const body: {
+        frame_index: number;
+        points: number[][];
+        point_labels: number[];
+        track_id?: number;
+      } = {
+        frame_index: frameIndex,
+        points: marks.map((mark) => [mark.x, mark.y]),
+        point_labels: marks.map((mark) => mark.label),
+      };
+      if (activeTrackId.current != null) {
+        body.track_id = activeTrackId.current;
+      }
+      const result = await sendJson<PredictResult>(sessionPredictPath(), "POST", body);
+      pendingRef.current = [];
+      setPending([]);
+      if (activeTrackId.current == null && result.tracks.length > 0) {
+        activeTrackId.current = Math.max(...result.tracks.map((row) => row.track_id));
+      }
+      await mutateAnnotation();
+      await mutateFrameAnn();
+    } catch (err) {
+      setToast({ text: err instanceof Error ? err.message : "Predict failed", error: true });
+    } finally {
+      predicting.current = false;
+    }
+  }, [clearPredictTimer, clipId, frameIndex, mutateAnnotation, mutateFrameAnn]);
+
+  const schedulePredict = useCallback(() => {
+    clearPredictTimer();
+    debounceRef.current = window.setTimeout(() => {
+      debounceRef.current = null;
+      void runPredict();
+    }, PREDICT_DEBOUNCE_MS);
+  }, [clearPredictTimer, runPredict]);
+
+  const onClickPoint = useCallback((point: PendingPoint) => {
+    const next = [...pendingRef.current, point];
+    pendingRef.current = next;
+    setPending(next);
+    schedulePredict();
+  }, [schedulePredict]);
 
   const seekPlayhead = useCallback((index: number) => {
     scrub(index);
@@ -298,6 +407,40 @@ export function ClipDesk() {
     }
   }, [data, openClip]);
 
+  useEffect(() => {
+    const fromFrame = pendingFrame.current;
+    pendingFrame.current = frameIndex;
+    if (fromFrame === frameIndex) {
+      return;
+    }
+    clearPredictTimer();
+    if (pendingRef.current.length === 0) {
+      return;
+    }
+    pendingRef.current = dropPendingOnFrameChange(pendingRef.current, fromFrame, frameIndex);
+    setPending(pendingRef.current);
+  }, [clearPredictTimer, frameIndex]);
+
+  useEffect(() => {
+    const prev = prevClipId.current;
+    prevClipId.current = clipId;
+    if (!prev || prev === clipId) {
+      return;
+    }
+    pendingRef.current = [];
+    setPending([]);
+    activeTrackId.current = null;
+    clearPredictTimer();
+    void sendJson(sessionPath(), "DELETE").catch(() => undefined);
+  }, [clearPredictTimer, clipId]);
+
+  useEffect(() => {
+    const first = annotation?.tracks?.[0];
+    if (activeTrackId.current == null && first) {
+      activeTrackId.current = first.track_id;
+    }
+  }, [annotation]);
+
   return (
     <main className="flex h-screen min-h-0 flex-col overflow-hidden bg-background text-foreground">
       <header className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-2">
@@ -365,7 +508,16 @@ export function ClipDesk() {
                         scrub(index);
                       }
                     }}
-                  />
+                  >
+                    <MaskOverlay
+                      videoRef={videoRef}
+                      masks={frameMasks}
+                      tracks={tracks}
+                      pending={pending}
+                      onPause={pausePlayback}
+                      onClickPoint={onClickPoint}
+                    />
+                  </VideoPlayer>
                 ) : data ? (
                   <p>This Clip has no Frames.</p>
                 ) : (
@@ -397,9 +549,14 @@ export function ClipDesk() {
         <div
           role="region"
           aria-label="Editors"
-          className="flex shrink-0 flex-col gap-2 overflow-hidden border-l border-border p-2"
+          className="flex shrink-0 flex-col gap-2 overflow-y-auto border-l border-border p-2"
           style={{ width: layout.editorRailWidth }}
         >
+          <TrackRail
+            tracks={tracks}
+            pendingCount={pending.length}
+            onPredict={() => void runPredict()}
+          />
           <div role="tablist" aria-label="Task type" className="flex shrink-0 gap-1">
             {(["class", "triplet", "phase"] as const).map((kind) => (
               <Button
@@ -415,7 +572,7 @@ export function ClipDesk() {
               </Button>
             ))}
           </div>
-          <div role="tabpanel" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div role="tabpanel" className="flex flex-col">
             {data ? (
               taskFocus === "class" ? (
                 <ClassEditor
@@ -643,6 +800,54 @@ function TimelineBand({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function TrackRail({
+  tracks,
+  pendingCount,
+  onPredict,
+}: {
+  tracks: TrackRow[];
+  pendingCount: number;
+  onPredict: () => void;
+}) {
+  return (
+    <section aria-label="Tracks" className="flex shrink-0 flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tracks</span>
+          <span className="text-xs text-muted-foreground">·</span>
+          <span className="rounded-full bg-secondary px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
+            {tracks.length}
+          </span>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          disabled={pendingCount === 0}
+          onClick={onPredict}
+        >
+          Predict
+        </Button>
+      </div>
+      {tracks.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No Tracks</p>
+      ) : (
+        <ul aria-label="Track list" className="space-y-1">
+          {tracks.map((track) => (
+            <li key={track.track_id} className="flex items-center gap-2 text-sm">
+              <span
+                aria-hidden
+                className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                style={{ backgroundColor: track.color }}
+              />
+              <span className="truncate">{track.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

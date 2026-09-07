@@ -1,5 +1,7 @@
 import { expect, test } from "vitest";
 import {
+  annotationFramePath,
+  annotationSummaryPath,
   classClipPath,
   classFramePath,
   classSpanPath,
@@ -13,6 +15,8 @@ import {
   phaseClipPath,
   phaseFramePath,
   phaseSpanPath,
+  sessionPath,
+  sessionPredictPath,
   toggleClassTag,
   tripletClipPath,
   tripletFramePath,
@@ -25,6 +29,13 @@ import {
   vocabTripleRenamePath,
   vocabTriplesPath,
 } from "./api";
+
+test("session and annotation paths match compose HTTP", () => {
+  expect(sessionPath()).toBe("/api/session");
+  expect(sessionPredictPath()).toBe("/api/session/predict");
+  expect(annotationSummaryPath("CLIPA")).toBe("/api/clips/CLIPA/annotations");
+  expect(annotationFramePath("CLIPA", 0)).toBe("/api/clips/CLIPA/annotations/frames/0");
+});
 
 test("clip desk path is /clips/:clipId", () => {
   expect(clipDeskPath("CLIPA")).toBe("/clips/CLIPA");

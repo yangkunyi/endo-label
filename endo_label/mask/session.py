@@ -10,7 +10,6 @@ from typing import Any, Literal
 from endo_label import catalog
 from endo_label.mask import annotations
 from endo_label.config import Settings
-from endo_label.mask.edge_polish import load_luma, polish_rle
 from endo_label.mask.mask_codec import (
     MASK_FORMAT,
     is_rle_mask,
@@ -360,7 +359,7 @@ class SessionManager:
             else:
                 raise BadPredictRequest(
                     "Predict requires a Concept Prompt (text) and/or Geometric "
-                    "Prompts (points/boxes) or Scribbles"
+                    "Prompts (points) or Scribbles"
                 )
 
         self._validate_geometry(pts, pt_labs, bxs, bx_labs)
@@ -807,6 +806,7 @@ class SessionManager:
         tracks = self._tracks_from_detections(detections, frame_index)
         s.tracks = tracks
         self._scribble.clear_memory(session_id=s.session_id)
+        self._persist_session()
 
         public_tracks = [t.to_public(frame_index=frame_index) for t in tracks]
         return PredictResult(
@@ -839,7 +839,7 @@ class SessionManager:
         has_pos_scribble = any(lab == 1 for lab in scribble_labels)
         if track_id is None and not has_pos_point and not has_pos_box and not has_pos_scribble:
             raise BadPredictRequest(
-                "Predict needs at least one positive point, box, or stroke "
+                "Predict needs at least one positive point or stroke "
                 "(or a track_id to refine with negatives / Mask Prior)"
             )
 
@@ -945,10 +945,6 @@ class SessionManager:
                 tracks=public,
             )
 
-        # Edge Polish after Geometric-only Predict. Skip if Scribble Model ran.
-        if (points or boxes) and not used_scribble:
-            out_mask = self._polish_geometry(out_mask, frame_index)
-
         provenance = {"mask_handoff": True} if used_scribble else None
 
         if target is not None:
@@ -985,6 +981,7 @@ class SessionManager:
         if concept:
             s.concept_text = concept
 
+        self._persist_session()
         public_tracks = [t.to_public(frame_index=frame_index) for t in s.tracks]
         return PredictResult(
             frame_index=frame_index,
@@ -992,6 +989,12 @@ class SessionManager:
             message=None,
             tracks=public_tracks,
         )
+
+    def _persist_session(self) -> None:
+        """Replace this Clip's Annotation with the live Session tracks."""
+        assert self._session is not None
+        s = self._session
+        annotations.save_rows(self._settings, s.clip_id, self._tracks_as_dicts())
 
     def _rollback_scribble_memory(
         self,
@@ -1014,22 +1017,6 @@ class SessionManager:
                 frame_index=frame_index,
                 mask=prior_mask,
             )
-
-    def _polish_geometry(self, mask: dict[str, Any], frame_index: int) -> dict[str, Any]:
-        """Snap-then-smooth. JPEG-less Fake frames still run the stand-in."""
-        assert self._session is not None
-        size = mask.get("size") or [0, 0]
-        h, w = int(size[0]), int(size[1])
-        image = None
-        if h > 0 and w > 0:
-            try:
-                path = catalog.frame_path(
-                    self._settings, self._session.clip_id, frame_index
-                )
-                image = load_luma(path, h, w)
-            except Exception:
-                image = None
-        return polish_rle(mask, image)
 
     def _find_track(self, track_id: int) -> TrackState:
         assert self._session is not None
@@ -1084,6 +1071,8 @@ class SessionManager:
             raise BadPredictRequest(
                 "points and point_labels must have the same length"
             )
+        if boxes:
+            raise BadPredictRequest("boxes are not a desk Geometric Prompt")
         if len(boxes) != len(box_labels):
             raise BadPredictRequest(
                 "boxes and box_labels must have the same length"
@@ -1102,21 +1091,6 @@ class SessionManager:
             if lab not in (0, 1):
                 raise BadPredictRequest(
                     "point_labels must be 0 (negative) or 1 (positive)"
-                )
-
-        for i, box in enumerate(boxes):
-            if len(box) != 4:
-                raise BadPredictRequest(
-                    f"box[{i}] must be [x0, y0, x1, y1] in relative coords"
-                )
-            if not all(0.0 <= float(v) <= 1.0 for v in box):
-                raise BadPredictRequest(
-                    "box coordinates must be relative values in [0, 1]"
-                )
-            lab = box_labels[i]
-            if lab not in (0, 1):
-                raise BadPredictRequest(
-                    "box_labels must be 0 (negative) or 1 (positive)"
                 )
 
     @staticmethod
