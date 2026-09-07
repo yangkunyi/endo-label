@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
-import { Check, Trash2 } from "lucide-react";
+import { Brush, Check, Trash2, X } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
 import {
@@ -39,7 +39,7 @@ import {
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { VideoPlayer } from "./components/ui/video-player";
-import { useDeskStore, type EditorKind, type PaintChip } from "./deskStore";
+import { brushOfKind, useDeskStore, type BrushIdentity, type EditorKind } from "./deskStore";
 import { libraryRowSemanticStyle, nowEmptyText } from "./editorCards";
 import { cn } from "./lib/utils";
 import { foldClass, foldPhase, foldTriplet, labelColor, type TimelineLane } from "./timeline";
@@ -54,21 +54,21 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return Boolean(target.closest('[role="textbox"], [role="combobox"], [role="searchbox"]'));
 }
 
-function chipLabel(chip: PaintChip): string {
-  if (chip.kind === "class") {
-    return `class: ${chip.name}`;
+function brushLabel(identity: BrushIdentity): string {
+  if (identity.kind === "class") {
+    return `class: ${identity.name}`;
   }
-  if (chip.kind === "phase") {
-    return `phase: ${chip.name}`;
+  if (identity.kind === "phase") {
+    return `phase: ${identity.name}`;
   }
-  return `triplet: ${chip.instrument} / ${chip.verb} / ${chip.target}`;
+  return `triplet: ${identity.instrument} / ${identity.verb} / ${identity.target}`;
 }
 
-function chipIdentity(chip: PaintChip): string {
-  if (chip.kind === "triplet") {
-    return `${chip.instrument} / ${chip.verb} / ${chip.target}`;
+function brushColorKey(identity: BrushIdentity): string {
+  if (identity.kind === "triplet") {
+    return `${identity.instrument} / ${identity.verb} / ${identity.target}`;
   }
-  return chip.name;
+  return identity.name;
 }
 
 function nowFillStyle(identity: string) {
@@ -181,8 +181,8 @@ export function ClipDesk() {
   const setLayout = useDeskStore((s) => s.setLayout);
   const spanStart = useDeskStore((s) => s.spanStart);
   const setSpanStart = useDeskStore((s) => s.setSpanStart);
-  const paintChip = useDeskStore((s) => s.paintChip);
-  const setPaintChip = useDeskStore((s) => s.setPaintChip);
+  const brush = useDeskStore((s) => s.brush);
+  const dropBrush = useDeskStore((s) => s.dropBrush);
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
   const spanBusy = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -211,25 +211,27 @@ export function ClipDesk() {
 
   const markedFrom = spanStart && spanStart.clipId === clipId ? spanStart.frameIndex : null;
   const { from: rangeFrom, to: rangeTo } = rangeEnds(markedFrom, frameIndex);
-  const hasChip = Boolean(paintChip);
+  const focusedBrush = brushOfKind(brush, taskFocus);
+  const hasBrush = focusedBrush.length > 0;
 
   const applyRange = useCallback(async (remove: boolean) => {
-    if (!clipId || !data || !paintChip || spanBusy.current) {
+    const identity = brushOfKind(brush, taskFocus)[0];
+    if (!clipId || !data || !identity || spanBusy.current) {
       return;
     }
     spanBusy.current = true;
     setToast(null);
     try {
-      if (paintChip.kind === "phase") {
+      if (identity.kind === "phase") {
         const doc = await sendJson<PhaseDoc>(phaseSpanPath(clipId), "POST", {
-          phase: remove ? null : paintChip.name,
+          phase: remove ? null : identity.name,
           from: rangeFrom,
           to: rangeTo,
         });
         await mutatePhase(doc, { revalidate: false });
-      } else if (paintChip.kind === "class") {
+      } else if (identity.kind === "class") {
         const doc = await sendJson<ClassDoc>(classSpanPath(clipId), "POST", {
-          tag: paintChip.name,
+          tag: identity.name,
           from: rangeFrom,
           to: rangeTo,
           on: !remove,
@@ -237,9 +239,9 @@ export function ClipDesk() {
         await mutateClass(doc, { revalidate: false });
       } else {
         const doc = await sendJson<TripletDoc>(tripletSpanPath(clipId), "POST", {
-          instrument: paintChip.instrument,
-          verb: paintChip.verb,
-          target: paintChip.target,
+          instrument: identity.instrument,
+          verb: identity.verb,
+          target: identity.target,
           from: rangeFrom,
           to: rangeTo,
           op: remove ? "remove" : "add",
@@ -248,7 +250,7 @@ export function ClipDesk() {
       }
       setSpanStart(null);
       setToast({
-        text: `${remove ? "Removed" : "Wrote"} ${chipLabel(paintChip)} on frames ${rangeFrom}–${rangeTo}`,
+        text: `${remove ? "Removed" : "Wrote"} ${brushLabel(identity)} on frames ${rangeFrom}–${rangeTo}`,
         error: false,
       });
     } catch (err) {
@@ -256,7 +258,7 @@ export function ClipDesk() {
     } finally {
       spanBusy.current = false;
     }
-  }, [clipId, data, mutateClass, mutatePhase, mutateTriplet, paintChip, rangeFrom, rangeTo, setSpanStart]);
+  }, [brush, clipId, data, mutateClass, mutatePhase, mutateTriplet, rangeFrom, rangeTo, setSpanStart, taskFocus]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -274,7 +276,7 @@ export function ClipDesk() {
         togglePlayback();
         return;
       }
-      if (!clipId || !data || data.frame_count <= 0 || !paintChip) {
+      if (!clipId || !data || data.frame_count <= 0 || !hasBrush) {
         return;
       }
       const key = event.key.toLowerCase();
@@ -290,7 +292,7 @@ export function ClipDesk() {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [applyRange, clipId, data, frameIndex, paintChip, setSpanStart, togglePlayback]);
+  }, [applyRange, clipId, data, frameIndex, hasBrush, setSpanStart, togglePlayback]);
 
   useLayoutEffect(() => {
     if (data) {
@@ -426,7 +428,6 @@ export function ClipDesk() {
                   classTags={vocab?.class_tags ?? []}
                   mutateClass={mutateClass}
                   mutateVocab={mutateVocab}
-                  onPaint={setPaintChip}
                 />
               ) : taskFocus === "triplet" ? (
                 <TripletEditor
@@ -437,7 +438,6 @@ export function ClipDesk() {
                   triples={vocab?.triples ?? []}
                   mutateTriplet={mutateTriplet}
                   mutateVocab={mutateVocab}
-                  onPaint={setPaintChip}
                 />
               ) : (
                 <PhaseEditor
@@ -448,7 +448,6 @@ export function ClipDesk() {
                   phases={vocab?.phases ?? []}
                   mutatePhase={mutatePhase}
                   mutateVocab={mutateVocab}
-                  onPaint={setPaintChip}
                 />
               )
             ) : (
@@ -479,31 +478,48 @@ export function ClipDesk() {
         {markedFrom != null ? (
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{rangeFrom} → {rangeTo}</span>
         ) : null}
-        <span
-          data-paint-chip=""
-          data-label-color={paintChip ? labelColor(chipIdentity(paintChip)) : undefined}
-          className="max-w-48 truncate text-xs font-medium"
-          style={paintChip ? { borderLeft: `3px solid ${labelColor(chipIdentity(paintChip))}`, paddingLeft: 6 } : undefined}
-        >
-          {paintChip ? chipLabel(paintChip) : "No paint chip"}
-        </span>
+        <div data-brush="" className="flex min-w-0 items-center gap-2">
+          {focusedBrush.map((identity) => {
+            const id = brushColorKey(identity);
+            return (
+              <span
+                key={`${identity.kind}:${id}`}
+                data-label-color={labelColor(id)}
+                className="flex max-w-48 items-center gap-0.5 truncate text-xs font-medium"
+                style={{ borderLeft: `3px solid ${labelColor(id)}`, paddingLeft: 6 }}
+              >
+                <span className="truncate">{brushLabel(identity)}</span>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="h-5 w-5"
+                  aria-label={`Remove ${brushLabel(identity)} from Brush`}
+                  onClick={() => dropBrush(identity)}
+                >
+                  <X size={12} />
+                </Button>
+              </span>
+            );
+          })}
+        </div>
         <Button
           type="button"
           size="sm"
           variant="outline"
-          disabled={!hasChip || !clipId}
+          disabled={!hasBrush || !clipId}
           onClick={() => {
-            if (clipId && paintChip) {
+            if (clipId && hasBrush) {
               setSpanStart({ clipId, frameIndex });
             }
           }}
         >
           Mark from
         </Button>
-        <Button type="button" size="sm" disabled={!hasChip} onClick={() => void applyRange(false)}>
+        <Button type="button" size="sm" disabled={!hasBrush} onClick={() => void applyRange(false)}>
           Apply to frames {rangeFrom}–{rangeTo}
         </Button>
-        <Button type="button" size="sm" variant="secondary" disabled={!hasChip} onClick={() => void applyRange(true)}>
+        <Button type="button" size="sm" variant="secondary" disabled={!hasBrush} onClick={() => void applyRange(true)}>
           Remove from frames {rangeFrom}–{rangeTo}
         </Button>
         {toast ? (
@@ -693,7 +709,9 @@ function OtherSummary({
 function LibraryList({
   names,
   isOnThisFrame,
+  inBrush,
   onPick,
+  onToggleBrush,
   disabled,
   listName,
   renameLabel,
@@ -705,7 +723,9 @@ function LibraryList({
 }: {
   names: string[];
   isOnThisFrame: (name: string) => boolean;
+  inBrush: (name: string) => boolean;
   onPick: (name: string) => void;
+  onToggleBrush: (name: string) => void;
   disabled: boolean;
   listName: string;
   renameLabel: string;
@@ -834,6 +854,17 @@ function LibraryList({
                 type="button"
                 size="icon"
                 variant="ghost"
+                aria-label="Brush"
+                aria-pressed={inBrush(name)}
+                className={inBrush(name) ? "text-foreground" : "text-muted-foreground"}
+                onClick={() => onToggleBrush(name)}
+              >
+                <Brush size={14} />
+              </Button>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
                 aria-label={deleteLabel(name)}
                 className="opacity-30 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
                 onClick={() => {
@@ -952,7 +983,6 @@ function ClassEditor({
   classTags,
   mutateClass,
   mutateVocab,
-  onPaint,
 }: {
   clipId: string;
   frameIndex: number;
@@ -961,19 +991,17 @@ function ClassEditor({
   classTags: string[];
   mutateClass: KeyedMutator<ClassDoc>;
   mutateVocab: KeyedMutator<Vocab>;
-  onPaint: (chip: PaintChip | null) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const current = frameClassTags(classFrames, frameIndex);
+  const brush = useDeskStore((s) => s.brush);
+  const toggleBrush = useDeskStore((s) => s.toggleBrush);
 
-  async function writeTags(tags: string[], painted?: { name: string; on: boolean }) {
+  async function writeTags(tags: string[]) {
     setError(null);
     try {
       const doc = await sendJson<ClassDoc>(classFramePath(clipId, frameIndex), "PUT", { tags });
       await mutateClass(doc, { revalidate: false });
-      if (painted) {
-        onPaint(painted.on ? { kind: "class", name: painted.name } : null);
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Write failed");
     }
@@ -1002,6 +1030,7 @@ function ClassEditor({
         <LibraryList
           names={classTags}
           isOnThisFrame={(name) => current.includes(name)}
+          inBrush={(name) => brush.class.includes(name)}
           disabled={frameCount <= 0}
           listName="class_tags"
           renameLabel="Rename class tag"
@@ -1011,9 +1040,9 @@ function ClassEditor({
             await mutateClass();
           }}
           onPick={(name) => {
-            const on = !current.includes(name);
-            void writeTags(toggleClassTag(current, name), { name, on });
+            void writeTags(toggleClassTag(current, name));
           }}
+          onToggleBrush={(name) => toggleBrush({ kind: "class", name })}
         />
         <AddVocabRow listName="class_tags" names={classTags} mutateVocab={mutateVocab} ariaLabel="Add class name" />
       </EditorCard>
@@ -1030,7 +1059,6 @@ function PhaseEditor({
   phases,
   mutatePhase,
   mutateVocab,
-  onPaint,
 }: {
   clipId: string;
   frameIndex: number;
@@ -1039,17 +1067,17 @@ function PhaseEditor({
   phases: string[];
   mutatePhase: KeyedMutator<PhaseDoc>;
   mutateVocab: KeyedMutator<Vocab>;
-  onPaint: (chip: PaintChip | null) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const current = framePhaseName(phaseFrames, frameIndex);
+  const brush = useDeskStore((s) => s.brush);
+  const toggleBrush = useDeskStore((s) => s.toggleBrush);
 
   async function writePhase(phase: string | null) {
     setError(null);
     try {
       const doc = await sendJson<PhaseDoc>(phaseFramePath(clipId, frameIndex), "PUT", { phase });
       await mutatePhase(doc, { revalidate: false });
-      onPaint(phase ? { kind: "phase", name: phase } : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Write failed");
     }
@@ -1082,6 +1110,7 @@ function PhaseEditor({
         <LibraryList
           names={phases}
           isOnThisFrame={(name) => name === current}
+          inBrush={(name) => brush.phase === name}
           disabled={frameCount <= 0}
           listName="phases"
           renameLabel="Rename phase"
@@ -1093,6 +1122,7 @@ function PhaseEditor({
           onPick={(name) => {
             void writePhase(name === current ? null : name);
           }}
+          onToggleBrush={(name) => toggleBrush({ kind: "phase", name })}
         />
         <AddVocabRow listName="phases" names={phases} mutateVocab={mutateVocab} ariaLabel="Add phase name" />
       </EditorCard>
@@ -1117,7 +1147,6 @@ function TripletEditor({
   triples,
   mutateTriplet,
   mutateVocab,
-  onPaint,
 }: {
   clipId: string;
   frameIndex: number;
@@ -1126,7 +1155,6 @@ function TripletEditor({
   triples: VocabTriple[];
   mutateTriplet: KeyedMutator<TripletDoc>;
   mutateVocab: KeyedMutator<Vocab>;
-  onPaint: (chip: PaintChip | null) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState({ instrument: "", verb: "", target: "" });
@@ -1136,6 +1164,8 @@ function TripletEditor({
   } | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const clickTimer = useRef<number | null>(null);
+  const brush = useDeskStore((s) => s.brush);
+  const toggleBrush = useDeskStore((s) => s.toggleBrush);
 
   useEffect(() => () => {
     if (clickTimer.current != null) {
@@ -1159,13 +1189,8 @@ function TripletEditor({
     }
     setError(null);
     try {
-      const result = await sendJson<Record<string, unknown>>(tripletFramePath(clipId, frameIndex), "POST", row);
+      await sendJson<Record<string, unknown>>(tripletFramePath(clipId, frameIndex), "POST", row);
       await mutateTriplet();
-      if ("rows" in result) {
-        onPaint(null);
-      } else {
-        onPaint({ kind: "triplet", instrument: row.instrument, verb: row.verb, target: row.target });
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Write failed");
     }
@@ -1289,7 +1314,7 @@ function TripletEditor({
                       <span role="columnheader" className="px-2 py-1 font-medium">verb</span>
                       <span role="columnheader" className="px-2 py-1 font-medium">target</span>
                     </div>
-                    <div className="w-7 shrink-0" aria-hidden="true" />
+                    <div className="w-14 shrink-0" aria-hidden="true" />
                   </div>
                 </td>
               </tr>
@@ -1298,6 +1323,7 @@ function TripletEditor({
               {triples.map((row) => {
                 const key = tripleIdentity(row);
                 const lit = onKeys.has(key);
+                const brushed = brush.triplet.some((item) => tripleIdentity(item) === key);
                 const isRenaming = renameCell && tripleIdentity(renameCell.row) === key;
                 return (
                   <tr key={key} className="group">
@@ -1428,6 +1454,17 @@ function TripletEditor({
                             </span>
                           </Button>
                         )}
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          aria-label="Brush"
+                          aria-pressed={brushed}
+                          className={brushed ? "text-foreground" : "text-muted-foreground"}
+                          onClick={() => toggleBrush({ kind: "triplet", ...row })}
+                        >
+                          <Brush size={14} />
+                        </Button>
                         <Button
                           type="button"
                           size="icon"

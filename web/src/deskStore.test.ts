@@ -14,7 +14,7 @@ beforeEach(() => {
     frameIndexes: {},
     layout: { ...DEFAULT_DESK_LAYOUT, editorOrder: [...DEFAULT_DESK_LAYOUT.editorOrder] },
     spanStart: null,
-    paintChip: null,
+    brush: { class: [], triplet: [], phase: null },
   });
 });
 
@@ -97,4 +97,29 @@ test("opening another clip clears span start", () => {
   useDeskStore.getState().setSpanStart({ clipId: "CLIPA", frameIndex: 0 });
   useDeskStore.getState().openClip("CLIPB", 8);
   expect(useDeskStore.getState().spanStart).toBeNull();
+});
+
+test("Brush membership toggle arms then disarms the focused kind", () => {
+  useDeskStore.getState().toggleBrush({ kind: "class", name: "grasper" });
+  expect(useDeskStore.getState().brush.class).toEqual(["grasper"]);
+  useDeskStore.getState().toggleBrush({ kind: "class", name: "grasper" });
+  expect(useDeskStore.getState().brush.class).toEqual([]);
+});
+
+test("opening another clip keeps Brush and clears Mark from", () => {
+  useDeskStore.getState().openClip("CLIPA", 3);
+  useDeskStore.getState().toggleBrush({ kind: "class", name: "grasper" });
+  useDeskStore.getState().setSpanStart({ clipId: "CLIPA", frameIndex: 0 });
+  useDeskStore.getState().openClip("CLIPB", 8);
+  const s = useDeskStore.getState();
+  expect(s.brush.class).toEqual(["grasper"]);
+  expect(s.spanStart).toBeNull();
+});
+
+test("each Task type keeps its own Brush", () => {
+  useDeskStore.getState().toggleBrush({ kind: "class", name: "grasper" });
+  useDeskStore.getState().toggleBrush({ kind: "phase", name: "dissection" });
+  const s = useDeskStore.getState();
+  expect(s.brush.class).toEqual(["grasper"]);
+  expect(s.brush.phase).toBe("dissection");
 });
