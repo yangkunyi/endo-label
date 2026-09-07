@@ -3,7 +3,10 @@ import type { MaskRle, TrackRow } from "./api";
 import {
   clientToRelative,
   displayedImageRect,
+  hitLeftoverPin,
   isClick,
+  overlayPins,
+  type LeftoverPoint,
   type PendingPoint,
   type Point,
 } from "./overlayCoords";
@@ -64,16 +67,20 @@ export function MaskOverlay({
   videoRef,
   masks,
   tracks,
+  leftover,
   pending,
   onPause,
   onClickPoint,
+  onDeletePin,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   masks: Array<MaskRle & { track_id: number }>;
   tracks: TrackRow[];
+  leftover: LeftoverPoint[];
   pending: PendingPoint[];
   onPause: () => void;
   onClickPoint: (point: PendingPoint) => void;
+  onDeletePin: (index: number) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drag = useRef<{ start: Point; last: Point } | null>(null);
@@ -108,7 +115,7 @@ export function MaskOverlay({
     for (const mask of masks) {
       paintMask(ctx, mask, trackColor(mask.track_id, tracks), dest);
     }
-    for (const point of pending) {
+    for (const point of overlayPins(leftover, pending)) {
       ctx.beginPath();
       ctx.arc(dest.left + point.x * dest.width, dest.top + point.y * dest.height, 4, 0, Math.PI * 2);
       ctx.fillStyle = point.label === 1 ? "#f8fafc" : "#0f172a";
@@ -117,7 +124,7 @@ export function MaskOverlay({
       ctx.strokeStyle = point.label === 1 ? "#16a34a" : "#dc2626";
       ctx.stroke();
     }
-  }, [layoutGen, masks, pending, tracks, videoRef]);
+  }, [layoutGen, leftover, masks, pending, tracks, videoRef]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -184,6 +191,14 @@ export function MaskOverlay({
     drag.current = null;
     if (!stroke || !isClick(stroke.start, stroke.last)) {
       return;
+    }
+    const rect = imageRect();
+    if (rect) {
+      const hit = hitLeftoverPin(stroke.start, leftover, { width: rect.width, height: rect.height });
+      if (hit != null) {
+        onDeletePin(hit);
+        return;
+      }
     }
     onClickPoint({ ...stroke.start, label: 1 });
   }

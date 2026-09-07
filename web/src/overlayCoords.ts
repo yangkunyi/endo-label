@@ -1,11 +1,20 @@
 export const DRAG_EXTENT = 0.005;
 export const PREDICT_DEBOUNCE_MS = 800;
+export const PIN_HIT_RADIUS_PX = 10;
 
 export type Point = { x: number; y: number };
 
 export type DisplayRect = { left: number; top: number; width: number; height: number };
 
 export type PendingPoint = Point & { label: 0 | 1 };
+
+export type LeftoverPoint = Point & { positive: boolean };
+
+export type ActiveTrackAction =
+  | { kind: "rail"; trackId: number }
+  | { kind: "new" }
+  | { kind: "created"; trackId: number }
+  | { kind: "picture" };
 
 export function displayedImageRect(
   player: DisplayRect,
@@ -60,4 +69,61 @@ export function debounceDue(
     return false;
   }
   return now - lastMarkAt >= delay;
+}
+
+export function leftoverPinsForActive(
+  tracks: { track_id: number; geometric_memory?: LeftoverPoint[] }[],
+  activeTrackId: number | null,
+): LeftoverPoint[] {
+  if (activeTrackId == null) {
+    return [];
+  }
+  return tracks.find((row) => row.track_id === activeTrackId)?.geometric_memory ?? [];
+}
+
+export function overlayPins(leftover: LeftoverPoint[], pending: PendingPoint[]): PendingPoint[] {
+  return [
+    ...leftover.map((pin) => ({ x: pin.x, y: pin.y, label: (pin.positive ? 1 : 0) as 0 | 1 })),
+    ...pending,
+  ];
+}
+
+export function hitLeftoverPin(
+  click: Point,
+  pins: LeftoverPoint[],
+  displaySize: { width: number; height: number },
+  radiusPx = PIN_HIT_RADIUS_PX,
+): number | null {
+  if (!(displaySize.width > 0) || !(displaySize.height > 0) || !(radiusPx > 0)) {
+    return null;
+  }
+  let best: number | null = null;
+  let bestD = radiusPx * radiusPx;
+  for (let index = 0; index < pins.length; index += 1) {
+    const pin = pins[index];
+    const dx = (click.x - pin.x) * displaySize.width;
+    const dy = (click.y - pin.y) * displaySize.height;
+    const d = dx * dx + dy * dy;
+    if (d <= bestD) {
+      best = index;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+export function nextActiveTrack(
+  current: number | null,
+  action: ActiveTrackAction,
+): number | null {
+  if (action.kind === "rail") {
+    return action.trackId;
+  }
+  if (action.kind === "new") {
+    return null;
+  }
+  if (action.kind === "created") {
+    return current ?? action.trackId;
+  }
+  return current;
 }

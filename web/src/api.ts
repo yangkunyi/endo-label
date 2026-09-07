@@ -46,12 +46,15 @@ export type MaskRle = {
   track_id?: number;
 };
 
+export type LeftoverPoint = { x: number; y: number; positive: boolean };
+
 export type TrackRow = {
   track_id: number;
   label: string;
   color: string;
   score: number | null;
   mask?: MaskRle;
+  geometric_memory?: LeftoverPoint[];
 };
 
 export type SessionPublic = {
@@ -141,12 +144,23 @@ export function vocabPath(): string {
   return "/api/vocab";
 }
 
-export function sessionPath(): string {
-  return "/api/session";
+export function sessionPath(frameIndex?: number): string {
+  if (frameIndex == null) {
+    return "/api/session";
+  }
+  return `/api/session?frame_index=${frameIndex}`;
 }
 
 export function sessionPredictPath(): string {
   return "/api/session/predict";
+}
+
+export function sessionPointPath(
+  trackId: number,
+  frameIndex: number,
+  pointIndex: number,
+): string {
+  return `/api/session/tracks/${trackId}/frames/${frameIndex}/points/${pointIndex}`;
 }
 
 export function annotationSummaryPath(clipId: string): string {

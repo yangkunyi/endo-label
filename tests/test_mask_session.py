@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 
 from endo_label.app import create_app
 from endo_label.config import Settings
+from endo_label.mask.predictor import FakePredictor
+from endo_label.mask.session import SessionManager
 
 _POINT = {"frame_index": 0, "points": [[0.5, 0.5]], "point_labels": [1]}
 
@@ -31,6 +33,44 @@ def _sitting(tmp_path: Path, clip_ids: tuple[str, ...]) -> TestClient:
             )
         )
     )
+
+
+class _RecordingGeometry(FakePredictor):
+    """Fake SAM that records Geometric Predict kwargs."""
+
+    def __init__(self) -> None:
+        self.geometry_calls: list[dict] = []
+
+    def predict_geometry(
+        self,
+        *,
+        clip_id: str,
+        frame_index: int,
+        points: list[list[float]],
+        point_labels: list[int],
+        boxes: list[list[float]],
+        box_labels: list[int],
+        base_mask: dict | None = None,
+        track_id: int | None = None,
+    ):
+        self.geometry_calls.append(
+            {
+                "points": [list(p) for p in points],
+                "point_labels": list(point_labels),
+                "base_mask": dict(base_mask) if base_mask is not None else None,
+                "track_id": track_id,
+            }
+        )
+        return super().predict_geometry(
+            clip_id=clip_id,
+            frame_index=frame_index,
+            points=points,
+            point_labels=point_labels,
+            boxes=boxes,
+            box_labels=box_labels,
+            base_mask=base_mask,
+            track_id=track_id,
+        )
 
 
 def _open(client: TestClient, clip_id: str = "CLIPA", *, load: bool = False) -> dict:
@@ -192,3 +232,201 @@ def test_annotation_does_not_leak_across_clips(tmp_path: Path) -> None:
     _open(client, "CLIPB")
     assert client.get("/api/session").json()["tracks"] == []
     assert client.get("/api/clips/CLIPB/annotations").status_code == 404
+
+
+def test_get_session_returns_leftover_points_annotation_has_none(
+    tmp_path: Path,
+) -> None:
+    client = _sitting(tmp_path, ("CLIPA",))
+    _open(client)
+    predicted = client.post("/api/session/predict", json=_POINT)
+    assert predicted.status_code == 200
+    tid = predicted.json()["tracks"][0]["track_id"]
+
+    session = client.get("/api/session", params={"frame_index": 0}).json()
+    track = next(row for row in session["tracks"] if row["track_id"] == tid)
+    assert track["geometric_memory"] == [{"x": 0.5, "y": 0.5, "positive": True}]
+
+    bare = client.get("/api/session").json()
+    bare_track = next(row for row in bare["tracks"] if row["track_id"] == tid)
+    assert "geometric_memory" not in bare_track
+
+    listed = client.get("/api/clips/CLIPA/annotations")
+    assert listed.status_code == 200
+    assert "geometric_memory" not in listed.text
+    frame = client.get("/api/clips/CLIPA/annotations/frames/0")
+    assert frame.status_code == 200
+    assert "geometric_memory" not in frame.text
+    assert "positive" not in frame.text
+    assert client.delete("/api/session").status_code == 200
+    loaded = _open(client, load=True)
+    assert loaded["tracks"][0]["track_id"] == tid
+    reopened = client.get("/api/session", params={"frame_index": 0}).json()
+    revived = next(row for row in reopened["tracks"] if row["track_id"] == tid)
+    assert revived["geometric_memory"] == []
+    assert "mask" in revived
+
+
+def test_second_geometric_predict_resends_leftovers_and_mask_prior(
+    tmp_path: Path,
+) -> None:
+    frames = tmp_path / "frames"
+    clip = frames / "CLIPA"
+    clip.mkdir(parents=True)
+    (clip / "00001.jpg").write_bytes(b"fake-jpeg-0")
+    (clip / "00002.jpg").write_bytes(b"fake-jpeg-1")
+    recorder = _RecordingGeometry()
+    settings = Settings(
+        frames_root=frames,
+        clip_allowlist=("CLIPA",),
+        annotations_root=tmp_path / "mask",
+        labels_root=tmp_path / "labels",
+        predictor_backend="fake",
+        scribble_backend="fake",
+    )
+    client = TestClient(
+        create_app(settings, session_manager=SessionManager(settings, recorder))
+    )
+    _open(client)
+    first = client.post(
+        "/api/session/predict",
+        json={"frame_index": 0, "points": [[0.25, 0.25]], "point_labels": [1]},
+    )
+    assert first.status_code == 200
+    tid = first.json()["tracks"][0]["track_id"]
+    prior = first.json()["tracks"][0]["mask"]
+    assert recorder.geometry_calls[-1]["points"] == [[0.25, 0.25]]
+
+    second = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "track_id": tid,
+            "points": [[0.8, 0.8]],
+            "point_labels": [1],
+        },
+    )
+    assert second.status_code == 200
+    last = recorder.geometry_calls[-1]
+    assert last["points"] == [[0.25, 0.25], [0.8, 0.8]]
+    assert last["point_labels"] == [1, 1]
+    assert last["base_mask"] is not None
+    assert last["base_mask"]["format"] == "rle_fg"
+    assert list(last["base_mask"]["counts"]) == list(prior["counts"])
+
+    session = client.get("/api/session", params={"frame_index": 0}).json()
+    track = next(row for row in session["tracks"] if row["track_id"] == tid)
+    assert track["geometric_memory"] == [
+        {"x": 0.25, "y": 0.25, "positive": True},
+        {"x": 0.8, "y": 0.8, "positive": True},
+    ]
+
+
+def test_leftover_pin_delete_repredicts_remaining_last_pin_plus_prior(
+    tmp_path: Path,
+) -> None:
+    frames = tmp_path / "frames"
+    clip = frames / "CLIPA"
+    clip.mkdir(parents=True)
+    (clip / "00001.jpg").write_bytes(b"fake-jpeg-0")
+    (clip / "00002.jpg").write_bytes(b"fake-jpeg-1")
+    recorder = _RecordingGeometry()
+    settings = Settings(
+        frames_root=frames,
+        clip_allowlist=("CLIPA",),
+        annotations_root=tmp_path / "mask",
+        labels_root=tmp_path / "labels",
+        predictor_backend="fake",
+        scribble_backend="fake",
+    )
+    client = TestClient(
+        create_app(settings, session_manager=SessionManager(settings, recorder))
+    )
+    _open(client)
+    first = client.post(
+        "/api/session/predict",
+        json={"frame_index": 0, "points": [[0.25, 0.25]], "point_labels": [1]},
+    )
+    assert first.status_code == 200
+    tid = first.json()["tracks"][0]["track_id"]
+    assert (
+        client.post(
+            "/api/session/predict",
+            json={
+                "frame_index": 0,
+                "track_id": tid,
+                "points": [[0.8, 0.8]],
+                "point_labels": [1],
+            },
+        ).status_code
+        == 200
+    )
+    prior = client.get("/api/session", params={"frame_index": 0}).json()
+    prior_counts = list(
+        next(row for row in prior["tracks"] if row["track_id"] == tid)["mask"]["counts"]
+    )
+
+    dropped = client.delete(f"/api/session/tracks/{tid}/frames/0/points/0")
+    assert dropped.status_code == 200, dropped.text
+    last = recorder.geometry_calls[-1]
+    assert last["points"] == [[0.8, 0.8]]
+    assert last["point_labels"] == [1]
+    assert last["base_mask"] is not None
+    assert list(last["base_mask"]["counts"]) == prior_counts
+    track = next(row for row in dropped.json()["tracks"] if row["track_id"] == tid)
+    assert track["geometric_memory"] == [{"x": 0.8, "y": 0.8, "positive": True}]
+    assert track["mask"]["source"] == "refined"
+    assert "geometric_memory" not in client.get("/api/clips/CLIPA/annotations").text
+
+    last_prior = list(track["mask"]["counts"])
+    last_pin = client.delete(f"/api/session/tracks/{tid}/frames/0/points/0")
+    assert last_pin.status_code == 200, last_pin.text
+    only_prior = recorder.geometry_calls[-1]
+    assert only_prior["points"] == []
+    assert only_prior["point_labels"] == []
+    assert only_prior["base_mask"] is not None
+    assert list(only_prior["base_mask"]["counts"]) == last_prior
+    empty = next(row for row in last_pin.json()["tracks"] if row["track_id"] == tid)
+    assert empty["geometric_memory"] == []
+    assert "mask" in empty
+    frame = client.get("/api/clips/CLIPA/annotations/frames/0")
+    assert frame.status_code == 200
+    assert frame.json()["masks"][0]["track_id"] == tid
+
+
+def test_pins_stay_on_that_frame_and_clear_mask_drops_them(tmp_path: Path) -> None:
+    client = _sitting(tmp_path, ("CLIPA",))
+    _open(client)
+    first = client.post(
+        "/api/session/predict",
+        json={"frame_index": 0, "points": [[0.25, 0.25]], "point_labels": [1]},
+    )
+    assert first.status_code == 200
+    tid = first.json()["tracks"][0]["track_id"]
+    other = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 1,
+            "track_id": tid,
+            "points": [[0.7, 0.7]],
+            "point_labels": [1],
+        },
+    )
+    assert other.status_code == 200
+
+    on_zero = client.get("/api/session", params={"frame_index": 0}).json()
+    t0 = next(row for row in on_zero["tracks"] if row["track_id"] == tid)
+    assert t0["geometric_memory"] == [{"x": 0.25, "y": 0.25, "positive": True}]
+    on_one = client.get("/api/session", params={"frame_index": 1}).json()
+    t1 = next(row for row in on_one["tracks"] if row["track_id"] == tid)
+    assert t1["geometric_memory"] == [{"x": 0.7, "y": 0.7, "positive": True}]
+
+    cleared = client.delete(f"/api/session/tracks/{tid}/frames/0")
+    assert cleared.status_code == 200
+    after = client.get("/api/session", params={"frame_index": 0}).json()
+    gone = next(row for row in after["tracks"] if row["track_id"] == tid)
+    assert gone["geometric_memory"] == []
+    assert "mask" not in gone
+    kept = client.get("/api/session", params={"frame_index": 1}).json()
+    still = next(row for row in kept["tracks"] if row["track_id"] == tid)
+    assert still["geometric_memory"] == [{"x": 0.7, "y": 0.7, "positive": True}]

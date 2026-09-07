@@ -76,6 +76,36 @@ class PredictorRuntimeError(SessionError):
     """Model error during Predict/Propagate (not load readiness)."""
 
 
+def _copy_points(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Copy leftover Geometric Prompts as {x, y, positive}."""
+    return [
+        {"x": p["x"], "y": p["y"], "positive": p["positive"]} for p in points
+    ]
+
+
+def _prompt_points(
+    points: list[list[float]], point_labels: list[int]
+) -> list[dict[str, Any]]:
+    """HTTP this-request points as Geometric Memory items."""
+    return [
+        {"x": float(pt[0]), "y": float(pt[1]), "positive": lab == 1}
+        for pt, lab in zip(points, point_labels)
+    ]
+
+
+def _merge_geometry_points(
+    stored: list[dict[str, Any]],
+    points: list[list[float]],
+    point_labels: list[int],
+) -> tuple[list[list[float]], list[int]]:
+    """Stored leftover points first, then this request."""
+    merged_pts = [[float(p["x"]), float(p["y"])] for p in stored]
+    merged_labs = [1 if p["positive"] else 0 for p in stored]
+    merged_pts.extend([list(pt) for pt in points])
+    merged_labs.extend(list(point_labels))
+    return merged_pts, merged_labs
+
+
 def _mask_payload(
     *,
     mask: dict[str, Any],
@@ -101,6 +131,8 @@ class TrackState:
     score: float | None
     # frame_index -> mask payload dict
     masks: dict[int, dict[str, Any]] = field(default_factory=dict)
+    # frame_index -> leftover Geometric Prompts (Session only)
+    geometric_memory: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
 
     def to_public(self, *, frame_index: int | None = None) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -111,6 +143,10 @@ class TrackState:
         }
         if frame_index is not None and frame_index in self.masks:
             out["mask"] = self.masks[frame_index]
+        if frame_index is not None:
+            out["geometric_memory"] = _copy_points(
+                self.geometric_memory.get(frame_index, [])
+            )
         return out
 
 
@@ -448,6 +484,7 @@ class SessionManager:
                 f"Track {track_id} has no mask on frame {frame_index}"
             )
         del track.masks[frame_index]
+        track.geometric_memory.pop(frame_index, None)
         self._scribble.clear_memory(
             session_id=s.session_id,
             track_id=track_id,
@@ -459,6 +496,53 @@ class SessionManager:
             )
         except Exception:
             pass
+        self._persist_session()
+        return self.get_public(frame_index=frame_index)
+
+    def drop_geometric_point(
+        self, track_id: int, frame_index: int, point_index: int
+    ) -> dict[str, Any]:
+        """Drop one leftover point, then Predict remaining list (maybe empty) + Prior."""
+        with self._lock:
+            return self._drop_geometric_point_unlocked(
+                track_id, frame_index, point_index
+            )
+
+    def _drop_geometric_point_unlocked(
+        self, track_id: int, frame_index: int, point_index: int
+    ) -> dict[str, Any]:
+        if self._session is None:
+            raise SessionNotFound("no active Session")
+        self._ensure_not_propagating()
+        s = self._session
+        try:
+            catalog.frame_path(self._settings, s.clip_id, frame_index)
+        except catalog.ClipNotFound as exc:
+            raise SessionClipNotFound(s.clip_id) from exc
+        except catalog.FrameNotFound as exc:
+            raise SessionFrameNotFound(str(frame_index)) from exc
+
+        track = self._find_track(track_id)
+        stored = _copy_points(track.geometric_memory.get(frame_index, []))
+        if point_index < 0 or point_index >= len(stored):
+            raise TrackNotFound(
+                f"Track {track_id} has no leftover point {point_index} "
+                f"on frame {frame_index}"
+            )
+        remaining = stored[:point_index] + stored[point_index + 1 :]
+        self._run_geometry(
+            frame_index=frame_index,
+            concept=None,
+            points=[],
+            point_labels=[],
+            boxes=[],
+            box_labels=[],
+            scribbles=[],
+            scribble_labels=[],
+            scribble_widths=None,
+            track_id=track_id,
+            geometric_memory=remaining,
+        )
         return self.get_public(frame_index=frame_index)
 
     def start_propagate(
@@ -830,6 +914,7 @@ class SessionManager:
         scribble_widths: list[int] | None,
         track_id: int | None,
         use_mask_prior: bool = False,
+        geometric_memory: list[dict[str, Any]] | None = None,
     ) -> PredictResult:
         s = self._session
         assert s is not None
@@ -908,12 +993,21 @@ class SessionManager:
             base_mask = scribble_mask
             used_scribble = True
 
+        stored: list[dict[str, Any]] = []
+        if geometric_memory is not None:
+            stored = _copy_points(geometric_memory)
+        elif target is not None:
+            stored = _copy_points(target.geometric_memory.get(frame_index, []))
+        send_pts, send_labs = _merge_geometry_points(
+            stored, points, point_labels
+        )
+
         try:
             out_mask = self._predictor.predict_geometry(
                 clip_id=s.clip_id,
                 frame_index=frame_index,
-                points=points,
-                point_labels=point_labels,
+                points=send_pts,
+                point_labels=send_labs,
                 boxes=boxes,
                 box_labels=box_labels,
                 base_mask=base_mask,
@@ -946,6 +1040,7 @@ class SessionManager:
             )
 
         provenance = {"mask_handoff": True} if used_scribble else None
+        leftover = stored + _prompt_points(points, point_labels)
 
         if target is not None:
             # Geometric refine after prior mask → refined; first seed → manual
@@ -953,6 +1048,7 @@ class SessionManager:
             target.masks[frame_index] = _mask_payload(
                 mask=out_mask, source=source, model_provenance=provenance
             )
+            target.geometric_memory[frame_index] = leftover
             target.score = None  # geometric refine has no concept score
         else:
             tid = model_track_id
@@ -966,6 +1062,7 @@ class SessionManager:
                 color=color_for_track(tid),
                 score=None,
                 masks={frame_index: mask},
+                geometric_memory={frame_index: leftover},
             )
             s.tracks.append(target)
 

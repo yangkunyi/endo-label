@@ -1,12 +1,17 @@
 import { expect, test } from "vitest";
 import {
   DRAG_EXTENT,
+  PIN_HIT_RADIUS_PX,
   PREDICT_DEBOUNCE_MS,
   clientToRelative,
   debounceDue,
   displayedImageRect,
   dropPendingOnFrameChange,
+  hitLeftoverPin,
   isClick,
+  leftoverPinsForActive,
+  nextActiveTrack,
+  overlayPins,
   pointerExtent,
 } from "./overlayCoords";
 
@@ -75,4 +80,37 @@ test("auto-Predict is due 800 ms after the last mark", () => {
   expect(debounceDue(0, 799)).toBe(false);
   expect(debounceDue(0, 800)).toBe(true);
   expect(debounceDue(100, 900)).toBe(true);
+});
+
+test("leftover pins are only the Active Track; overlay stacks pending after leftover", () => {
+  const tracks = [
+    { track_id: 1, geometric_memory: [{ x: 0.2, y: 0.3, positive: true }] },
+    { track_id: 2, geometric_memory: [{ x: 0.8, y: 0.1, positive: false }] },
+  ];
+  expect(leftoverPinsForActive(tracks, 1)).toEqual([{ x: 0.2, y: 0.3, positive: true }]);
+  expect(leftoverPinsForActive(tracks, null)).toEqual([]);
+  expect(
+    overlayPins([{ x: 0.2, y: 0.3, positive: true }], [{ x: 0.5, y: 0.5, label: 1 }]),
+  ).toEqual([
+    { x: 0.2, y: 0.3, label: 1 },
+    { x: 0.5, y: 0.5, label: 1 },
+  ]);
+});
+
+test("click on a leftover pin is a 10 CSS-pixel hit; drag is not delete", () => {
+  expect(PIN_HIT_RADIUS_PX).toBe(10);
+  const pin = { x: 0.5, y: 0.5, positive: true };
+  expect(hitLeftoverPin({ x: 0.53, y: 0.5 }, [pin], { width: 200, height: 200 })).toBe(0);
+  expect(hitLeftoverPin({ x: 0.53, y: 0.5 }, [pin], { width: 1000, height: 1000 })).toBeNull();
+  expect(isClick({ x: 0.5, y: 0.5 }, { x: 0.504, y: 0.5 })).toBe(true);
+  expect(isClick({ x: 0.5, y: 0.5 }, { x: 0.51, y: 0.5 })).toBe(false);
+});
+
+test("Active Track comes from the rail; New Track clears; picture click does not select", () => {
+  expect(nextActiveTrack(null, { kind: "rail", trackId: 2 })).toBe(2);
+  expect(nextActiveTrack(2, { kind: "new" })).toBeNull();
+  expect(nextActiveTrack(null, { kind: "created", trackId: 1 })).toBe(1);
+  expect(nextActiveTrack(3, { kind: "created", trackId: 4 })).toBe(3);
+  expect(nextActiveTrack(2, { kind: "picture" })).toBe(2);
+  expect(nextActiveTrack(null, { kind: "picture" })).toBeNull();
 });
