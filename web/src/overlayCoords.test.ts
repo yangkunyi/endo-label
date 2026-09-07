@@ -3,16 +3,26 @@ import {
   DRAG_EXTENT,
   PIN_HIT_RADIUS_PX,
   PREDICT_DEBOUNCE_MS,
+  SCRIBBLE_LETTERBOX,
+  SCRIBBLE_WIDTH_DEFAULT,
+  SCRIBBLE_WIDTH_MAX,
+  SCRIBBLE_WIDTH_MIN,
+  clampScribbleWidth,
   clientToRelative,
   debounceDue,
   displayedImageRect,
+  dragCommit,
   dropPendingOnFrameChange,
   hitLeftoverPin,
   isClick,
+  isPendingStroke,
   leftoverPinsForActive,
   nextActiveTrack,
   overlayPins,
   pointerExtent,
+  splitPendingMarks,
+  strokeInkWidthPx,
+  type PendingMark,
 } from "./overlayCoords";
 
 test("object-contain letterbox maps the image rect, not the player box", () => {
@@ -113,4 +123,61 @@ test("Active Track comes from the rail; New Track clears; picture click does not
   expect(nextActiveTrack(3, { kind: "created", trackId: 4 })).toBe(3);
   expect(nextActiveTrack(2, { kind: "picture" })).toBe(2);
   expect(nextActiveTrack(null, { kind: "picture" })).toBeNull();
+});
+
+test("a click commits a point; a drag commits a stroke with the current width", () => {
+  const start = { x: 0.5, y: 0.5 };
+  const click = dragCommit(start, { x: 0.501, y: 0.5 }, [start, { x: 0.501, y: 0.5 }], 1, 8);
+  expect(click).toEqual({ x: 0.5, y: 0.5, label: 1 });
+
+  const samples = [start, { x: 0.55, y: 0.5 }, { x: 0.6, y: 0.52 }];
+  const stroke = dragCommit(start, { x: 0.6, y: 0.52 }, samples, 0, 24);
+  expect(isPendingStroke(stroke!)).toBe(true);
+  expect(stroke).toEqual({ points: samples, label: 0, width: 24 });
+});
+
+test("a drag with no samples still commits start and last as the polyline", () => {
+  const start = { x: 0.2, y: 0.3 };
+  const last = { x: 0.4, y: 0.3 };
+  const stroke = dragCommit(start, last, [], 1, 8);
+  expect(isPendingStroke(stroke!)).toBe(true);
+  expect(stroke).toEqual({ points: [start, last], label: 1, width: 8 });
+});
+
+test("pending strokes keep the width they were drawn with; points stay points", () => {
+  const marks: PendingMark[] = [
+    { x: 0.1, y: 0.1, label: 1 },
+    { points: [{ x: 0.3, y: 0.3 }, { x: 0.4, y: 0.3 }], label: 1, width: 24 },
+    { points: [{ x: 0.7, y: 0.7 }], label: 0, width: 3 },
+  ];
+  const split = splitPendingMarks(marks);
+  expect(split.points).toEqual([[0.1, 0.1]]);
+  expect(split.point_labels).toEqual([1]);
+  expect(split.scribbles).toEqual([
+    [
+      [0.3, 0.3],
+      [0.4, 0.3],
+    ],
+    [[0.7, 0.7]],
+  ]);
+  expect(split.scribble_labels).toEqual([1, 0]);
+  // A later slider move must not rewrite strokes already drawn.
+  expect(split.scribble_widths).toEqual([24, 3]);
+});
+
+test("stroke ink is full diameter scaled from the 1024 letterbox to the displayed rect", () => {
+  expect(SCRIBBLE_LETTERBOX).toBe(1024);
+  expect(strokeInkWidthPx(8, 1024)).toBe(8);
+  expect(strokeInkWidthPx(12, 512)).toBe(6);
+  expect(strokeInkWidthPx(40, 2048)).toBe(80);
+});
+
+test("slider width clamps to 1–40 with default 8", () => {
+  expect(SCRIBBLE_WIDTH_DEFAULT).toBe(8);
+  expect(SCRIBBLE_WIDTH_MIN).toBe(1);
+  expect(SCRIBBLE_WIDTH_MAX).toBe(40);
+  expect(clampScribbleWidth(8)).toBe(8);
+  expect(clampScribbleWidth(0)).toBe(1);
+  expect(clampScribbleWidth(41)).toBe(40);
+  expect(clampScribbleWidth(8.4)).toBe(8);
 });

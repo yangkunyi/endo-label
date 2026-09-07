@@ -1,4 +1,4 @@
-"""Compose HTTP: Geometric Predict, immediate Annotation, no Session for vocab."""
+"""Compose HTTP: Geometric Predict, Scribble + Handoff, immediate Annotation."""
 
 from __future__ import annotations
 
@@ -8,10 +8,17 @@ from fastapi.testclient import TestClient
 
 from endo_label.app import create_app
 from endo_label.config import Settings
+from endo_label.mask.mask_codec import decode_rle
 from endo_label.mask.predictor import FakePredictor
+from endo_label.mask.scribble import (
+    FakeScribbleModel,
+    UnreadyScribbleModel,
+    resolve_scribble_widths,
+)
 from endo_label.mask.session import SessionManager
 
 _POINT = {"frame_index": 0, "points": [[0.5, 0.5]], "point_labels": [1]}
+_STROKE = [[0.4, 0.5], [0.6, 0.5]]
 
 
 def _sitting(tmp_path: Path, clip_ids: tuple[str, ...]) -> TestClient:
@@ -80,6 +87,73 @@ def _open(client: TestClient, clip_id: str = "CLIPA", *, load: bool = False) -> 
     )
     assert created.status_code == 201, created.text
     return created.json()
+
+
+def _sitting_with(
+    tmp_path: Path,
+    predictor: FakePredictor | None = None,
+    scribble: FakeScribbleModel | UnreadyScribbleModel | None = None,
+) -> TestClient:
+    frames = tmp_path / "frames"
+    clip = frames / "CLIPA"
+    clip.mkdir(parents=True)
+    (clip / "00001.jpg").write_bytes(b"fake-jpeg-0")
+    (clip / "00002.jpg").write_bytes(b"fake-jpeg-1")
+    settings = Settings(
+        frames_root=frames,
+        clip_allowlist=("CLIPA",),
+        annotations_root=tmp_path / "mask",
+        labels_root=tmp_path / "labels",
+        predictor_backend="fake",
+        scribble_backend="fake",
+    )
+    return TestClient(
+        create_app(
+            settings, session_manager=SessionManager(settings, predictor, scribble=scribble)
+        )
+    )
+
+
+class _ScriptedSam(_RecordingGeometry):
+    """Fake SAM that can be told to raise or return empty on Geometric Predict."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.mode = "ok"  # ok | raise | empty
+        self.last_result: dict | None = None
+
+    def predict_geometry(self, **kwargs):
+        if self.mode == "raise":
+            raise RuntimeError("SAM worker exploded")
+        out = super().predict_geometry(**kwargs)
+        if self.mode == "empty":
+            return None
+        self.last_result = out
+        return out
+
+
+class _RecordingScribble(FakeScribbleModel):
+    """Fake Scribble that records effective per-stroke widths."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[dict] = []
+
+    def predict(self, **kwargs):
+        self.calls.append(
+            {
+                "labels": list(kwargs["scribble_labels"]),
+                "widths": resolve_scribble_widths(
+                    kwargs["scribbles"], kwargs["scribble_widths"]
+                ),
+            }
+        )
+        return super().predict(**kwargs)
+
+
+def _track_frame(client: TestClient, track_id: int, frame_index: int = 0) -> dict:
+    session = client.get("/api/session", params={"frame_index": frame_index}).json()
+    return next(row for row in session["tracks"] if row["track_id"] == track_id)
 
 
 def test_session_stays_inactive_until_opened_and_vocab_does_not_open_it(
@@ -430,3 +504,274 @@ def test_pins_stay_on_that_frame_and_clear_mask_drops_them(tmp_path: Path) -> No
     kept = client.get("/api/session", params={"frame_index": 1}).json()
     still = next(row for row in kept["tracks"] if row["track_id"] == tid)
     assert still["geometric_memory"] == [{"x": 0.7, "y": 0.7, "positive": True}]
+
+
+def test_positive_stroke_creates_track_via_scribble_handoff(tmp_path: Path) -> None:
+    sam = _ScriptedSam()
+    scrib = _RecordingScribble()
+    client = _sitting_with(tmp_path, predictor=sam, scribble=scrib)
+    _open(client)
+    predicted = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "scribbles": [_STROKE],
+            "scribble_labels": [1],
+            "scribble_widths": [12],
+        },
+    )
+    assert predicted.status_code == 200, predicted.text
+    body = predicted.json()
+    assert body["empty"] is False
+    track = body["tracks"][0]
+    assert track["track_id"] == 1
+    assert track["mask"]["source"] == "manual"
+    assert track["mask"]["model_provenance"] == {"mask_handoff": True}
+
+    # Scribble ran with the stamped width; SAM received the complete silhouette.
+    assert scrib.calls[0]["labels"] == [1]
+    assert scrib.calls[0]["widths"] == [12]
+    assert len(sam.geometry_calls) == 1
+    base = sam.geometry_calls[0]["base_mask"]
+    assert base is not None and base["format"] == "rle_fg"
+    assert sum(base["counts"]) > 300  # complete region, not a thin ink ribbon
+
+    # Visible mask is SAM's return; no polish step rewrote it.
+    assert list(track["mask"]["counts"]) == list(sam.last_result["counts"])
+
+    frame = client.get("/api/clips/CLIPA/annotations/frames/0")
+    assert frame.status_code == 200
+    assert frame.json()["masks"][0]["track_id"] == 1
+    assert client.get("/api/session", params={"frame_index": 0}).json()[
+        "tracks"
+    ][0]["mask"]["model_provenance"] == {"mask_handoff": True}
+
+
+def test_negative_stroke_alone_does_not_create_a_track(tmp_path: Path) -> None:
+    client = _sitting_with(tmp_path)
+    _open(client)
+    carved = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "scribbles": [_STROKE],
+            "scribble_labels": [0],
+        },
+    )
+    assert carved.status_code == 400
+    assert client.get("/api/session").json()["tracks"] == []
+    assert client.get("/api/clips/CLIPA/annotations").status_code == 404
+
+
+def test_negative_stroke_carves_existing_mask_loaded_into_scribble_memory(
+    tmp_path: Path,
+) -> None:
+    client = _sitting_with(tmp_path, scribble=FakeScribbleModel())
+    _open(client)
+    seeded = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "scribbles": [[[0.25, 0.25], [0.35, 0.25]]],
+            "scribble_labels": [1],
+        },
+    )
+    assert seeded.status_code == 200, seeded.text
+    tid = seeded.json()["tracks"][0]["track_id"]
+
+    carved = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "track_id": tid,
+            "scribbles": [[[0.2, 0.15]]],
+            "scribble_labels": [0],
+        },
+    )
+    assert carved.status_code == 200, carved.text
+    track = carved.json()["tracks"][0]
+    assert track["mask"]["source"] == "refined"
+    assert track["mask"]["model_provenance"] == {"mask_handoff": True}
+    grid = decode_rle(track["mask"])
+    assert grid[9][12] == 0  # carved upper-left corner at (0.2, 0.15)
+    assert grid[22][25] == 1  # seeded silhouette survives at (0.4, 0.35)
+
+
+def test_scribble_worker_down_503_on_strokes_points_still_work(
+    tmp_path: Path,
+) -> None:
+    client = _sitting_with(
+        tmp_path, scribble=UnreadyScribbleModel(message="Scribble GPU down")
+    )
+    _open(client)
+    seeded = client.post("/api/session/predict", json=_POINT)
+    assert seeded.status_code == 200, seeded.text
+    tid = seeded.json()["tracks"][0]["track_id"]
+    prior_counts = list(seeded.json()["tracks"][0]["mask"]["counts"])
+
+    stroked = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "track_id": tid,
+            "scribbles": [_STROKE],
+            "scribble_labels": [1],
+        },
+    )
+    assert stroked.status_code == 503
+    assert "Scribble GPU down" in stroked.json()["detail"]
+
+    track = _track_frame(client, tid)
+    assert list(track["mask"]["counts"]) == prior_counts
+    assert track["mask"]["source"] == "manual"
+
+    fresh = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 1,
+            "scribbles": [_STROKE],
+            "scribble_labels": [1],
+        },
+    )
+    assert fresh.status_code == 503
+    assert [row["track_id"] for row in client.get("/api/session").json()["tracks"]] == [tid]
+
+    frame = client.get("/api/clips/CLIPA/annotations/frames/0")
+    assert [m["track_id"] for m in frame.json()["masks"]] == [tid]
+
+    again = client.post("/api/session/predict", json=_POINT)
+    assert again.status_code == 200, again.text
+
+
+def test_failed_handoff_keeps_previous_mask_and_rolls_back_scribble_memory(
+    tmp_path: Path,
+) -> None:
+    sam = _ScriptedSam()
+    client = _sitting_with(tmp_path, predictor=sam, scribble=FakeScribbleModel())
+    _open(client)
+    first = client.post("/api/session/predict", json=_POINT)
+    assert first.status_code == 200, first.text
+    tid = first.json()["tracks"][0]["track_id"]
+    prior_counts = list(first.json()["tracks"][0]["mask"]["counts"])
+
+    sam.mode = "raise"
+    failed = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "track_id": tid,
+            "scribbles": [[[0.8, 0.8], [0.9, 0.9]]],
+            "scribble_labels": [1],
+        },
+    )
+    assert failed.status_code == 500
+    assert "SAM worker exploded" in failed.json()["detail"]
+
+    track = _track_frame(client, tid)
+    assert list(track["mask"]["counts"]) == prior_counts
+    assert track["mask"]["source"] == "manual"
+    assert track["geometric_memory"] == [{"x": 0.5, "y": 0.5, "positive": True}]
+    assert [m["track_id"] for m in
+            client.get("/api/clips/CLIPA/annotations/frames/0").json()["masks"]] == [tid]
+
+    sam.mode = "ok"
+    recovered = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "track_id": tid,
+            "scribbles": [[[0.15, 0.8], [0.25, 0.8]]],
+            "scribble_labels": [1],
+        },
+    )
+    assert recovered.status_code == 200, recovered.text
+    grid = decode_rle(recovered.json()["tracks"][0]["mask"])
+    assert grid[51][12] == 1  # recovered stroke at (0.2, 0.8) landed
+    assert grid[54][54] == 0  # failed stroke ink at (0.85, 0.85) did not survive
+
+
+def test_empty_sam_after_scribble_is_not_a_commit(tmp_path: Path) -> None:
+    sam = _ScriptedSam()
+    client = _sitting_with(tmp_path, predictor=sam, scribble=FakeScribbleModel())
+    _open(client)
+    first = client.post("/api/session/predict", json=_POINT)
+    assert first.status_code == 200, first.text
+    tid = first.json()["tracks"][0]["track_id"]
+    prior_counts = list(first.json()["tracks"][0]["mask"]["counts"])
+
+    sam.mode = "empty"
+    emptied = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "track_id": tid,
+            "scribbles": [[[0.8, 0.8], [0.9, 0.9]]],
+            "scribble_labels": [1],
+        },
+    )
+    assert emptied.status_code == 200, emptied.text
+    body = emptied.json()
+    assert body["empty"] is True
+    assert body["message"]
+    track = _track_frame(client, tid)
+    assert list(track["mask"]["counts"]) == prior_counts
+
+    sam.mode = "ok"
+    recovered = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "track_id": tid,
+            "scribbles": [[[0.15, 0.8], [0.25, 0.8]]],
+            "scribble_labels": [1],
+        },
+    )
+    assert recovered.status_code == 200, recovered.text
+    grid = decode_rle(recovered.json()["tracks"][0]["mask"])
+    assert grid[51][12] == 1  # recovered stroke landed on the prior
+    assert grid[54][54] == 0  # the emptied stroke's ink was rolled back
+
+
+def test_scribble_widths_are_validated_and_forwarded_per_stroke(
+    tmp_path: Path,
+) -> None:
+    scrib = _RecordingScribble()
+    client = _sitting_with(tmp_path, scribble=scrib)
+    _open(client)
+
+    for widths in ([0], [41], [8, 8]):
+        bad = client.post(
+            "/api/session/predict",
+            json={
+                "frame_index": 0,
+                "scribbles": [_STROKE],
+                "scribble_labels": [1],
+                "scribble_widths": widths,
+            },
+        )
+        assert bad.status_code == 400, (widths, bad.text)
+        assert "scribble_widths" in bad.json()["detail"]
+    assert client.get("/api/session").json()["tracks"] == []
+
+    stamped = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "scribbles": [_STROKE, [[0.2, 0.2], [0.3, 0.2]]],
+            "scribble_labels": [1, 1],
+            "scribble_widths": [24, 3],
+        },
+    )
+    assert stamped.status_code == 200, stamped.text
+    assert scrib.calls[-1]["widths"] == [24, 3]
+
+    defaulted = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 1,
+            "scribbles": [_STROKE],
+            "scribble_labels": [1],
+        },
+    )
+    assert defaulted.status_code == 200, defaulted.text
+    assert scrib.calls[-1]["widths"] == [8]  # omitted widths mean the default 8

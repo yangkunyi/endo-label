@@ -1,12 +1,36 @@
 export const DRAG_EXTENT = 0.005;
 export const PREDICT_DEBOUNCE_MS = 800;
 export const PIN_HIT_RADIUS_PX = 10;
+// Full stroke diameter on the 1024 letterbox (matches HTTP scribble_widths).
+export const SCRIBBLE_WIDTH_DEFAULT = 8;
+export const SCRIBBLE_WIDTH_MIN = 1;
+export const SCRIBBLE_WIDTH_MAX = 40;
+export const SCRIBBLE_LETTERBOX = 1024;
 
 export type Point = { x: number; y: number };
 
 export type DisplayRect = { left: number; top: number; width: number; height: number };
 
 export type PendingPoint = Point & { label: 0 | 1 };
+
+export type PendingStroke = { points: Point[]; label: 0 | 1; width: number };
+
+export type PendingMark = PendingPoint | PendingStroke;
+
+export function isPendingStroke(mark: PendingMark): mark is PendingStroke {
+  return "points" in mark;
+}
+
+export function clampScribbleWidth(width: number): number {
+  if (!Number.isFinite(width)) {
+    return SCRIBBLE_WIDTH_DEFAULT;
+  }
+  return Math.min(SCRIBBLE_WIDTH_MAX, Math.max(SCRIBBLE_WIDTH_MIN, Math.round(width)));
+}
+
+export function strokeInkWidthPx(width: number, displayedWidthPx: number): number {
+  return (width / SCRIBBLE_LETTERBOX) * displayedWidthPx;
+}
 
 export type LeftoverPoint = Point & { positive: boolean };
 
@@ -54,6 +78,51 @@ export function pointerExtent(from: Point, to: Point): number {
 
 export function isClick(from: Point, to: Point, threshold = DRAG_EXTENT): boolean {
   return pointerExtent(from, to) < threshold;
+}
+
+// Same tool as points: a click commits a point, a drag commits a stroke whose
+// width is stamped now — a later slider move never rewrites drawn strokes.
+export function dragCommit(
+  start: Point,
+  last: Point,
+  samples: Point[],
+  label: 0 | 1,
+  width: number,
+): PendingMark | null {
+  if (!isClick(start, last)) {
+    const points = samples.length > 0 ? samples : [start, last];
+    return { points, label, width };
+  }
+  return { ...start, label };
+}
+
+export type SplitPending = {
+  points: number[][];
+  point_labels: number[];
+  scribbles: number[][][];
+  scribble_labels: number[];
+  scribble_widths: number[];
+};
+
+export function splitPendingMarks(marks: PendingMark[]): SplitPending {
+  const out: SplitPending = {
+    points: [],
+    point_labels: [],
+    scribbles: [],
+    scribble_labels: [],
+    scribble_widths: [],
+  };
+  for (const mark of marks) {
+    if (isPendingStroke(mark)) {
+      out.scribbles.push(mark.points.map((p) => [p.x, p.y]));
+      out.scribble_labels.push(mark.label);
+      out.scribble_widths.push(mark.width);
+    } else {
+      out.points.push([mark.x, mark.y]);
+      out.point_labels.push(mark.label);
+    }
+  }
+  return out;
 }
 
 export function dropPendingOnFrameChange<T>(pending: T[], fromFrame: number, toFrame: number): T[] {

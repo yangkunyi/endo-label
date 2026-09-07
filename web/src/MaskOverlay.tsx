@@ -3,14 +3,22 @@ import type { MaskRle, TrackRow } from "./api";
 import {
   clientToRelative,
   displayedImageRect,
+  dragCommit,
   hitLeftoverPin,
-  isClick,
+  isPendingStroke,
   overlayPins,
+  strokeInkWidthPx,
+  type DisplayRect,
   type LeftoverPoint,
+  type PendingMark,
   type PendingPoint,
+  type PendingStroke,
   type Point,
 } from "./overlayCoords";
 import { decodeRle } from "./rle";
+
+const POSITIVE_INK = "#16a34a";
+const NEGATIVE_INK = "#dc2626";
 
 function hexRgb(color: string): [number, number, number] {
   const m = /^#([0-9a-f]{6})$/i.exec(color);
@@ -23,6 +31,28 @@ function hexRgb(color: string): [number, number, number] {
 
 function trackColor(trackId: number, tracks: TrackRow[]): string {
   return tracks.find((row) => row.track_id === trackId)?.color ?? "#e6194b";
+}
+
+function drawInk(
+  ctx: CanvasRenderingContext2D,
+  points: Point[],
+  dest: DisplayRect,
+  label: 0 | 1,
+  width: number,
+) {
+  if (points.length === 0) {
+    return;
+  }
+  ctx.beginPath();
+  ctx.moveTo(dest.left + points[0].x * dest.width, dest.top + points[0].y * dest.height);
+  for (const point of points.slice(1)) {
+    ctx.lineTo(dest.left + point.x * dest.width, dest.top + point.y * dest.height);
+  }
+  ctx.lineWidth = Math.max(1, strokeInkWidthPx(width, dest.width));
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = label === 1 ? POSITIVE_INK : NEGATIVE_INK;
+  ctx.stroke();
 }
 
 function paintMask(
@@ -69,22 +99,28 @@ export function MaskOverlay({
   tracks,
   leftover,
   pending,
+  width,
   onPause,
   onClickPoint,
+  onStroke,
   onDeletePin,
 }: {
   videoRef: RefObject<HTMLVideoElement | null>;
   masks: Array<MaskRle & { track_id: number }>;
   tracks: TrackRow[];
   leftover: LeftoverPoint[];
-  pending: PendingPoint[];
+  pending: PendingMark[];
+  width: number;
   onPause: () => void;
   onClickPoint: (point: PendingPoint) => void;
+  onStroke: (stroke: PendingStroke) => void;
   onDeletePin: (index: number) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const drag = useRef<{ start: Point; last: Point } | null>(null);
+  const drag = useRef<{ start: Point; last: Point; samples: Point[]; label: 0 | 1 } | null>(null);
   const [layoutGen, setLayoutGen] = useState(0);
+
+  const bump = () => setLayoutGen((n) => n + 1);
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -115,7 +151,13 @@ export function MaskOverlay({
     for (const mask of masks) {
       paintMask(ctx, mask, trackColor(mask.track_id, tracks), dest);
     }
-    for (const point of overlayPins(leftover, pending)) {
+    for (const mark of pending) {
+      if (isPendingStroke(mark)) {
+        drawInk(ctx, mark.points, dest, mark.label, mark.width);
+      }
+    }
+    const pendingPoints = pending.filter((mark): mark is PendingPoint => !isPendingStroke(mark));
+    for (const point of overlayPins(leftover, pendingPoints)) {
       ctx.beginPath();
       ctx.arc(dest.left + point.x * dest.width, dest.top + point.y * dest.height, 4, 0, Math.PI * 2);
       ctx.fillStyle = point.label === 1 ? "#f8fafc" : "#0f172a";
@@ -156,7 +198,8 @@ export function MaskOverlay({
   }
 
   function onPointerDown(event: PointerEvent<HTMLCanvasElement>) {
-    if (event.button !== 0) {
+    // Left = positive Geometric/Scribble Prompt, right = negative; menu stays shut.
+    if (event.button !== 0 && event.button !== 2) {
       return;
     }
     const rect = imageRect();
@@ -168,7 +211,7 @@ export function MaskOverlay({
       return;
     }
     onPause();
-    drag.current = { start: point, last: point };
+    drag.current = { start: point, last: point, samples: [point], label: event.button === 2 ? 0 : 1 };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
@@ -181,26 +224,45 @@ export function MaskOverlay({
       return;
     }
     const point = clientToRelative(event.clientX, event.clientY, rect);
-    if (point) {
-      drag.current.last = point;
+    if (!point) {
+      return;
+    }
+    const prev = drag.current.last;
+    drag.current.last = point;
+    drag.current.samples.push(point);
+    const ink = canvasRef.current?.getContext("2d");
+    if (ink) {
+      drawInk(ink, [prev, point], rect, drag.current.label, width);
     }
   }
 
   function onPointerUp() {
-    const stroke = drag.current;
+    const gesture = drag.current;
     drag.current = null;
-    if (!stroke || !isClick(stroke.start, stroke.last)) {
+    if (!gesture) {
       return;
     }
-    const rect = imageRect();
-    if (rect) {
-      const hit = hitLeftoverPin(stroke.start, leftover, { width: rect.width, height: rect.height });
-      if (hit != null) {
-        onDeletePin(hit);
-        return;
+    const commit = dragCommit(gesture.start, gesture.last, gesture.samples, gesture.label, width);
+    if (!commit) {
+      bump();
+      return;
+    }
+    if (isPendingStroke(commit)) {
+      onStroke(commit);
+      return;
+    }
+    // Click (no drag): a positive click may delete a leftover pin it covers.
+    if (commit.label === 1) {
+      const rect = imageRect();
+      if (rect) {
+        const hit = hitLeftoverPin(gesture.start, leftover, { width: rect.width, height: rect.height });
+        if (hit != null) {
+          onDeletePin(hit);
+          return;
+        }
       }
     }
-    onClickPoint({ ...stroke.start, label: 1 });
+    onClickPoint(commit);
   }
 
   return (
@@ -215,6 +277,7 @@ export function MaskOverlay({
       onPointerUp={onPointerUp}
       onPointerCancel={() => {
         drag.current = null;
+        bump();
       }}
       onContextMenu={(event) => event.preventDefault()}
     />

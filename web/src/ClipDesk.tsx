@@ -54,10 +54,17 @@ import { MaskOverlay } from "./MaskOverlay";
 import { useDeskStore, type EditorKind, type PaintChip } from "./deskStore";
 import {
   PREDICT_DEBOUNCE_MS,
+  SCRIBBLE_WIDTH_DEFAULT,
+  SCRIBBLE_WIDTH_MAX,
+  SCRIBBLE_WIDTH_MIN,
+  clampScribbleWidth,
   dropPendingOnFrameChange,
   leftoverPinsForActive,
   nextActiveTrack,
+  splitPendingMarks,
+  type PendingMark,
   type PendingPoint,
+  type PendingStroke,
 } from "./overlayCoords";
 import { libraryRowSemanticStyle, nowEmptyText } from "./editorCards";
 import { cn } from "./lib/utils";
@@ -209,13 +216,14 @@ export function ClipDesk() {
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
   const spanBusy = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const pendingRef = useRef<PendingPoint[]>([]);
+  const pendingRef = useRef<PendingMark[]>([]);
   const debounceRef = useRef<number | null>(null);
   const prevClipId = useRef<string | undefined>(undefined);
   const predicting = useRef(false);
   const pendingFrame = useRef(0);
   const sessionOpen = useRef(false);
-  const [pending, setPending] = useState<PendingPoint[]>([]);
+  const [pending, setPending] = useState<PendingMark[]>([]);
+  const [scribbleWidth, setScribbleWidth] = useState(SCRIBBLE_WIDTH_DEFAULT);
   const [activeTrackId, setActiveTrackId] = useState<number | null>(null);
   const [sessionTracks, setSessionTracks] = useState<TrackRow[]>([]);
 
@@ -286,16 +294,25 @@ export function ClipDesk() {
           load_annotations: true,
         });
       }
+      const split = splitPendingMarks(marks);
       const body: {
         frame_index: number;
         points: number[][];
         point_labels: number[];
+        scribbles?: number[][][];
+        scribble_labels?: number[];
+        scribble_widths?: number[];
         track_id?: number;
       } = {
         frame_index: frameIndex,
-        points: marks.map((mark) => [mark.x, mark.y]),
-        point_labels: marks.map((mark) => mark.label),
+        points: split.points,
+        point_labels: split.point_labels,
       };
+      if (split.scribbles.length > 0) {
+        body.scribbles = split.scribbles;
+        body.scribble_labels = split.scribble_labels;
+        body.scribble_widths = split.scribble_widths;
+      }
       if (activeTrackId != null) {
         body.track_id = activeTrackId;
       }
@@ -332,6 +349,18 @@ export function ClipDesk() {
     setPending(next);
     schedulePredict();
   }, [schedulePredict]);
+
+  const onClickStroke = useCallback((stroke: PendingStroke) => {
+    setActiveTrackId((current) => nextActiveTrack(current, { kind: "picture" }));
+    const next = [...pendingRef.current, stroke];
+    pendingRef.current = next;
+    setPending(next);
+    schedulePredict();
+  }, [schedulePredict]);
+
+  const onScribbleWidth = useCallback((value: number) => {
+    setScribbleWidth(clampScribbleWidth(value));
+  }, []);
 
   const onDeletePin = useCallback(async (index: number) => {
     if (activeTrackId == null || predicting.current) {
@@ -558,8 +587,10 @@ export function ClipDesk() {
                       tracks={tracks}
                       leftover={leftover}
                       pending={pending}
+                      width={scribbleWidth}
                       onPause={pausePlayback}
                       onClickPoint={onClickPoint}
+                      onStroke={onClickStroke}
                       onDeletePin={(index) => void onDeletePin(index)}
                     />
                   </VideoPlayer>
@@ -601,6 +632,8 @@ export function ClipDesk() {
             tracks={tracks}
             activeTrackId={activeTrackId}
             pendingCount={pending.length}
+            scribbleWidth={scribbleWidth}
+            onScribbleWidth={onScribbleWidth}
             onPredict={() => void runPredict()}
             onSelectTrack={(trackId) => setActiveTrackId(nextActiveTrack(activeTrackId, { kind: "rail", trackId }))}
             onNewTrack={() => setActiveTrackId(nextActiveTrack(activeTrackId, { kind: "new" }))}
@@ -855,6 +888,8 @@ function TrackRail({
   tracks,
   activeTrackId,
   pendingCount,
+  scribbleWidth,
+  onScribbleWidth,
   onPredict,
   onSelectTrack,
   onNewTrack,
@@ -862,6 +897,8 @@ function TrackRail({
   tracks: TrackRow[];
   activeTrackId: number | null;
   pendingCount: number;
+  scribbleWidth: number;
+  onScribbleWidth: (width: number) => void;
   onPredict: () => void;
   onSelectTrack: (trackId: number) => void;
   onNewTrack: () => void;
@@ -889,6 +926,25 @@ function TrackRail({
             Predict
           </Button>
         </div>
+      </div>
+      <div className="flex items-center gap-2" data-scribble-width="">
+        <label htmlFor="scribble-width" className="shrink-0 text-xs text-muted-foreground">
+          Width
+        </label>
+        <input
+          id="scribble-width"
+          type="range"
+          min={SCRIBBLE_WIDTH_MIN}
+          max={SCRIBBLE_WIDTH_MAX}
+          step={1}
+          value={scribbleWidth}
+          onChange={(event) => onScribbleWidth(Number(event.target.value))}
+          className="min-w-0 flex-1"
+          aria-label="Scribble width"
+        />
+        <output htmlFor="scribble-width" className="w-6 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+          {scribbleWidth}
+        </output>
       </div>
       {tracks.length === 0 ? (
         <p className="text-sm text-muted-foreground">No Tracks</p>
