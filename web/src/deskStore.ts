@@ -34,8 +34,11 @@ export function brushOfKind(brush: DeskBrush, kind: EditorKind): BrushIdentity[]
 
 function toggleBrushMembership(brush: DeskBrush, identity: BrushIdentity): DeskBrush {
   if (identity.kind === "class") {
-    // ponytail: one class tag this ticket; ticket 03 appends a second
-    return { ...brush, class: brush.class.includes(identity.name) ? [] : [identity.name] };
+    const has = brush.class.includes(identity.name);
+    return {
+      ...brush,
+      class: has ? brush.class.filter((name) => name !== identity.name) : [...brush.class, identity.name],
+    };
   }
   if (identity.kind === "phase") {
     return { ...brush, phase: brush.phase === identity.name ? null : identity.name };
@@ -44,7 +47,9 @@ function toggleBrushMembership(brush: DeskBrush, identity: BrushIdentity): DeskB
   const has = brush.triplet.some((row) => tripleKey(row) === key);
   return {
     ...brush,
-    triplet: has ? [] : [{ instrument: identity.instrument, verb: identity.verb, target: identity.target }],
+    triplet: has
+      ? brush.triplet.filter((row) => tripleKey(row) !== key)
+      : [...brush.triplet, { instrument: identity.instrument, verb: identity.verb, target: identity.target }],
   };
 }
 

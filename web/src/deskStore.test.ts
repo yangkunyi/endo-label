@@ -123,3 +123,17 @@ test("each Task type keeps its own Brush", () => {
   expect(s.brush.class).toEqual(["grasper"]);
   expect(s.brush.phase).toBe("dissection");
 });
+
+test("class Brush can hold a second tag; toggling it again drops only that tag", () => {
+  useDeskStore.getState().toggleBrush({ kind: "class", name: "grasper" });
+  useDeskStore.getState().toggleBrush({ kind: "class", name: "blurred" });
+  expect(useDeskStore.getState().brush.class).toEqual(["grasper", "blurred"]);
+  useDeskStore.getState().toggleBrush({ kind: "class", name: "grasper" });
+  expect(useDeskStore.getState().brush.class).toEqual(["blurred"]);
+});
+
+test("picking a second phase into the Brush replaces the first", () => {
+  useDeskStore.getState().toggleBrush({ kind: "phase", name: "dissection" });
+  useDeskStore.getState().toggleBrush({ kind: "phase", name: "clipping" });
+  expect(useDeskStore.getState().brush.phase).toBe("clipping");
+});

@@ -71,6 +71,30 @@ function brushColorKey(identity: BrushIdentity): string {
   return identity.name;
 }
 
+function vocabOrderKeys(kind: EditorKind, vocab: Vocab | undefined): string[] {
+  if (!vocab) {
+    return [];
+  }
+  if (kind === "class") {
+    return vocab.class_tags;
+  }
+  if (kind === "phase") {
+    return vocab.phases;
+  }
+  return vocab.triples.map((row) => `${row.instrument} / ${row.verb} / ${row.target}`);
+}
+
+function orderBrushByVocab(identities: BrushIdentity[], order: string[]): BrushIdentity[] {
+  if (identities.length <= 1 || order.length === 0) {
+    return identities;
+  }
+  return [...identities].sort((a, b) => {
+    const ia = order.indexOf(brushColorKey(a));
+    const ib = order.indexOf(brushColorKey(b));
+    return (ia < 0 ? order.length : ia) - (ib < 0 ? order.length : ib);
+  });
+}
+
 function nowFillStyle(identity: string) {
   return { backgroundColor: labelColor(identity), color: "var(--color-background)" };
 }
@@ -211,46 +235,49 @@ export function ClipDesk() {
 
   const markedFrom = spanStart && spanStart.clipId === clipId ? spanStart.frameIndex : null;
   const { from: rangeFrom, to: rangeTo } = rangeEnds(markedFrom, frameIndex);
-  const focusedBrush = brushOfKind(brush, taskFocus);
+  const focusedBrush = orderBrushByVocab(brushOfKind(brush, taskFocus), vocabOrderKeys(taskFocus, vocab));
   const hasBrush = focusedBrush.length > 0;
+  const previewRange = hasBrush && markedFrom != null ? { from: rangeFrom, to: rangeTo } : null;
 
   const applyRange = useCallback(async (remove: boolean) => {
-    const identity = brushOfKind(brush, taskFocus)[0];
-    if (!clipId || !data || !identity || spanBusy.current) {
+    const identities = orderBrushByVocab(brushOfKind(brush, taskFocus), vocabOrderKeys(taskFocus, vocab));
+    if (!clipId || !data || identities.length === 0 || spanBusy.current) {
       return;
     }
     spanBusy.current = true;
     setToast(null);
     try {
-      if (identity.kind === "phase") {
-        const doc = await sendJson<PhaseDoc>(phaseSpanPath(clipId), "POST", {
-          phase: remove ? null : identity.name,
-          from: rangeFrom,
-          to: rangeTo,
-        });
-        await mutatePhase(doc, { revalidate: false });
-      } else if (identity.kind === "class") {
-        const doc = await sendJson<ClassDoc>(classSpanPath(clipId), "POST", {
-          tag: identity.name,
-          from: rangeFrom,
-          to: rangeTo,
-          on: !remove,
-        });
-        await mutateClass(doc, { revalidate: false });
-      } else {
-        const doc = await sendJson<TripletDoc>(tripletSpanPath(clipId), "POST", {
-          instrument: identity.instrument,
-          verb: identity.verb,
-          target: identity.target,
-          from: rangeFrom,
-          to: rangeTo,
-          op: remove ? "remove" : "add",
-        });
-        await mutateTriplet(doc, { revalidate: false });
+      for (const identity of identities) {
+        if (identity.kind === "phase") {
+          const doc = await sendJson<PhaseDoc>(phaseSpanPath(clipId), "POST", {
+            phase: remove ? null : identity.name,
+            from: rangeFrom,
+            to: rangeTo,
+          });
+          await mutatePhase(doc, { revalidate: false });
+        } else if (identity.kind === "class") {
+          const doc = await sendJson<ClassDoc>(classSpanPath(clipId), "POST", {
+            tag: identity.name,
+            from: rangeFrom,
+            to: rangeTo,
+            on: !remove,
+          });
+          await mutateClass(doc, { revalidate: false });
+        } else {
+          const doc = await sendJson<TripletDoc>(tripletSpanPath(clipId), "POST", {
+            instrument: identity.instrument,
+            verb: identity.verb,
+            target: identity.target,
+            from: rangeFrom,
+            to: rangeTo,
+            op: remove ? "remove" : "add",
+          });
+          await mutateTriplet(doc, { revalidate: false });
+        }
       }
       setSpanStart(null);
       setToast({
-        text: `${remove ? "Removed" : "Wrote"} ${brushLabel(identity)} on frames ${rangeFrom}–${rangeTo}`,
+        text: `${remove ? "Removed" : "Wrote"} ${identities.map(brushLabel).join(", ")} on frames ${rangeFrom}–${rangeTo}`,
         error: false,
       });
     } catch (err) {
@@ -258,7 +285,7 @@ export function ClipDesk() {
     } finally {
       spanBusy.current = false;
     }
-  }, [brush, clipId, data, mutateClass, mutatePhase, mutateTriplet, rangeFrom, rangeTo, setSpanStart, taskFocus]);
+  }, [brush, clipId, data, mutateClass, mutatePhase, mutateTriplet, rangeFrom, rangeTo, setSpanStart, taskFocus, vocab]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -385,6 +412,8 @@ export function ClipDesk() {
               phaseFrames={phaseDoc?.frames ?? {}}
               classFrames={classDoc?.frames ?? {}}
               tripletFrames={tripletDoc?.frames ?? {}}
+              previewRange={previewRange}
+              brushKeys={focusedBrush.map(brushColorKey)}
               onSeek={seekPlayhead}
             />
           ) : null}
@@ -540,6 +569,8 @@ function TimelineBand({
   phaseFrames,
   classFrames,
   tripletFrames,
+  previewRange,
+  brushKeys,
   onSeek,
 }: {
   clipRailWidth: number;
@@ -549,6 +580,8 @@ function TimelineBand({
   phaseFrames: Record<string, string>;
   classFrames: Record<string, string[]>;
   tripletFrames: Record<string, TripletRow[]>;
+  previewRange: { from: number; to: number } | null;
+  brushKeys: string[];
   onSeek: (index: number) => void;
 }) {
   const lanes: TimelineLane[] =
@@ -610,6 +643,17 @@ function TimelineBand({
             onPointerCancel={stopDrag}
           >
             <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
+            {previewRange ? (
+              <span
+                data-ruler-range=""
+                aria-hidden="true"
+                className="pointer-events-none absolute top-0 bottom-0 bg-[#5e6ad2]/35"
+                style={{
+                  left: `${(previewRange.from / frameCount) * 100}%`,
+                  width: `${((previewRange.to - previewRange.from + 1) / frameCount) * 100}%`,
+                }}
+              />
+            ) : null}
             <span data-playhead="" aria-hidden="true" className="pointer-events-none absolute top-0.5 h-2 w-2 -translate-x-1/2 rounded-full bg-[#5e6ad2]" style={{ left: playheadLeft }} />
           </div>
         </div>
@@ -656,6 +700,19 @@ function TimelineBand({
                       />
                     );
                   })}
+                  {previewRange && brushKeys.includes(lane.key) ? (
+                    <span
+                      data-ghost=""
+                      aria-hidden="true"
+                      className="pointer-events-none absolute bottom-1 top-1 z-[1] box-border rounded"
+                      style={{
+                        left: `${(previewRange.from / frameCount) * 100}%`,
+                        width: `${((previewRange.to - previewRange.from + 1) / frameCount) * 100}%`,
+                        backgroundColor: labelColor(lane.key),
+                        opacity: 0.4,
+                      }}
+                    />
+                  ) : null}
                 </div>
               ))}
               <div className="pointer-events-none absolute bottom-0 top-0 z-10 w-px -translate-x-1/2 bg-[#5e6ad2]" style={{ left: playheadLeft }} />
