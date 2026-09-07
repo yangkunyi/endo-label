@@ -15,6 +15,7 @@ import {
   frameTripletRows,
   getJson,
   getJsonAllow404,
+  jobPath,
   phaseClipPath,
   phaseFramePath,
   phaseSpanPath,
@@ -23,6 +24,7 @@ import {
   sessionPath,
   sessionPointPath,
   sessionPredictPath,
+  sessionPropagatePath,
   sessionTrackPath,
   sessionUndoPath,
   toggleClassTag,
@@ -43,6 +45,8 @@ import {
   type FrameAnnotations,
   type PhaseDoc,
   type PredictResult,
+  type PropagateDirection,
+  type PropagateJobPublic,
   type SessionPublic,
   type TrackRow,
   type TripletDoc,
@@ -85,6 +89,9 @@ function isEditableTarget(target: EventTarget | null): boolean {
   }
   return Boolean(target.closest('[role="textbox"], [role="combobox"], [role="searchbox"]'));
 }
+
+// The Job fills one Frame per status poll, so this is the fill rate too.
+const JOB_POLL_MS = 400;
 
 function chipLabel(chip: PaintChip): string {
   if (chip.kind === "class") {
@@ -232,6 +239,12 @@ export function ClipDesk() {
   const [scribbleWidth, setScribbleWidth] = useState(SCRIBBLE_WIDTH_DEFAULT);
   const [activeTrackId, setActiveTrackId] = useState<number | null>(null);
   const [sessionTracks, setSessionTracks] = useState<TrackRow[]>([]);
+  const [propagateDirection, setPropagateDirection] = useState<PropagateDirection>("forward");
+  const [propagateMaxFrames, setPropagateMaxFrames] = useState("");
+  const [propagateJob, setPropagateJob] = useState<PropagateJobPublic | null>(null);
+  const jobPollRef = useRef<number | null>(null);
+  // Story 86: overlay geometry input is off while a Job runs.
+  const jobRunning = propagateJob != null;
 
   const frameIndex = data && storedIndex >= data.frame_count ? Math.max(0, data.frame_count - 1) : storedIndex;
   const { data: frameAnn, mutate: mutateFrameAnn } = useSWR(
@@ -278,8 +291,64 @@ export function ClipDesk() {
     }
   }, []);
 
+  // Lazy Session: the first Predict or Propagate opens it on this Clip.
+  const ensureSession = useCallback(async () => {
+    if (!clipId) {
+      return;
+    }
+    const session = await getJson<SessionPublic>(sessionPath());
+    if (!session.active) {
+      await sendJson<SessionPublic>(sessionPath(), "POST", {
+        clip_id: clipId,
+        load_annotations: true,
+      });
+      return;
+    }
+    if (session.clip_id !== clipId) {
+      await sendJson(sessionPath(), "DELETE");
+      await sendJson<SessionPublic>(sessionPath(), "POST", {
+        clip_id: clipId,
+        load_annotations: true,
+      });
+    }
+  }, [clipId]);
+
+  const stopJobPolling = useCallback(() => {
+    if (jobPollRef.current != null) {
+      window.clearInterval(jobPollRef.current);
+      jobPollRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => stopJobPolling(), [stopJobPolling]);
+
+  const pollJob = useCallback(async (jobId: string) => {
+    try {
+      const job = await getJson<PropagateJobPublic>(jobPath(jobId));
+      if (job.status === "completed" || job.status === "failed") {
+        stopJobPolling();
+        setPropagateJob(null);
+        // ADR 0023: the completed Job already wrote Annotation; refresh both reads.
+        await mutateAnnotation();
+        await mutateFrameAnn();
+        if (job.status === "failed") {
+          setToast({ text: job.error ?? "Propagate failed", error: true });
+        } else {
+          setToast({
+            text: `Propagate complete: ${job.frames_done} of ${job.frames_total} Frames filled`,
+            error: false,
+          });
+        }
+        return;
+      }
+      setPropagateJob(job);
+    } catch {
+      // Transient poll error: keep polling; the next tick retries.
+    }
+  }, [mutateAnnotation, mutateFrameAnn, stopJobPolling]);
+
   const runPredict = useCallback(async () => {
-    if (!clipId || predicting.current || pendingRef.current.length === 0) {
+    if (!clipId || predicting.current || jobRunning || pendingRef.current.length === 0) {
       return;
     }
     predicting.current = true;
@@ -287,19 +356,7 @@ export function ClipDesk() {
     const marks = pendingRef.current;
     setToast(null);
     try {
-      const session = await getJson<SessionPublic>(sessionPath());
-      if (!session.active) {
-        await sendJson<SessionPublic>(sessionPath(), "POST", {
-          clip_id: clipId,
-          load_annotations: true,
-        });
-      } else if (session.clip_id !== clipId) {
-        await sendJson(sessionPath(), "DELETE");
-        await sendJson<SessionPublic>(sessionPath(), "POST", {
-          clip_id: clipId,
-          load_annotations: true,
-        });
-      }
+      await ensureSession();
       const split = splitPendingMarks(marks);
       const body: {
         frame_index: number;
@@ -338,7 +395,7 @@ export function ClipDesk() {
     } finally {
       predicting.current = false;
     }
-  }, [activeTrackId, clearPredictTimer, clipId, frameIndex, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
+  }, [activeTrackId, clearPredictTimer, clipId, ensureSession, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
 
   const schedulePredict = useCallback(() => {
     clearPredictTimer();
@@ -369,7 +426,7 @@ export function ClipDesk() {
   }, []);
 
   const onDeletePin = useCallback(async (index: number) => {
-    if (activeTrackId == null || predicting.current) {
+    if (activeTrackId == null || predicting.current || jobRunning) {
       return;
     }
     predicting.current = true;
@@ -386,10 +443,10 @@ export function ClipDesk() {
     } finally {
       predicting.current = false;
     }
-  }, [activeTrackId, clearPredictTimer, frameIndex, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
+  }, [activeTrackId, clearPredictTimer, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
 
   const onClearMask = useCallback(async () => {
-    if (activeTrackId == null || predicting.current) {
+    if (activeTrackId == null || predicting.current || jobRunning) {
       return;
     }
     predicting.current = true;
@@ -405,10 +462,10 @@ export function ClipDesk() {
     } finally {
       predicting.current = false;
     }
-  }, [activeTrackId, frameIndex, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
+  }, [activeTrackId, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
 
   const runUndo = useCallback(async () => {
-    if (!clipId || predicting.current) {
+    if (!clipId || predicting.current || jobRunning) {
       return;
     }
     predicting.current = true;
@@ -431,7 +488,62 @@ export function ClipDesk() {
     } finally {
       predicting.current = false;
     }
-  }, [clipId, frameIndex, mutateAnnotation, mutateFrameAnn]);
+  }, [clipId, frameIndex, jobRunning, mutateAnnotation, mutateFrameAnn]);
+
+  const runPropagate = useCallback(async () => {
+    if (!clipId || predicting.current || jobRunning) {
+      return;
+    }
+    predicting.current = true;
+    setToast(null);
+    try {
+      await ensureSession();
+      const rawMax = propagateMaxFrames.trim();
+      let maxFrames: number | null = null;
+      if (rawMax) {
+        const parsed = Number(rawMax);
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          setToast({
+            text: "Max frames must be blank (to the Clip edge) or a whole number of 0 or more",
+            error: true,
+          });
+          return;
+        }
+        maxFrames = Math.floor(parsed);
+      }
+      // Explicit start from the Frame on screen; never a follow-on to Predict.
+      const job = await sendJson<PropagateJobPublic>(sessionPropagatePath(), "POST", {
+        direction: propagateDirection,
+        start_frame_index: frameIndex,
+        max_frames: maxFrames,
+      });
+      if (job.status === "completed") {
+        // Zero-target Job: its Annotation merge write already happened.
+        await mutateAnnotation();
+        await mutateFrameAnn();
+        setToast({ text: "Propagate complete: no Frames to fill from here", error: false });
+        return;
+      }
+      setPropagateJob(job);
+      jobPollRef.current = window.setInterval(() => {
+        void pollJob(job.job_id);
+      }, JOB_POLL_MS);
+    } catch (err) {
+      setToast({ text: err instanceof Error ? err.message : "Propagate failed", error: true });
+    } finally {
+      predicting.current = false;
+    }
+  }, [
+    clipId,
+    ensureSession,
+    frameIndex,
+    jobRunning,
+    mutateAnnotation,
+    mutateFrameAnn,
+    pollJob,
+    propagateDirection,
+    propagateMaxFrames,
+  ]);
 
   const onRenameTrack = useCallback(async (trackId: number, label: string) => {
     setToast(null);
@@ -587,8 +699,10 @@ export function ClipDesk() {
     setSessionTracks([]);
     setActiveTrackId(null);
     clearPredictTimer();
+    stopJobPolling();
+    setPropagateJob(null);
     void sendJson(sessionPath(), "DELETE").catch(() => undefined);
-  }, [clearPredictTimer, clipId]);
+  }, [clearPredictTimer, clipId, stopJobPolling]);
 
   return (
     <main className="flex h-screen min-h-0 flex-col overflow-hidden bg-background text-foreground">
@@ -665,6 +779,7 @@ export function ClipDesk() {
                       leftover={leftover}
                       pending={pending}
                       width={scribbleWidth}
+                      inputEnabled={!jobRunning}
                       onPause={pausePlayback}
                       onClickPoint={onClickPoint}
                       onStroke={onClickStroke}
@@ -711,6 +826,14 @@ export function ClipDesk() {
             pendingCount={pending.length}
             scribbleWidth={scribbleWidth}
             canUndo={sessionTracks.length > 0}
+            busy={jobRunning}
+            canPropagate={frameMasks.length > 0}
+            propagateJob={propagateJob}
+            propagateDirection={propagateDirection}
+            propagateMaxFrames={propagateMaxFrames}
+            onPropagateDirection={setPropagateDirection}
+            onPropagateMaxFrames={setPropagateMaxFrames}
+            onPropagate={() => void runPropagate()}
             onScribbleWidth={onScribbleWidth}
             onPredict={() => void runPredict()}
             onUndo={() => void runUndo()}
@@ -971,6 +1094,14 @@ function TrackRail({
   pendingCount,
   scribbleWidth,
   canUndo,
+  busy,
+  canPropagate,
+  propagateJob,
+  propagateDirection,
+  propagateMaxFrames,
+  onPropagateDirection,
+  onPropagateMaxFrames,
+  onPropagate,
   onScribbleWidth,
   onPredict,
   onUndo,
@@ -984,6 +1115,14 @@ function TrackRail({
   pendingCount: number;
   scribbleWidth: number;
   canUndo: boolean;
+  busy: boolean;
+  canPropagate: boolean;
+  propagateJob: PropagateJobPublic | null;
+  propagateDirection: PropagateDirection;
+  propagateMaxFrames: string;
+  onPropagateDirection: (direction: PropagateDirection) => void;
+  onPropagateMaxFrames: (value: string) => void;
+  onPropagate: () => void;
   onScribbleWidth: (width: number) => void;
   onPredict: () => void;
   onUndo: () => void;
@@ -1024,7 +1163,7 @@ function TrackRail({
           <Button
             type="button"
             size="sm"
-            disabled={pendingCount === 0}
+            disabled={pendingCount === 0 || busy}
             onClick={onPredict}
           >
             Predict
@@ -1051,12 +1190,56 @@ function TrackRail({
         </output>
       </div>
       <div className="flex items-center gap-1" data-track-controls="">
-        <Button type="button" size="sm" variant="outline" disabled={!canUndo} onClick={onUndo}>
+        <Button type="button" size="sm" variant="outline" disabled={busy || !canUndo} onClick={onUndo}>
           Undo
         </Button>
-        <Button type="button" size="sm" variant="outline" disabled={activeTrackId == null} onClick={onClearMask}>
+        <Button type="button" size="sm" variant="outline" disabled={busy || activeTrackId == null} onClick={onClearMask}>
           Clear mask
         </Button>
+      </div>
+      <div data-propagate="" className="flex shrink-0 flex-col gap-1 border-t border-border/50 pt-2">
+        <div className="flex items-center justify-between gap-1">
+          <div role="radiogroup" aria-label="Propagate direction" className="flex shrink-0 gap-0.5">
+            {(["forward", "backward", "both"] as const).map((direction) => (
+              <Button
+                key={direction}
+                type="button"
+                size="sm"
+                role="radio"
+                variant={propagateDirection === direction ? "secondary" : "ghost"}
+                aria-checked={propagateDirection === direction}
+                disabled={busy}
+                onClick={() => onPropagateDirection(direction)}
+              >
+                {direction}
+              </Button>
+            ))}
+          </div>
+          <Input
+            aria-label="Max frames per direction"
+            type="number"
+            min={0}
+            step={1}
+            placeholder="to edge"
+            value={propagateMaxFrames}
+            disabled={busy}
+            className="h-7 w-20 shrink-0 text-xs"
+            onChange={(event) => onPropagateMaxFrames(event.target.value)}
+          />
+        </div>
+        <Button type="button" size="sm" disabled={!canPropagate || busy} onClick={onPropagate}>
+          Propagate
+        </Button>
+        {propagateJob ? (
+          <p role="status" data-propagate-progress="" className="text-xs text-muted-foreground">
+            Propagating {propagateJob.frames_done}/{propagateJob.frames_total} from Frame{" "}
+            {propagateJob.start_frame_index} — mask edits wait until it finishes.
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Fills from this Frame; re-run replaces non-protected propagated masks.
+          </p>
+        )}
       </div>
       {tracks.length === 0 ? (
         <p className="text-sm text-muted-foreground">No Tracks</p>

@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 
 from endo_label.app import create_app
 from endo_label.config import Settings
-from endo_label.mask.mask_codec import decode_rle
+from endo_label.mask import annotations
+from endo_label.mask.mask_codec import decode_rle, encode_rle
 from endo_label.mask.predictor import FakePredictor
 from endo_label.mask.scribble import (
     FakeScribbleModel,
@@ -21,25 +22,35 @@ _POINT = {"frame_index": 0, "points": [[0.5, 0.5]], "point_labels": [1]}
 _STROKE = [[0.4, 0.5], [0.6, 0.5]]
 
 
-def _sitting(tmp_path: Path, clip_ids: tuple[str, ...]) -> TestClient:
-    frames = tmp_path / "frames"
+def _settings_for(
+    tmp_path: Path,
+    clip_ids: tuple[str, ...],
+    *,
+    frames: int = 2,
+) -> Settings:
+    frames_root = tmp_path / "frames"
     for clip_id in clip_ids:
-        clip = frames / clip_id
+        clip = frames_root / clip_id
         clip.mkdir(parents=True)
-        (clip / "00001.jpg").write_bytes(b"fake-jpeg-0")
-        (clip / "00002.jpg").write_bytes(b"fake-jpeg-1")
-    return TestClient(
-        create_app(
-            Settings(
-                frames_root=frames,
-                clip_allowlist=clip_ids,
-                annotations_root=tmp_path / "mask",
-                labels_root=tmp_path / "labels",
-                predictor_backend="fake",
-                scribble_backend="fake",
-            )
-        )
+        for index in range(frames):
+            (clip / f"{index + 1:05d}.jpg").write_bytes(b"fake-jpeg")
+    return Settings(
+        frames_root=frames_root,
+        clip_allowlist=clip_ids,
+        annotations_root=tmp_path / "mask",
+        labels_root=tmp_path / "labels",
+        predictor_backend="fake",
+        scribble_backend="fake",
     )
+
+
+def _sitting(
+    tmp_path: Path,
+    clip_ids: tuple[str, ...],
+    *,
+    frames: int = 2,
+) -> TestClient:
+    return TestClient(create_app(_settings_for(tmp_path, clip_ids, frames=frames)))
 
 
 class _RecordingGeometry(FakePredictor):
@@ -1044,3 +1055,304 @@ def test_track_label_patch_persists_annotation_immediately(
     assert summary.status_code == 200
     labels = {t["track_id"]: t["label"] for t in summary.json()["tracks"]}
     assert labels[tid] == "grasper tip"
+
+
+def _start_propagate(client: TestClient, **overrides) -> dict:
+    body = {"direction": "forward", "start_frame_index": 0, **overrides}
+    started = client.post("/api/session/propagate", json=body)
+    assert started.status_code == 202, started.text
+    return started.json()
+
+
+def _poll_job(client: TestClient, job_id: str, max_polls: int = 50) -> dict:
+    """Poll until terminal; the Job fills one Frame per status poll."""
+    job: dict | None = None
+    for _ in range(max_polls):
+        response = client.get(f"/api/jobs/{job_id}")
+        assert response.status_code == 200, response.text
+        job = response.json()
+        if job["status"] in ("completed", "failed"):
+            assert job["status"] == "completed", job
+            return job
+    raise AssertionError("Propagate Job never completed")
+
+
+def _mask_on(client: TestClient, track_id: int, frame_index: int) -> dict:
+    session = client.get("/api/session", params={"frame_index": frame_index}).json()
+    track = next(row for row in session["tracks"] if row["track_id"] == track_id)
+    return track.get("mask") or {}
+
+
+def test_propagate_without_seed_on_start_frame_is_400(tmp_path: Path) -> None:
+    client = _sitting(tmp_path, ("CLIPA",), frames=3)
+    _open(client)
+    refused = client.post(
+        "/api/session/propagate",
+        json={"direction": "forward", "start_frame_index": 0},
+    )
+    assert refused.status_code == 400
+    assert "seed" in refused.json()["detail"].lower()
+
+    # A mask on frame 0 does not seed a Job that starts on frame 1.
+    seeded = client.post("/api/session/predict", json=_POINT)
+    assert seeded.status_code == 200, seeded.text
+    elsewhere = client.post(
+        "/api/session/propagate",
+        json={"direction": "forward", "start_frame_index": 1},
+    )
+    assert elsewhere.status_code == 400
+
+    bad_direction = client.post(
+        "/api/session/propagate",
+        json={"direction": "sideways", "start_frame_index": 0},
+    )
+    assert bad_direction.status_code == 400
+    assert "direction" in bad_direction.json()["detail"].lower()
+
+
+def test_forward_propagate_fills_neighbors_seed_stays_manual(tmp_path: Path) -> None:
+    client = _sitting(tmp_path, ("CLIPA",), frames=5)
+    _open(client)
+    seeded = client.post(
+        "/api/session/predict",
+        json={"frame_index": 1, "points": [[0.5, 0.5]], "point_labels": [1]},
+    )
+    assert seeded.status_code == 200, seeded.text
+    tid = seeded.json()["tracks"][0]["track_id"]
+    seed_counts = list(seeded.json()["tracks"][0]["mask"]["counts"])
+
+    job = _start_propagate(client, start_frame_index=1)
+    assert job["direction"] == "forward"
+    assert job["start_frame_index"] == 1
+    assert job["max_frames"] is None
+    assert job["frames_total"] == 3
+
+    # One Frame lands per poll, so the desk can watch progress.
+    first = client.get(f"/api/jobs/{job['job_id']}").json()
+    assert first["status"] == "running"
+    assert first["frames_done"] == 1
+
+    done = _poll_job(client, job["job_id"])
+    assert done["frames_done"] == done["frames_total"] == 3
+
+    for frame_index in (2, 3, 4):
+        mask = _mask_on(client, tid, frame_index)
+        assert mask["source"] == "propagated"
+    seed_mask = _mask_on(client, tid, 1)
+    assert seed_mask["source"] == "manual"
+    assert list(seed_mask["counts"]) == seed_counts
+
+    # Completed Job wrote Annotation immediately; no Save ran.
+    disk = client.get("/api/clips/CLIPA/annotations/frames/4")
+    assert disk.status_code == 200, disk.text
+    assert disk.json()["masks"][0]["source"] == "propagated"
+
+
+def test_backward_and_max_frames_limit_the_fill(tmp_path: Path) -> None:
+    client = _sitting(tmp_path, ("CLIPA",), frames=6)
+    _open(client)
+    seeded = client.post(
+        "/api/session/predict",
+        json={"frame_index": 2, "points": [[0.5, 0.5]], "point_labels": [1]},
+    )
+    assert seeded.status_code == 200, seeded.text
+    tid = seeded.json()["tracks"][0]["track_id"]
+
+    short = _start_propagate(
+        client, direction="backward", start_frame_index=2, max_frames=1
+    )
+    assert short["max_frames"] == 1
+    assert short["frames_total"] == 1
+    _poll_job(client, short["job_id"])
+    assert _mask_on(client, tid, 1)["source"] == "propagated"
+    assert _mask_on(client, tid, 0) == {}
+    assert _mask_on(client, tid, 3) == {}
+
+    both = _start_propagate(client, direction="both", start_frame_index=2)
+    assert both["frames_total"] == 5  # 3 forward + 2 backward, seed excluded
+    _poll_job(client, both["job_id"])
+    for frame_index in (0, 1, 3, 4, 5):
+        assert _mask_on(client, tid, frame_index)["source"] == "propagated"
+
+
+def test_repropagate_replaces_only_unprotected_slots(tmp_path: Path) -> None:
+    client = _sitting(tmp_path, ("CLIPA",), frames=5)
+    _open(client)
+    seeded = client.post("/api/session/predict", json=_POINT)
+    assert seeded.status_code == 200, seeded.text
+    tid = seeded.json()["tracks"][0]["track_id"]
+
+    first_job = _start_propagate(client)
+    _poll_job(client, first_job["job_id"])
+    first_fills = {
+        fi: list(_mask_on(client, tid, fi)["counts"]) for fi in (1, 2, 3, 4)
+    }
+
+    # A human refine on frame 2 makes that slot Protected; a seed refine on
+    # frame 0 changes what the next Job fills from.
+    protected = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 2,
+            "track_id": tid,
+            "points": [[0.85, 0.15], [0.15, 0.85]],
+            "point_labels": [1, 1],
+        },
+    )
+    assert protected.status_code == 200, protected.text
+    assert protected.json()["tracks"][0]["mask"]["source"] == "refined"
+    protected_counts = list(protected.json()["tracks"][0]["mask"]["counts"])
+
+    reseed = client.post(
+        "/api/session/predict",
+        json={"frame_index": 0, "track_id": tid, "points": [[0.15, 0.85]], "point_labels": [1]},
+    )
+    assert reseed.status_code == 200, reseed.text
+
+    second_job = _start_propagate(client)
+    _poll_job(client, second_job["job_id"])
+
+    kept = _mask_on(client, tid, 2)
+    assert kept["source"] == "refined"
+    assert list(kept["counts"]) == protected_counts
+    for frame_index in (1, 3, 4):
+        replaced = _mask_on(client, tid, frame_index)
+        assert replaced["source"] == "propagated"
+        assert list(replaced["counts"]) != first_fills[frame_index]
+
+    disk = client.get("/api/clips/CLIPA/annotations/frames/2")
+    assert list(disk.json()["masks"][0]["counts"]) == protected_counts
+
+
+def test_mask_edits_conflict_while_job_runs_scrub_and_get_ok(tmp_path: Path) -> None:
+    client = _sitting(tmp_path, ("CLIPA",), frames=5)
+    _open(client)
+    first = client.post(
+        "/api/session/predict",
+        json={"frame_index": 0, "points": [[0.25, 0.25]], "point_labels": [1]},
+    )
+    assert first.status_code == 200, first.text
+    tid = first.json()["tracks"][0]["track_id"]
+    second = client.post(
+        "/api/session/predict",
+        json={"frame_index": 0, "track_id": tid, "points": [[0.8, 0.8]], "point_labels": [1]},
+    )
+    assert second.status_code == 200, second.text
+
+    job = _start_propagate(client, direction="both")
+    assert job["frames_total"] == 4
+    running = client.get(f"/api/jobs/{job['job_id']}").json()
+    assert running["status"] == "running"
+
+    conflicts = [
+        ("predict", lambda: client.post(
+            "/api/session/predict",
+            json={"frame_index": 0, "track_id": tid, "points": [[0.5, 0.1]], "point_labels": [1]},
+        )),
+        ("pin delete", lambda: client.delete(f"/api/session/tracks/{tid}/frames/0/points/0")),
+        ("clear mask", lambda: client.delete(f"/api/session/tracks/{tid}/frames/0")),
+        ("undo", lambda: client.post("/api/session/undo", json={"frame_index": 0})),
+        ("reset", lambda: client.post("/api/session/reset")),
+        ("track label", lambda: client.patch(f"/api/session/tracks/{tid}", json={"label": "x"})),
+        ("track delete", lambda: client.delete(f"/api/session/tracks/{tid}")),
+        ("second propagate", lambda: client.post(
+            "/api/session/propagate",
+            json={"direction": "forward", "start_frame_index": 0},
+        )),
+    ]
+    for name, call in conflicts:
+        response = call()
+        assert response.status_code == 409, (name, response.text)
+
+    # Scrub and reads stay allowed while the Job runs.
+    assert client.get("/api/session", params={"frame_index": 2}).status_code == 200
+    assert client.get("/api/clips/CLIPA/annotations/frames/1").status_code == 200
+
+    _poll_job(client, job["job_id"])
+    edit_again = client.post(
+        "/api/session/predict",
+        json={"frame_index": 0, "track_id": tid, "points": [[0.5, 0.1]], "point_labels": [1]},
+    )
+    assert edit_again.status_code == 200, edit_again.text
+
+
+def test_completed_propagate_merges_and_protected_disk_slots_survive(
+    tmp_path: Path,
+) -> None:
+    settings = _settings_for(tmp_path, ("CLIPA",), frames=4)
+    client = TestClient(create_app(settings))
+    _open(client)
+    seeded = client.post("/api/session/predict", json=_POINT)
+    assert seeded.status_code == 200, seeded.text
+    tid = seeded.json()["tracks"][0]["track_id"]
+    seed_counts = list(seeded.json()["tracks"][0]["mask"]["counts"])
+
+    # Prior human work on frame 2 that this Session (never hydrated) does
+    # not hold: a refined silhouette one pixel smaller than the seed.
+    doc = annotations.load(settings, "CLIPA")
+    stem = annotations.frame_stem_for_index(settings, "CLIPA", 2)
+    grid = decode_rle(seeded.json()["tracks"][0]["mask"])
+    grid[32][32] = 0
+    protected_counts = encode_rle(grid)["counts"]
+    assert protected_counts != seed_counts
+    doc["frames"][stem] = {
+        "frame_stem": stem,
+        "frame_index": 2,
+        "masks": [
+            {
+                "track_id": tid,
+                "format": "rle_fg",
+                "size": list(seeded.json()["tracks"][0]["mask"]["size"]),
+                "counts": protected_counts,
+                "source": "refined",
+            }
+        ],
+    }
+    annotations.save_doc(settings, "CLIPA", doc)
+
+    job = _start_propagate(client)
+    _poll_job(client, job["job_id"])
+
+    kept = client.get("/api/clips/CLIPA/annotations/frames/2")
+    assert kept.status_code == 200
+    slot = kept.json()["masks"][0]
+    assert slot["source"] == "refined"
+    assert list(slot["counts"]) == protected_counts
+
+    for frame_index in (1, 3):
+        disk = client.get(f"/api/clips/CLIPA/annotations/frames/{frame_index}")
+        assert disk.status_code == 200, disk.text
+        assert disk.json()["masks"][0]["source"] == "propagated"
+
+    frame0 = client.get("/api/clips/CLIPA/annotations/frames/0")
+    assert frame0.json()["masks"][0]["source"] == "manual"
+
+
+def test_propagate_leaves_phase_class_triplet_untouched(tmp_path: Path) -> None:
+    client = _sitting(tmp_path, ("CLIPA",), frames=4)
+    assert client.post("/api/vocab/phases", json={"name": "Preparation"}).status_code == 200
+    assert client.post("/api/vocab/class_tags", json={"name": "blurred"}).status_code == 200
+    assert client.post(
+        "/api/vocab/triples",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    ).status_code == 200
+    assert client.post(
+        "/api/phase/CLIPA/span", json={"phase": "Preparation", "from": 0, "to": 3}
+    ).status_code == 200
+    assert client.put("/api/class/CLIPA/frames/2", json={"tags": ["blurred"]}).status_code == 200
+    assert client.post(
+        "/api/triplet/CLIPA/frames/3",
+        json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
+    ).status_code == 200
+    phase_before = client.get("/api/phase/CLIPA").json()
+    class_before = client.get("/api/class/CLIPA").json()
+    triplet_before = client.get("/api/triplet/CLIPA").json()
+
+    _open(client)
+    assert client.post("/api/session/predict", json=_POINT).status_code == 200
+    job = _start_propagate(client)
+    _poll_job(client, job["job_id"])
+
+    assert client.get("/api/phase/CLIPA").json() == phase_before
+    assert client.get("/api/class/CLIPA").json() == class_before
+    assert client.get("/api/triplet/CLIPA").json() == triplet_before

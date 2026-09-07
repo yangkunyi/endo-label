@@ -100,6 +100,7 @@ export function MaskOverlay({
   leftover,
   pending,
   width,
+  inputEnabled,
   onPause,
   onClickPoint,
   onStroke,
@@ -111,6 +112,7 @@ export function MaskOverlay({
   leftover: LeftoverPoint[];
   pending: PendingMark[];
   width: number;
+  inputEnabled: boolean;
   onPause: () => void;
   onClickPoint: (point: PendingPoint) => void;
   onStroke: (stroke: PendingStroke) => void;
@@ -198,6 +200,10 @@ export function MaskOverlay({
   }
 
   function onPointerDown(event: PointerEvent<HTMLCanvasElement>) {
+    // Geometry input is off while a Propagate Job runs (story 86).
+    if (!inputEnabled) {
+      return;
+    }
     // Left = positive Geometric/Scribble Prompt, right = negative; menu stays shut.
     if (event.button !== 0 && event.button !== 2) {
       return;
@@ -271,7 +277,7 @@ export function MaskOverlay({
       slot="gestures-chrome"
       data-mask-overlay=""
       aria-label="Mask overlay"
-      className="absolute inset-0 h-full w-full cursor-crosshair touch-none"
+      className={`absolute inset-0 h-full w-full touch-none ${inputEnabled ? "cursor-crosshair" : "cursor-default"}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

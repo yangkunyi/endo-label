@@ -89,6 +89,23 @@ export type UndoResponse = {
   session: SessionPublic;
 };
 
+export type PropagateDirection = "forward" | "backward" | "both";
+
+export type PropagateJobPublic = {
+  job_id: string;
+  session_id: string;
+  clip_id: string;
+  direction: PropagateDirection;
+  start_frame_index: number;
+  max_frames: number | null;
+  status: "queued" | "running" | "completed" | "failed";
+  progress: number;
+  frames_done: number;
+  frames_total: number;
+  current_frame_index: number | null;
+  error: string | null;
+};
+
 export function clipDeskPath(clipId: string): string {
   return `/clips/${encodeURIComponent(clipId)}`;
 }
@@ -181,6 +198,14 @@ export function sessionTrackPath(trackId: number): string {
 
 export function sessionUndoPath(): string {
   return "/api/session/undo";
+}
+
+export function sessionPropagatePath(): string {
+  return "/api/session/propagate";
+}
+
+export function jobPath(jobId: string): string {
+  return `/api/jobs/${encodeURIComponent(jobId)}`;
 }
 
 export function annotationSummaryPath(clipId: string): string {

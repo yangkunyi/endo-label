@@ -759,7 +759,10 @@ class SessionManager:
         if job is None:
             raise JobNotFound(f"Propagate Job not found: {job_id}")
         if job.status in ("queued", "running"):
-            self._advance_job_stream(job)
+            # One frame per poll; the lock keeps concurrent polls from
+            # double-consuming pending_frames.
+            with self._lock:
+                self._advance_job_stream(job)
         return job.to_public()
 
     def save_annotations(self) -> dict[str, Any]:
