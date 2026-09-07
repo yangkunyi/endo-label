@@ -693,16 +693,19 @@ test("labeled Now fills with label color; empty Now does not", async ({ page }) 
   await expect(page.locator('[data-editor-card="triplet"] [data-now]').getByText("No triplets on frame 0")).toBeVisible();
 });
 
-test("empty Clip shows Ruler only; player keeps chrome progress range", async ({ page }) => {
+test("empty Clip shows Ruler and Lane well; picture height stays put when a Lane appears", async ({ page }) => {
   await clearClipLabels(page);
+  await clearClipLabels(page, "CLIP_VID");
   await page.goto("/clips/CLIP_E2E");
   const timeline = page.getByRole("region", { name: "Timeline" });
   const ruler = page.getByRole("slider", { name: "Ruler" });
+  const well = page.getByRole("region", { name: "Lane well" });
   const clips = page.getByRole("navigation", { name: "Clips" });
   const player = page.getByRole("region", { name: "Player", exact: true });
   const editors = page.getByRole("region", { name: "Editors" });
   await expect(timeline).toBeVisible();
   await expect(ruler).toBeVisible();
+  await expect(well).toBeVisible();
   await expect(page.locator("media-time-range")).toBeVisible();
   await expect(page.locator("media-play-button")).toBeVisible();
   await expect(page.locator("media-time-display")).toBeVisible();
@@ -719,11 +722,62 @@ test("empty Clip shows Ruler only; player keeps chrome progress range", async ({
   const playerBox = await player.boundingBox();
   const timelineBox = await timeline.boundingBox();
   const editorsBox = await editors.boundingBox();
-  expect(clipsBox && playerBox && timelineBox && editorsBox).toBeTruthy();
+  const rulerBox = await ruler.boundingBox();
+  const wellBox = await well.boundingBox();
+  expect(clipsBox && playerBox && timelineBox && editorsBox && rulerBox && wellBox).toBeTruthy();
   expect(timelineBox!.y).toBeGreaterThanOrEqual(playerBox!.y + playerBox!.height - 1);
+  expect(rulerBox!.y).toBeGreaterThanOrEqual(playerBox!.y + playerBox!.height - 1);
+  expect(wellBox!.y).toBeGreaterThanOrEqual(rulerBox!.y + rulerBox!.height - 1);
   expect(Math.abs(timelineBox!.x - clipsBox!.x)).toBeLessThan(2);
   expect(Math.abs(timelineBox!.x + timelineBox!.width - (playerBox!.x + playerBox!.width))).toBeLessThan(2);
   expect(timelineBox!.x + timelineBox!.width).toBeLessThanOrEqual(editorsBox!.x + 1);
+  // ~6rem reserved strip (h-24 at 16px root)
+  expect(wellBox!.height).toBeGreaterThanOrEqual(88);
+  expect(wellBox!.height).toBeLessThanOrEqual(104);
+  const emptyPlayerHeight = playerBox!.height;
+  const emptyWellHeight = wellBox!.height;
+
+  await pickName(page, "class", "clipper");
+  await expect(page.locator("[data-timeline-lane]")).toHaveCount(1);
+  const afterOnePlayer = await player.boundingBox();
+  const afterOneWell = await well.boundingBox();
+  expect(afterOnePlayer && afterOneWell).toBeTruthy();
+  expect(Math.abs(afterOnePlayer!.height - emptyPlayerHeight)).toBeLessThan(2);
+  expect(Math.abs(afterOneWell!.height - emptyWellHeight)).toBeLessThan(2);
+  const head = page.locator("[data-lane-head]").filter({ hasText: "clipper" });
+  const bar = page.getByRole("button", { name: "clipper 0–0" });
+  await expect(head).toHaveCount(1);
+  await expect(bar).toBeVisible();
+  const headBox = await head.boundingBox();
+  const barBox = await bar.boundingBox();
+  expect(headBox && barBox).toBeTruthy();
+  expect(Math.abs(headBox!.width - clipsBox!.width)).toBeLessThan(2);
+  expect(barBox!.x).toBeGreaterThanOrEqual(playerBox!.x - 2);
+
+  for (const name of ["grasper", "hook", "scissors", "blurred", "WellExtra"]) {
+    await pickName(page, "class", name);
+  }
+  await expect(page.locator("[data-timeline-lane]")).toHaveCount(6);
+  const afterManyPlayer = await player.boundingBox();
+  const afterManyWell = await well.boundingBox();
+  expect(afterManyPlayer && afterManyWell).toBeTruthy();
+  expect(Math.abs(afterManyPlayer!.height - emptyPlayerHeight)).toBeLessThan(2);
+  expect(Math.abs(afterManyWell!.height - emptyWellHeight)).toBeLessThan(2);
+  expect(await well.evaluate((el) => el.scrollHeight > el.clientHeight + 1)).toBe(true);
+
+  await page.goto("/clips/CLIP_VID");
+  const videoPlayer = page.getByRole("region", { name: "Player", exact: true });
+  const videoRuler = page.getByRole("slider", { name: "Ruler" });
+  const videoWell = page.getByRole("region", { name: "Lane well" });
+  await expect(videoWell).toBeVisible();
+  await expect(videoRuler).toBeVisible();
+  const videoPlayerBox = await videoPlayer.boundingBox();
+  const videoRulerBox = await videoRuler.boundingBox();
+  const videoWellBox = await videoWell.boundingBox();
+  expect(videoPlayerBox && videoRulerBox && videoWellBox).toBeTruthy();
+  expect(videoRulerBox!.y).toBeGreaterThanOrEqual(videoPlayerBox!.y + videoPlayerBox!.height - 1);
+  expect(videoWellBox!.y).toBeGreaterThanOrEqual(videoRulerBox!.y + videoRulerBox!.height - 1);
+  expect(Math.abs(videoWellBox!.height - emptyWellHeight)).toBeLessThan(2);
 });
 
 test("timeline playhead drags frame-snapped; bars are display-only", async ({ page }) => {

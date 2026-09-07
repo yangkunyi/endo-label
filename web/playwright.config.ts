@@ -10,8 +10,8 @@ const python =
   process.env.ENDO_LABEL_PYTHON ||
   (existsSync(venvPython) ? venvPython : "python3");
 
-const apiPort = 7881;
-const vitePort = 5174;
+const apiPort = 7891;
+const vitePort = 5191;
 
 export default defineConfig({
   testDir: "./e2e",

@@ -598,8 +598,13 @@ function TimelineBand({
           </div>
         </div>
       </div>
-      {lanes.length > 0 ? (
-        <div className="max-h-44 overflow-y-auto [scrollbar-color:var(--color-border)_transparent] [scrollbar-width:thin]">
+      <div
+        role="region"
+        aria-label="Lane well"
+        data-lane-well=""
+        className="h-24 shrink-0 overflow-y-auto [scrollbar-color:var(--color-border)_transparent] [scrollbar-width:thin]"
+      >
+        {lanes.length > 0 ? (
           <div className="flex">
             <div className="flex shrink-0 flex-col border-r border-border" style={{ width: clipRailWidth }}>
               {lanes.map((lane) => (
@@ -640,8 +645,8 @@ function TimelineBand({
               <div className="pointer-events-none absolute bottom-0 top-0 z-10 w-px -translate-x-1/2 bg-[#5e6ad2]" style={{ left: playheadLeft }} />
             </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 }
