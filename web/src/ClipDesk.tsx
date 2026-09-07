@@ -19,9 +19,12 @@ import {
   phaseFramePath,
   phaseSpanPath,
   sendJson,
+  sessionFrameMaskPath,
   sessionPath,
   sessionPointPath,
   sessionPredictPath,
+  sessionTrackPath,
+  sessionUndoPath,
   toggleClassTag,
   tripletClipPath,
   tripletFramePath,
@@ -44,6 +47,7 @@ import {
   type TrackRow,
   type TripletDoc,
   type TripletRow,
+  type UndoResponse,
   type Vocab,
   type VocabTriple,
 } from "./api";
@@ -57,8 +61,10 @@ import {
   SCRIBBLE_WIDTH_DEFAULT,
   SCRIBBLE_WIDTH_MAX,
   SCRIBBLE_WIDTH_MIN,
+  activeTrackOrNull,
   clampScribbleWidth,
   dropPendingOnFrameChange,
+  isUndoKey,
   leftoverPinsForActive,
   nextActiveTrack,
   splitPendingMarks,
@@ -382,6 +388,63 @@ export function ClipDesk() {
     }
   }, [activeTrackId, clearPredictTimer, frameIndex, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
 
+  const onClearMask = useCallback(async () => {
+    if (activeTrackId == null || predicting.current) {
+      return;
+    }
+    predicting.current = true;
+    setToast(null);
+    try {
+      await sendJson<SessionPublic>(sessionFrameMaskPath(activeTrackId, frameIndex), "DELETE");
+      sessionOpen.current = true;
+      await loadSessionFrame(frameIndex);
+      await mutateAnnotation();
+      await mutateFrameAnn();
+    } catch (err) {
+      setToast({ text: err instanceof Error ? err.message : "Clear mask failed", error: true });
+    } finally {
+      predicting.current = false;
+    }
+  }, [activeTrackId, frameIndex, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
+
+  const runUndo = useCallback(async () => {
+    if (!clipId || predicting.current) {
+      return;
+    }
+    predicting.current = true;
+    setToast(null);
+    try {
+      const result = await sendJson<UndoResponse>(sessionUndoPath(), "POST", {
+        frame_index: frameIndex,
+      });
+      sessionOpen.current = true;
+      const sessionTracksNow = result.session.tracks ?? [];
+      setSessionTracks(sessionTracksNow);
+      setActiveTrackId((current) => activeTrackOrNull(current, sessionTracksNow));
+      await mutateAnnotation();
+      await mutateFrameAnn();
+      if (!result.undone) {
+        setToast({ text: "Nothing to undo on this Frame", error: false });
+      }
+    } catch (err) {
+      setToast({ text: err instanceof Error ? err.message : "Undo failed", error: true });
+    } finally {
+      predicting.current = false;
+    }
+  }, [clipId, frameIndex, mutateAnnotation, mutateFrameAnn]);
+
+  const onRenameTrack = useCallback(async (trackId: number, label: string) => {
+    setToast(null);
+    try {
+      await sendJson<SessionPublic>(sessionTrackPath(trackId), "PATCH", { label });
+      sessionOpen.current = true;
+      await loadSessionFrame(frameIndex);
+      await mutateAnnotation();
+    } catch (err) {
+      setToast({ text: err instanceof Error ? err.message : "Track Label edit failed", error: true });
+    }
+  }, [frameIndex, loadSessionFrame, mutateAnnotation]);
+
   const seekPlayhead = useCallback((index: number) => {
     scrub(index);
     const el = videoRef.current;
@@ -446,6 +509,20 @@ export function ClipDesk() {
       if (isEditableTarget(event.target)) {
         return;
       }
+      if (event.key === "Escape") {
+        // Pending marks that never Predict-ed are dropped, not Undo-able.
+        clearPredictTimer();
+        if (pendingRef.current.length > 0) {
+          pendingRef.current = [];
+          setPending([]);
+        }
+        return;
+      }
+      if (isUndoKey(event)) {
+        event.preventDefault();
+        void runUndo();
+        return;
+      }
       if (event.key === " " && clipId && data && data.frame_count > 0) {
         // media-chrome handles Space when its controller has focus; only handle
         // the body/default focus case so the two never double-toggle.
@@ -473,7 +550,7 @@ export function ClipDesk() {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [applyRange, clipId, data, frameIndex, paintChip, setSpanStart, togglePlayback]);
+  }, [applyRange, clearPredictTimer, clipId, data, frameIndex, paintChip, runUndo, setSpanStart, togglePlayback]);
 
   useLayoutEffect(() => {
     if (data) {
@@ -633,10 +710,14 @@ export function ClipDesk() {
             activeTrackId={activeTrackId}
             pendingCount={pending.length}
             scribbleWidth={scribbleWidth}
+            canUndo={sessionTracks.length > 0}
             onScribbleWidth={onScribbleWidth}
             onPredict={() => void runPredict()}
+            onUndo={() => void runUndo()}
             onSelectTrack={(trackId) => setActiveTrackId(nextActiveTrack(activeTrackId, { kind: "rail", trackId }))}
             onNewTrack={() => setActiveTrackId(nextActiveTrack(activeTrackId, { kind: "new" }))}
+            onRenameTrack={onRenameTrack}
+            onClearMask={() => void onClearMask()}
           />
           <div role="tablist" aria-label="Task type" className="flex shrink-0 gap-1">
             {(["class", "triplet", "phase"] as const).map((kind) => (
@@ -889,20 +970,43 @@ function TrackRail({
   activeTrackId,
   pendingCount,
   scribbleWidth,
+  canUndo,
   onScribbleWidth,
   onPredict,
+  onUndo,
   onSelectTrack,
   onNewTrack,
+  onRenameTrack,
+  onClearMask,
 }: {
   tracks: TrackRow[];
   activeTrackId: number | null;
   pendingCount: number;
   scribbleWidth: number;
+  canUndo: boolean;
   onScribbleWidth: (width: number) => void;
   onPredict: () => void;
+  onUndo: () => void;
   onSelectTrack: (trackId: number) => void;
   onNewTrack: () => void;
+  onRenameTrack: (trackId: number, label: string) => Promise<void> | void;
+  onClearMask: () => void;
 }) {
+  const [renaming, setRenaming] = useState<{ trackId: number; draft: string } | null>(null);
+
+  function commitRename() {
+    const current = renaming;
+    setRenaming(null);
+    if (!current) {
+      return;
+    }
+    const label = current.draft.trim();
+    if (!label) {
+      return;
+    }
+    void onRenameTrack(current.trackId, label);
+  }
+
   return (
     <section aria-label="Tracks" className="flex shrink-0 flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3">
       <div className="flex items-center justify-between gap-2">
@@ -946,27 +1050,57 @@ function TrackRail({
           {scribbleWidth}
         </output>
       </div>
+      <div className="flex items-center gap-1" data-track-controls="">
+        <Button type="button" size="sm" variant="outline" disabled={!canUndo} onClick={onUndo}>
+          Undo
+        </Button>
+        <Button type="button" size="sm" variant="outline" disabled={activeTrackId == null} onClick={onClearMask}>
+          Clear mask
+        </Button>
+      </div>
       {tracks.length === 0 ? (
         <p className="text-sm text-muted-foreground">No Tracks</p>
       ) : (
         <ul aria-label="Track list" className="space-y-1">
           {tracks.map((track) => (
             <li key={track.track_id}>
-              <Button
-                type="button"
-                size="sm"
-                variant={activeTrackId === track.track_id ? "secondary" : "ghost"}
-                aria-pressed={activeTrackId === track.track_id}
-                className="w-full justify-start gap-2"
-                onClick={() => onSelectTrack(track.track_id)}
-              >
-                <span
-                  aria-hidden
-                  className="h-2.5 w-2.5 shrink-0 rounded-sm"
-                  style={{ backgroundColor: track.color }}
+              {renaming?.trackId === track.track_id ? (
+                <Input
+                  aria-label="Track Label"
+                  value={renaming.draft}
+                  autoFocus
+                  className="h-7 text-xs"
+                  onChange={(event) => setRenaming({ trackId: track.track_id, draft: event.target.value })}
+                  onBlur={() => setRenaming(null)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      commitRename();
+                    }
+                    if (event.key === "Escape") {
+                      setRenaming(null);
+                    }
+                  }}
                 />
-                <span className="truncate">{track.label}</span>
-              </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={activeTrackId === track.track_id ? "secondary" : "ghost"}
+                  aria-pressed={activeTrackId === track.track_id}
+                  className="w-full justify-start gap-2"
+                  title="Double-click to rename"
+                  onClick={() => onSelectTrack(track.track_id)}
+                  onDoubleClick={() => setRenaming({ trackId: track.track_id, draft: track.label })}
+                >
+                  <span
+                    aria-hidden
+                    className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                    style={{ backgroundColor: track.color }}
+                  />
+                  <span className="truncate">{track.label}</span>
+                </Button>
+              )}
             </li>
           ))}
         </ul>

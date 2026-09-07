@@ -7,6 +7,7 @@ import {
   SCRIBBLE_WIDTH_DEFAULT,
   SCRIBBLE_WIDTH_MAX,
   SCRIBBLE_WIDTH_MIN,
+  activeTrackOrNull,
   clampScribbleWidth,
   clientToRelative,
   debounceDue,
@@ -16,6 +17,7 @@ import {
   hitLeftoverPin,
   isClick,
   isPendingStroke,
+  isUndoKey,
   leftoverPinsForActive,
   nextActiveTrack,
   overlayPins,
@@ -180,4 +182,20 @@ test("slider width clamps to 1–40 with default 8", () => {
   expect(clampScribbleWidth(0)).toBe(1);
   expect(clampScribbleWidth(41)).toBe(40);
   expect(clampScribbleWidth(8.4)).toBe(8);
+});
+
+test("Ctrl/Cmd+Z is Undo; plain z and Shift alone are not", () => {
+  expect(isUndoKey({ key: "z", ctrlKey: true, metaKey: false })).toBe(true);
+  expect(isUndoKey({ key: "z", ctrlKey: false, metaKey: true })).toBe(true);
+  expect(isUndoKey({ key: "Z", ctrlKey: true, metaKey: false })).toBe(true);
+  expect(isUndoKey({ key: "z", ctrlKey: false, metaKey: false })).toBe(false);
+  expect(isUndoKey({ key: "y", ctrlKey: true, metaKey: false })).toBe(false);
+});
+
+test("an Active Track the Undo removed leaves no Active Track", () => {
+  const tracks = [{ track_id: 1 }, { track_id: 2 }];
+  expect(activeTrackOrNull(2, tracks)).toBe(2);
+  expect(activeTrackOrNull(3, tracks)).toBeNull();
+  expect(activeTrackOrNull(null, tracks)).toBeNull();
+  expect(activeTrackOrNull(1, [])).toBeNull();
 });

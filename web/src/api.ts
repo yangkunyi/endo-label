@@ -84,6 +84,11 @@ export type PredictResult = {
   tracks: TrackRow[];
 };
 
+export type UndoResponse = {
+  undone: boolean;
+  session: SessionPublic;
+};
+
 export function clipDeskPath(clipId: string): string {
   return `/clips/${encodeURIComponent(clipId)}`;
 }
@@ -161,6 +166,21 @@ export function sessionPointPath(
   pointIndex: number,
 ): string {
   return `/api/session/tracks/${trackId}/frames/${frameIndex}/points/${pointIndex}`;
+}
+
+export function sessionFrameMaskPath(
+  trackId: number,
+  frameIndex: number,
+): string {
+  return `/api/session/tracks/${trackId}/frames/${frameIndex}`;
+}
+
+export function sessionTrackPath(trackId: number): string {
+  return `/api/session/tracks/${trackId}`;
+}
+
+export function sessionUndoPath(): string {
+  return "/api/session/undo";
 }
 
 export function annotationSummaryPath(clipId: string): string {

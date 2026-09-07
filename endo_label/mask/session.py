@@ -68,6 +68,26 @@ class BadReviewRequest(SessionError):
     """Invalid Review Decision payload."""
 
 
+def _copy_mask(mask: dict[str, Any]) -> dict[str, Any]:
+    """Independent copy of an rle_fg payload (counts/size lists included)."""
+    out = dict(mask)
+    out["size"] = list(out.get("size") or [])
+    out["counts"] = list(out.get("counts") or [])
+    return out
+
+
+@dataclass
+class _CellSnapshot:
+    """Pre-edit state of one Track-on-Frame, for Undo (no Redo)."""
+
+    track_id: int
+    frame_index: int
+    track_existed: bool
+    mask: dict[str, Any] | None
+    geometric_memory: list[dict[str, Any]]
+    scribble_mask: dict[str, Any] | None
+
+
 class WorkerNotReady(SessionError):
     """SAM 3.1 worker failed to load or is not ready (OOM / checkpoint)."""
 
@@ -156,6 +176,14 @@ class SessionState:
     clip_id: str
     concept_text: str | None = None
     tracks: list[TrackState] = field(default_factory=list)
+    # (track_id, frame_index) -> last silhouette loaded into Scribble
+    # mask-memory. Session-owned mirror; ScribbleModel has no getter, and Undo
+    # needs the pre-edit silhouette to restore through load/clear only.
+    scribble_memory: dict[tuple[int, int], dict[str, Any]] = field(
+        default_factory=dict
+    )
+    # One-way Undo stack: pre-edit cell snapshots, newest last.
+    undo_stack: list[_CellSnapshot] = field(default_factory=list)
 
 
 @dataclass
@@ -293,7 +321,7 @@ class SessionManager:
             self._predictor.close_clip()
         except Exception:
             pass
-        self._scribble.clear_memory(session_id=self._session.session_id)
+        self._scribble_clear_session()
         self._session = None
         self._active_job_id = None
         return {"active": False}
@@ -307,7 +335,7 @@ class SessionManager:
             self._predictor.reset_clip()
         except Exception as exc:
             raise WorkerNotReady(str(exc)) from exc
-        self._scribble.clear_memory(session_id=s.session_id)
+        self._scribble_clear_session()
         self._session = SessionState(
             session_id=s.session_id,
             clip_id=s.clip_id,
@@ -445,6 +473,8 @@ class SessionManager:
         if not cleaned:
             raise BadPredictRequest("Track Label must be non-empty")
         track.label = cleaned
+        # ADR 0023: a Track Label patch writes Annotation immediately.
+        self._persist_session()
         return self.get_public()
 
     def delete_track(self, track_id: int) -> dict[str, Any]:
@@ -456,9 +486,8 @@ class SessionManager:
         s.tracks = [t for t in s.tracks if t.track_id != track_id]
         if len(s.tracks) == before:
             raise TrackNotFound(f"Track not found: {track_id}")
-        self._scribble.clear_memory(
-            session_id=s.session_id, track_id=track_id
-        )
+        self._scribble_clear_track(track_id=track_id)
+        self._prune_undo_track(track_id)
         try:
             self._predictor.remove_track(track_id)
         except Exception:
@@ -483,12 +512,24 @@ class SessionManager:
             raise TrackNotFound(
                 f"Track {track_id} has no mask on frame {frame_index}"
             )
+        s.undo_stack.append(
+            _CellSnapshot(
+                track_id=track_id,
+                frame_index=frame_index,
+                track_existed=True,
+                mask=_copy_mask(track.masks[frame_index]),
+                geometric_memory=_copy_points(
+                    track.geometric_memory.get(frame_index, [])
+                ),
+                scribble_mask=_copy_mask(cell)
+                if (cell := s.scribble_memory.get((track_id, frame_index)))
+                else None,
+            )
+        )
         del track.masks[frame_index]
         track.geometric_memory.pop(frame_index, None)
-        self._scribble.clear_memory(
-            session_id=s.session_id,
-            track_id=track_id,
-            frame_index=frame_index,
+        self._scribble_clear_cell(
+            track_id=track_id, frame_index=frame_index
         )
         try:
             self._predictor.clear_frame_mask(
@@ -544,6 +585,83 @@ class SessionManager:
             geometric_memory=remaining,
         )
         return self.get_public(frame_index=frame_index)
+
+    def undo(self, *, frame_index: int) -> dict[str, Any]:
+        """Restore this Frame's last committed cell edit; empty stack is a no-op."""
+        with self._lock:
+            return self._undo_unlocked(frame_index=frame_index)
+
+    def _undo_unlocked(self, *, frame_index: int) -> dict[str, Any]:
+        if self._session is None:
+            raise SessionNotFound("no active Session")
+        self._ensure_not_propagating()
+        s = self._session
+        try:
+            catalog.frame_path(self._settings, s.clip_id, frame_index)
+        except catalog.ClipNotFound as exc:
+            raise SessionClipNotFound(s.clip_id) from exc
+        except catalog.FrameNotFound as exc:
+            raise SessionFrameNotFound(str(frame_index)) from exc
+
+        pos = next(
+            (
+                i
+                for i in range(len(s.undo_stack) - 1, -1, -1)
+                if s.undo_stack[i].frame_index == frame_index
+            ),
+            None,
+        )
+        if pos is None:
+            return {
+                "undone": False,
+                "session": self.get_public(frame_index=frame_index),
+            }
+
+        snap = s.undo_stack.pop(pos)
+        track = next(
+            (t for t in s.tracks if t.track_id == snap.track_id), None
+        )
+        if track is None:
+            # Stale snapshot (Track removed outside its stack entries).
+            return {
+                "undone": False,
+                "session": self.get_public(frame_index=frame_index),
+            }
+        if snap.mask is None:
+            track.masks.pop(frame_index, None)
+            track.geometric_memory.pop(frame_index, None)
+            self._scribble_clear_cell(
+                track_id=track.track_id, frame_index=frame_index
+            )
+            if not snap.track_existed and not track.masks:
+                # The undone edit created this Track and nothing is left.
+                s.tracks.remove(track)
+                self._scribble_clear_track(track_id=track.track_id)
+                self._prune_undo_track(track.track_id)
+                try:
+                    self._predictor.remove_track(track.track_id)
+                except Exception:
+                    pass
+        else:
+            track.masks[frame_index] = _copy_mask(snap.mask)
+            track.geometric_memory[frame_index] = _copy_points(
+                snap.geometric_memory
+            )
+            self._scribble_clear_cell(
+                track_id=track.track_id, frame_index=frame_index
+            )
+            if snap.scribble_mask is not None:
+                self._scribble_load(
+                    track_id=track.track_id,
+                    frame_index=frame_index,
+                    mask=snap.scribble_mask,
+                )
+        # ADR 0023: Undo restore writes Annotation immediately.
+        self._persist_session()
+        return {
+            "undone": True,
+            "session": self.get_public(frame_index=frame_index),
+        }
 
     def start_propagate(
         self,
@@ -878,7 +996,8 @@ class SessionManager:
         if not detections:
             # Soft empty: keep Session; clear tracks; do not lock concept
             s.tracks = []
-            self._scribble.clear_memory(session_id=s.session_id)
+            self._scribble_clear_session()
+            s.undo_stack.clear()
             return PredictResult(
                 frame_index=frame_index,
                 empty=True,
@@ -889,7 +1008,8 @@ class SessionManager:
         s.concept_text = concept
         tracks = self._tracks_from_detections(detections, frame_index)
         s.tracks = tracks
-        self._scribble.clear_memory(session_id=s.session_id)
+        self._scribble_clear_session()
+        s.undo_stack.clear()
         self._persist_session()
 
         public_tracks = [t.to_public(frame_index=frame_index) for t in tracks]
@@ -961,8 +1081,7 @@ class SessionManager:
                     or "Scribble worker is not ready"
                 )
             if base_mask is not None:
-                self._scribble.load_memory(
-                    session_id=s.session_id,
+                self._scribble_load(
                     track_id=model_track_id,
                     frame_index=frame_index,
                     mask=base_mask,
@@ -1016,7 +1135,6 @@ class SessionManager:
         except Exception as exc:
             if used_scribble:
                 self._rollback_scribble_memory(
-                    session_id=s.session_id,
                     track_id=model_track_id,
                     frame_index=frame_index,
                     prior_mask=pre_scribble_mask,
@@ -1026,7 +1144,6 @@ class SessionManager:
         if not out_mask:
             if used_scribble:
                 self._rollback_scribble_memory(
-                    session_id=s.session_id,
                     track_id=model_track_id,
                     frame_index=frame_index,
                     prior_mask=pre_scribble_mask,
@@ -1041,6 +1158,29 @@ class SessionManager:
 
         provenance = {"mask_handoff": True} if used_scribble else None
         leftover = stored + _prompt_points(points, point_labels)
+
+        # Snapshot the pre-edit cell for Undo: silhouette + Source, leftover
+        # pins, and the Scribble mask-memory silhouette. The mirror still holds
+        # the pre-edit silhouette here (re-anchor happens after the commit).
+        pre_scribble = s.scribble_memory.get((model_track_id, frame_index))
+        s.undo_stack.append(
+            _CellSnapshot(
+                track_id=model_track_id,
+                frame_index=frame_index,
+                track_existed=target is not None,
+                mask=_copy_mask(target.masks[frame_index])
+                if target is not None and frame_index in target.masks
+                else None,
+                geometric_memory=_copy_points(
+                    target.geometric_memory.get(frame_index, [])
+                )
+                if target is not None
+                else [],
+                scribble_mask=_copy_mask(pre_scribble)
+                if pre_scribble is not None
+                else None,
+            )
+        )
 
         if target is not None:
             # Geometric refine after prior mask → refined; first seed → manual
@@ -1068,8 +1208,7 @@ class SessionManager:
 
         if used_scribble:
             # Re-anchor mask-memory to the SAM silhouette; keep stroke ink.
-            self._scribble.load_memory(
-                session_id=s.session_id,
+            self._scribble_load(
                 track_id=model_track_id,
                 frame_index=frame_index,
                 mask=out_mask,
@@ -1093,23 +1232,64 @@ class SessionManager:
         s = self._session
         annotations.save_rows(self._settings, s.clip_id, self._tracks_as_dicts())
 
+    def _scribble_load(
+        self, *, track_id: int, frame_index: int, mask: dict[str, Any]
+    ) -> None:
+        """Load Scribble mask-memory and mirror the silhouette for Undo."""
+        assert self._session is not None
+        self._scribble.load_memory(
+            session_id=self._session.session_id,
+            track_id=track_id,
+            frame_index=frame_index,
+            mask=mask,
+        )
+        self._session.scribble_memory[(track_id, frame_index)] = _copy_mask(
+            mask
+        )
+
+    def _scribble_clear_cell(self, *, track_id: int, frame_index: int) -> None:
+        assert self._session is not None
+        self._scribble.clear_memory(
+            session_id=self._session.session_id,
+            track_id=track_id,
+            frame_index=frame_index,
+        )
+        self._session.scribble_memory.pop((track_id, frame_index), None)
+
+    def _scribble_clear_track(self, *, track_id: int) -> None:
+        assert self._session is not None
+        self._scribble.clear_memory(
+            session_id=self._session.session_id, track_id=track_id
+        )
+        for key in [
+            k for k in self._session.scribble_memory if k[0] == track_id
+        ]:
+            self._session.scribble_memory.pop(key, None)
+
+    def _scribble_clear_session(self) -> None:
+        assert self._session is not None
+        self._scribble.clear_memory(session_id=self._session.session_id)
+        self._session.scribble_memory.clear()
+
+    def _prune_undo_track(self, track_id: int) -> None:
+        assert self._session is not None
+        self._session.undo_stack = [
+            snap
+            for snap in self._session.undo_stack
+            if snap.track_id != track_id
+        ]
+
     def _rollback_scribble_memory(
         self,
         *,
-        session_id: str,
         track_id: int,
         frame_index: int,
         prior_mask: dict[str, Any] | None,
     ) -> None:
         """Drop failed ink; restore the pre-request silhouette as mask-memory."""
-        self._scribble.clear_memory(
-            session_id=session_id,
-            track_id=track_id,
-            frame_index=frame_index,
-        )
+        self._scribble_clear_cell(track_id=track_id, frame_index=frame_index)
         if prior_mask is not None:
-            self._scribble.load_memory(
-                session_id=session_id,
+            self._scribble_load(
                 track_id=track_id,
                 frame_index=frame_index,
                 mask=prior_mask,

@@ -1,4 +1,4 @@
-Status: ready-for-agent — tickets 01–03 resolved; frontier 04
+Status: ready-for-agent — tickets 01–05 resolved; frontier 06
 
 # Spec: mask on the sitting player (Geometric Prompt, Scribble, Propagate)
 
@@ -205,4 +205,4 @@ Session opens on the first real Predict or Propagate (`load_annotations: true`).
 
 - Grill locked Geometric Memory, one-tool click/drag, overlay not a focus tab, binding deferred, HTTP contract + new UI, lazy Session, overlay on the player, 800 ms auto-Predict, Undo, picture never plays on click, Track list always on the right rail, immediate Annotation, pending drop on scrub.
 - Source desk remains the primary source for Predict / Handoff / Propagate Job numbers (debounce 800 ms, drag threshold 0.005, width 1–40, cap 16, pin hit radius 10 CSS px).
-- Tickets: `.scratch/mask-desk/issues/01`–`07`. **01–03 resolved.** Frontier is 04 (scribble). Do not implement without grabbing a ticket.
+- Tickets: `.scratch/mask-desk/issues/01`–`07`. **01–05 resolved.** Frontier is 06 (Propagate Job). Do not implement without grabbing a ticket.

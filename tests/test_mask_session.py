@@ -775,3 +775,272 @@ def test_scribble_widths_are_validated_and_forwarded_per_stroke(
     )
     assert defaulted.status_code == 200, defaulted.text
     assert scrib.calls[-1]["widths"] == [8]  # omitted widths mean the default 8
+
+
+def _undo(client: TestClient, frame_index: int = 0) -> dict:
+    response = client.post("/api/session/undo", json={"frame_index": frame_index})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _seed_two_predicts(client: TestClient) -> tuple[int, list[int], list[int]]:
+    """Positive point at (0.25, 0.25), then a refine at (0.8, 0.8) on frame 0."""
+    first = client.post(
+        "/api/session/predict",
+        json={"frame_index": 0, "points": [[0.25, 0.25]], "point_labels": [1]},
+    )
+    assert first.status_code == 200, first.text
+    tid = first.json()["tracks"][0]["track_id"]
+    first_counts = list(first.json()["tracks"][0]["mask"]["counts"])
+    second = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "track_id": tid,
+            "points": [[0.8, 0.8]],
+            "point_labels": [1],
+        },
+    )
+    assert second.status_code == 200, second.text
+    return tid, first_counts, list(second.json()["tracks"][0]["mask"]["counts"])
+
+
+def test_undo_after_predict_restores_previous_mask_pins_and_prior(
+    tmp_path: Path,
+) -> None:
+    recorder = _RecordingGeometry()
+    client = _sitting_with(tmp_path, recorder)
+    _open(client)
+    tid, first_counts, second_counts = _seed_two_predicts(client)
+    assert second_counts != first_counts
+
+    undone = _undo(client)
+    assert undone["undone"] is True
+    track = next(
+        row for row in undone["session"]["tracks"] if row["track_id"] == tid
+    )
+    assert list(track["mask"]["counts"]) == first_counts
+    assert track["mask"]["source"] == "manual"
+    assert track["geometric_memory"] == [{"x": 0.25, "y": 0.25, "positive": True}]
+
+    # Annotation on disk matches the restored Track-on-Frame; no Save ran.
+    frame = client.get("/api/clips/CLIPA/annotations/frames/0")
+    assert frame.status_code == 200
+    restored = frame.json()["masks"][0]
+    assert restored["track_id"] == tid
+    assert list(restored["counts"]) == first_counts
+    assert restored["source"] == "manual"
+    assert "geometric_memory" not in frame.text
+
+    # The next Geometric Predict resends the restored pins on the restored Prior.
+    refined = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "track_id": tid,
+            "points": [[0.5, 0.1]],
+            "point_labels": [1],
+        },
+    )
+    assert refined.status_code == 200, refined.text
+    last = recorder.geometry_calls[-1]
+    assert last["points"] == [[0.25, 0.25], [0.5, 0.1]]
+    assert list(last["base_mask"]["counts"]) == first_counts
+
+
+def test_undo_after_leftover_delete_restores_that_pin_and_mask(
+    tmp_path: Path,
+) -> None:
+    client = _sitting_with(tmp_path)
+    _open(client)
+    tid, _, prior_counts = _seed_two_predicts(client)
+    dropped = client.delete(f"/api/session/tracks/{tid}/frames/0/points/0")
+    assert dropped.status_code == 200, dropped.text
+    track = next(
+        row for row in dropped.json()["tracks"] if row["track_id"] == tid
+    )
+    assert track["geometric_memory"] == [{"x": 0.8, "y": 0.8, "positive": True}]
+
+    undone = _undo(client)
+    assert undone["undone"] is True
+    restored = next(
+        row for row in undone["session"]["tracks"] if row["track_id"] == tid
+    )
+    assert restored["geometric_memory"] == [
+        {"x": 0.25, "y": 0.25, "positive": True},
+        {"x": 0.8, "y": 0.8, "positive": True},
+    ]
+    assert list(restored["mask"]["counts"]) == prior_counts
+    frame = client.get("/api/clips/CLIPA/annotations/frames/0")
+    assert list(frame.json()["masks"][0]["counts"]) == prior_counts
+
+
+def test_undo_after_clear_mask_restores_that_cell(tmp_path: Path) -> None:
+    client = _sitting_with(tmp_path)
+    _open(client)
+    tid, _, second_counts = _seed_two_predicts(client)
+    cleared = client.delete(f"/api/session/tracks/{tid}/frames/0")
+    assert cleared.status_code == 200, cleared.text
+    track = next(
+        row for row in cleared.json()["tracks"] if row["track_id"] == tid
+    )
+    assert "mask" not in track
+    assert track["geometric_memory"] == []
+    assert client.get("/api/clips/CLIPA/annotations/frames/0").json()["masks"] == []
+
+    undone = _undo(client)
+    assert undone["undone"] is True
+    restored = next(
+        row for row in undone["session"]["tracks"] if row["track_id"] == tid
+    )
+    assert list(restored["mask"]["counts"]) == second_counts
+    assert restored["mask"]["source"] == "refined"
+    assert restored["geometric_memory"] == [
+        {"x": 0.25, "y": 0.25, "positive": True},
+        {"x": 0.8, "y": 0.8, "positive": True},
+    ]
+    frame = client.get("/api/clips/CLIPA/annotations/frames/0")
+    assert list(frame.json()["masks"][0]["counts"]) == second_counts
+
+
+def test_empty_undo_is_200_noop_and_there_is_no_redo(tmp_path: Path) -> None:
+    client = _sitting(tmp_path, ("CLIPA",))
+    _open(client)
+    before = client.get("/api/session", params={"frame_index": 0}).json()
+
+    noop = _undo(client)
+    assert noop["undone"] is False
+    assert noop["session"] == before
+
+    redo = client.post("/api/session/redo", json={"frame_index": 0})
+    assert redo.status_code == 404
+
+
+def test_undo_is_scoped_to_the_requested_frame(tmp_path: Path) -> None:
+    client = _sitting_with(tmp_path)
+    _open(client)
+    tid, first_counts, second_counts = _seed_two_predicts(client)
+    other = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 1,
+            "track_id": tid,
+            "points": [[0.5, 0.5]],
+            "point_labels": [1],
+        },
+    )
+    assert other.status_code == 200, other.text
+    other_counts = list(other.json()["tracks"][0]["mask"]["counts"])
+
+    # Undo targets this Frame's last committed edit, not the Session-wide one.
+    undone = _undo(client, frame_index=1)
+    assert undone["undone"] is True
+    row = next(
+        t for t in undone["session"]["tracks"] if t["track_id"] == tid
+    )
+    assert "mask" not in row
+    assert list(_track_frame(client, tid)["mask"]["counts"]) == second_counts
+
+    # The frame-0 stack is untouched: Undo there rolls the refine back first.
+    undone_zero = _undo(client, frame_index=0)
+    assert undone_zero["undone"] is True
+    assert list(_track_frame(client, tid)["mask"]["counts"]) == first_counts
+
+    # Then the creating Predict, which removes the maskless Track with it.
+    undone_create = _undo(client, frame_index=0)
+    assert undone_create["undone"] is True
+    assert undone_create["session"]["tracks"] == []
+
+    # Nothing left on this Frame: the next Undo on frame 0 is a no-op.
+    again = _undo(client, frame_index=0)
+    assert again["undone"] is False
+    assert client.get("/api/clips/CLIPA/annotations").json()["tracks"] == []
+
+
+def test_undo_of_creating_predict_keeps_track_with_masks_on_other_frames(
+    tmp_path: Path,
+) -> None:
+    client = _sitting_with(tmp_path)
+    _open(client)
+    first = client.post(
+        "/api/session/predict",
+        json={"frame_index": 0, "points": [[0.25, 0.25]], "point_labels": [1]},
+    )
+    assert first.status_code == 200, first.text
+    tid = first.json()["tracks"][0]["track_id"]
+    other = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 1,
+            "track_id": tid,
+            "points": [[0.5, 0.5]],
+            "point_labels": [1],
+        },
+    )
+    assert other.status_code == 200, other.text
+    other_counts = list(other.json()["tracks"][0]["mask"]["counts"])
+
+    undone = _undo(client, frame_index=0)
+    assert undone["undone"] is True
+    tracks = undone["session"]["tracks"]
+    assert [t["track_id"] for t in tracks] == [tid]
+    assert "mask" not in tracks[0]
+    # The Track survives: it still holds its mask on frame 1.
+    assert list(_track_frame(client, tid, frame_index=1)["mask"]["counts"]) == (
+        other_counts
+    )
+
+
+def test_undo_after_scribble_carve_restores_the_prior_silhouette(
+    tmp_path: Path,
+) -> None:
+    client = _sitting_with(tmp_path)
+    _open(client)
+    first = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "scribbles": [[[0.2, 0.4], [0.4, 0.4]]],
+            "scribble_labels": [1],
+        },
+    )
+    assert first.status_code == 200, first.text
+    tid = first.json()["tracks"][0]["track_id"]
+    prior_counts = list(first.json()["tracks"][0]["mask"]["counts"])
+
+    carved = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "track_id": tid,
+            "scribbles": [[[0.25, 0.45], [0.32, 0.45]]],
+            "scribble_labels": [0],
+        },
+    )
+    assert carved.status_code == 200, carved.text
+    assert list(carved.json()["tracks"][0]["mask"]["counts"]) != prior_counts
+
+    undone = _undo(client)
+    assert undone["undone"] is True
+    track = next(
+        row for row in undone["session"]["tracks"] if row["track_id"] == tid
+    )
+    assert list(track["mask"]["counts"]) == prior_counts
+
+
+def test_track_label_patch_persists_annotation_immediately(
+    tmp_path: Path,
+) -> None:
+    client = _sitting_with(tmp_path)
+    _open(client)
+    tid, _, _ = _seed_two_predicts(client)
+
+    renamed = client.patch(
+        f"/api/session/tracks/{tid}", json={"label": "grasper tip"}
+    )
+    assert renamed.status_code == 200, renamed.text
+
+    summary = client.get("/api/clips/CLIPA/annotations")
+    assert summary.status_code == 200
+    labels = {t["track_id"]: t["label"] for t in summary.json()["tracks"]}
+    assert labels[tid] == "grasper tip"

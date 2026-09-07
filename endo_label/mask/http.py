@@ -72,6 +72,15 @@ class UpdateTrackBody(BaseModel):
     label: str = Field(..., min_length=1)
 
 
+class UndoBody(BaseModel):
+    """Undo this Frame's last committed mask edit (Predict / pin delete / Clear).
+
+    Empty Undo stack is a 200 no-op; there is no Redo.
+    """
+
+    frame_index: int = Field(..., ge=0)
+
+
 class PropagateBody(BaseModel):
     """Start a Propagate Job for the active Session.
 
@@ -352,6 +361,22 @@ def create_app(
             raise HTTPException(status_code=503, detail=str(exc)) from None
         except PredictorRuntimeError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from None
+
+    @app.post("/api/session/undo")
+    def undo(body: UndoBody) -> dict:
+        try:
+            return sessions.undo(frame_index=body.frame_index)
+        except SessionNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from None
+        except SessionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        except SessionFrameNotFound:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Frame index out of range: {body.frame_index}",
+            ) from None
+        except SessionClipNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from None
 
     @app.post("/api/session/save")
     def save_annotations() -> dict:

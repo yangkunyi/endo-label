@@ -196,3 +196,23 @@ export function nextActiveTrack(
   }
   return current;
 }
+
+export type UndoKeyEvent = { key: string; ctrlKey: boolean; metaKey: boolean };
+
+// Ctrl/Cmd+Z is Undo; inside editable targets it stays native text undo.
+export function isUndoKey(event: UndoKeyEvent): boolean {
+  return event.key.toLowerCase() === "z" && (event.ctrlKey || event.metaKey);
+}
+
+// An Undo that removed the Active Track leaves no Active Track behind.
+export function activeTrackOrNull(
+  activeTrackId: number | null,
+  tracks: Array<{ track_id: number }>,
+): number | null {
+  if (activeTrackId == null) {
+    return null;
+  }
+  return tracks.some((row) => row.track_id === activeTrackId)
+    ? activeTrackId
+    : null;
+}
