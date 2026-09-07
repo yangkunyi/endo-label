@@ -1,0 +1,26 @@
+# 06 — Full desk e2e closeout
+
+**What to build:** This is the only ticket that runs or edits Playwright. Walk the whole desk after 01–05 and rewrite `web/e2e/desk.spec.ts` so the new sitting is green. Cover: Lane well height vs player (empty Clip still has the well; picture height stays put when a Lane appears); Brush arm does not write this Frame; `i`/`o` with Brush; two class tags in one Apply; Ruler from–to and ghost bars; click-bar seeks to the pointer Frame; Shift-click + Backspace; drag-empty paint; trim selected ends; eye hide/show; unused empty Lane. The well shows only visible Lanes of the focused Task type. Switching Task focus rebuilds the well, clears bar selection, and keeps each kind’s Brush. Library name click, double-click rename, and trash confirm stay. Now stays read-only. Space, rate menu, and media-chrome transport stay. `i`/`o`/`[`/`]`/Backspace/Delete are ignored while typing in an input or combobox. English copy on the new controls. Adapt or retire every story that armed a paint chip by toggling this Frame, treated bars as display-only, sought to a bar’s first Frame, or treated an empty Clip as Ruler-only. Ticket 01 may already have rewritten the empty-Clip well case; keep that and finish the rest. This tree’s Playwright webServer stays isolated API `7891` + Vite `5191` (sitting `7880` / `5173` untouched; do not reuse `7881` / `5174`). Full suite green. No new Python span suite.
+
+**Blocked by:** 01 — Lane well is a reserved strip; picture height does not follow Lanes. 02 — Brush replaces the paint chip; Library name stays this-Frame. 03 — Several identities in one Apply; Ruler and ghost preview. 04 — Lane bars seek under the pointer, paint on empty drag, Shift-select, trim, Backspace. 05 — Library eye shows or hides a Lane; unused start hidden.
+
+**Status:** resolved
+
+- [x] Lane well: empty Clip still has the strip; picture height is unchanged after a Lane appears
+- [x] Brush: arm does not change this-Frame JSON; `i`/`o` write the Brush; old paint-chip locators gone; tests that armed a chip via this-Frame now arm Brush
+- [x] Multi Apply: two class tags on one Apply both present; Ruler from–to + ghosts after Mark from, gone after Apply
+- [x] Lane pointer: seek-to-pointer on a long bar (not bar start); Shift-click + Backspace drops that segment; drag-empty paints; trim on a selected end; old display-only / seek-to-start cases rewritten
+- [x] Eye: hide a labeled Lane (well omits it, disk still has it); show an unused name and drag-paint the empty Lane
+- [x] Well lists only visible Lanes of the focused Task type; focus switch rebuilds the well and clears bar selection; each kind’s Brush is still there when the labeler comes back
+- [x] Library this-Frame toggle, double-click rename, trash confirm, Now read-only, jpeg vs video player, Task-focus tabs, Editor Cards, and Ruler drag stay green
+- [x] Span keys and Backspace/Delete are ignored while an input or combobox is focused
+- [x] New controls use English `Brush` / `Show lane` / `Hide lane`
+- [x] Playwright isolated API is `127.0.0.1:7891` and Vite is `5191`; sitting `7880` / `5173` still works beside it
+- [x] Full Playwright desk suite passes with 0 failures
+- [x] vitest and `tsc` pass; pytest stays green with no new Python tests for this spec
+
+## Answer
+
+`web/e2e/desk.spec.ts` rewritten for the new sitting: 46 Playwright desk tests, 0 failures (two consecutive full runs). Chip-era stories (paint chip payload, display-only bars, seek-to-bar-start, empty Clip Ruler-only) adapted or retired; every arm now goes through the Library `Brush` control and asserts this-Frame JSON is unchanged. New cases: two class tags in one Apply, Ruler from–to + ghost bars (gone after Apply), bar click seeks under the pointer and clears selection, Shift-click multi-select + Backspace/Delete drops only that identity, Escape aborts, drag-empty paint on a shown empty Lane, trim a selected end both directions, eye hide (well omits, disk keeps, stored hide wins after reload) / hidden Brush identity still writes, unused Lane starts hidden and persists in localStorage, Task focus switch rebuilds the well, clears selection, and keeps each kind's Brush, span keys and Backspace/Delete ignored while typing in an input or combobox, English `Brush` / `Show lane` / `Hide lane`. Ticket 01's empty-Clip well case kept verbatim; Library toggle/rename/trash, Now read-only, jpeg vs video, Task-focus tabs, Editor Cards, Ruler drag, rate menu, and media-chrome transport stay green. `web/playwright.config.ts` untouched: API `127.0.0.1:7891`, Vite `5191`; nothing on `5173` was touched. No product code changed — every red case at BASE was a stale test, not a spec 01–05 bug.
+
+Commit `e5f71b7` on `dev1`. Playwright 46/0 (exit 0); vitest 43 passed; `tsc` 0; pytest 106 passed, 1 skipped, no new Python tests. Nested `/code-review` spawn failed (subagent `not_found`, depth limit); Standards/Spec spawn axes skipped, review done in-agent against the ticket checklist.

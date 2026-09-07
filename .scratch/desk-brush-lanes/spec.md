@@ -1,4 +1,4 @@
-Status: specified — tickets 01–05 resolved; ticket 06 ready-for-agent
+Status: specified — all tickets resolved
 
 # Spec: Lane well does not steal the picture; Brush is not Library Selection; Lanes paint, select, hide
 
@@ -15,7 +15,7 @@ Labels, per-Frame JSON, span HTTP shape, Task focus, Frame indexes, transcode, E
 - [03 — Several identities in one Apply; Ruler and ghost preview](issues/03-multi-brush-and-range-preview.md) (`resolved`)
 - [04 — Lane bars seek under the pointer, paint on empty drag, Shift-select, trim, Backspace](issues/04-lane-seek-paint-select-trim.md) (`resolved`, blocked by 01)
 - [05 — Library eye shows or hides a Lane; unused start hidden](issues/05-lane-visibility-eye.md) (`resolved`, blocked by 01, 04)
-- [06 — Full desk e2e closeout](issues/06-e2e-closeout.md) (`ready-for-agent`, blocked by 01–05)
+- [06 — Full desk e2e closeout](issues/06-e2e-closeout.md) (`resolved`, blocked by 01–05)
 
 ## Problem Statement
 
