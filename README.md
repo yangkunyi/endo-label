@@ -36,9 +36,9 @@ PYTHONPATH=. python -m endo_label
 # PYTHONPATH=. python -m endo_label --config /path/to/config.yaml
 ```
 
-Binds `127.0.0.1:7880` (override with `--port`), one uvicorn worker. CORS allows only `http://127.0.0.1:5173` and `http://localhost:5173`.
+This worktree (`dev2`) binds `127.0.0.1:7882` (override with `--port`), one uvicorn worker. CORS allows `http://127.0.0.1:5175` and `http://localhost:5175` (and 5173). `main` stays 7880 / 7881; `dev1` stays 7891 / 5191.
 
-Sitting (one process, after a frontend build): `cd web && npm run build`, then `PYTHONPATH=. python -m endo_label`. Desk is `http://127.0.0.1:7880/` (same origin as `/api`). Refresh on `/clips/<clipId>` still shows the desk. Vite is not required. Missing `web/dist`: `/api` still runs.
+Sitting (one process, after a frontend build): `cd web && npm run build`, then `PYTHONPATH=. python -m endo_label`. Desk is `http://127.0.0.1:7882/` (same origin as `/api`). Refresh on `/clips/<clipId>` still shows the desk. Vite is not required. Missing `web/dist`: `/api` still runs.
 
 Desk (dev): Vite SPA in `web/`. Start the API first, then:
 
@@ -48,9 +48,9 @@ npm install
 npm run dev
 ```
 
-Vite is `http://127.0.0.1:5173` and proxies `/api` to `127.0.0.1:7880`. `/` lists allowlisted Clips; `/clips/:clipId` shows Frame 0, a filmstrip (each Frame’s phase or empty), a phase editor (span paint, clear this Frame, add phase name), class chips next to the JPEG (toggle flags on this Frame, add class name), and a triplet list (add/delete rows on this Frame, add instrument / verb / target names). Scrub only changes the current Frame (no labels written, no Session).
+Vite is `http://127.0.0.1:5175` (`--strictPort`) and proxies `/api` to `127.0.0.1:7882`. `/` lists allowlisted Clips; `/clips/:clipId` shows Frame 0, a filmstrip (each Frame’s phase or empty), a phase editor (span paint, clear this Frame, add phase name), class chips next to the JPEG (toggle flags on this Frame, add class name), and a triplet list (add/delete rows on this Frame, add instrument / verb / target names). Scrub only changes the current Frame (no labels written, no Session).
 
-Health: `GET http://127.0.0.1:7880/api/health`
+Health: `GET http://127.0.0.1:7882/api/health`
 
 Labels-only (no Session):
 
@@ -68,4 +68,4 @@ PYTHONPATH=. python -m pytest tests -q
 cd web && npm test && npm run test:e2e
 ```
 
-`npm run test:e2e` is local Chromium against `127.0.0.1:7881` + Vite `5174`. Needs repo `.venv` (`python3 -m venv .venv && .venv/bin/pip install fastapi uvicorn pyyaml`). Uses system Google Chrome. Not CI. Sitting on `7880` can stay up. `npm run test:e2e:ui` opens the Playwright runner.
+`npm run test:e2e` is local Chromium against `127.0.0.1:7892` + Vite `5192`, `--strictPort`, no reuse of another worktree’s server. Needs repo `.venv` (`python3 -m venv .venv && .venv/bin/pip install fastapi uvicorn pyyaml`). Uses system Google Chrome. Not CI. Sitting on `7882` can stay up. `npm run test:e2e:ui` opens the Playwright runner.

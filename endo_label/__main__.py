@@ -1,4 +1,4 @@
-"""Sitting entry: YAML config, then compose HTTP on 127.0.0.1:7880."""
+"""Sitting entry: YAML config, then compose HTTP on 127.0.0.1:7882."""
 
 from __future__ import annotations
 
@@ -23,8 +23,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--port",
         type=int,
-        default=7880,
-        help="Bind port (default: 7880). Playwright e2e uses 7881.",
+        default=7882,
+        help="Bind port (default: 7882). Vite dev is 5175. Playwright e2e uses 7892.",
     )
     args = parser.parse_args(argv)
     if args.port <= 0 or args.port > 65535:

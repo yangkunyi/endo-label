@@ -35,6 +35,47 @@ def test_invalid_port_refuses_to_start() -> None:
     assert "invalid --port" in result.stderr
 
 
+def test_sitting_help_names_this_worktree_ports() -> None:
+    result = _sitting("--help")
+    assert result.returncode == 0
+    assert "7882" in result.stdout
+    assert "5175" in result.stdout
+    assert "7892" in result.stdout
+    assert "default: 7882" in result.stdout
+
+
+def test_sitting_binds_7882_unless_port_passed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    frames = _write_pool(tmp_path / "frames", "CLIPA")
+    yaml_path = _write_yaml(
+        tmp_path / "sitting.yaml",
+        frames_root=frames,
+        labels_root=tmp_path / "labels",
+        allowlist=["CLIPA"],
+    )
+    captured: dict[str, object] = {}
+
+    def fake_run(app, *, host: str, port: int, workers: int) -> None:
+        captured["host"] = host
+        captured["port"] = port
+        captured["workers"] = workers
+        captured["app"] = app
+
+    monkeypatch.setattr("endo_label.__main__.uvicorn.run", fake_run)
+    from endo_label.__main__ import main
+
+    main(["--config", str(yaml_path)])
+    assert captured["host"] == "127.0.0.1"
+    assert captured["port"] == 7882
+    assert captured["workers"] == 1
+
+    captured.clear()
+    main(["--config", str(yaml_path), "--port", "7999"])
+    assert captured["port"] == 7999
+    assert captured["host"] == "127.0.0.1"
+
+
 def test_missing_config_file_refuses_to_start(tmp_path: Path) -> None:
     missing = tmp_path / "no-such-config.yaml"
     result = _sitting("--config", str(missing))
@@ -152,7 +193,7 @@ def test_empty_allowlist_means_zero_clips(tmp_path: Path) -> None:
     assert clips.json() == {"clips": []}
 
 
-def test_cors_allows_only_vite_origin(tmp_path: Path) -> None:
+def test_cors_allows_this_worktree_and_main_vite_origins(tmp_path: Path) -> None:
     frames = _write_pool(tmp_path / "frames", "CLIPA")
     settings = load_settings(
         _write_yaml(
@@ -164,18 +205,24 @@ def test_cors_allows_only_vite_origin(tmp_path: Path) -> None:
     )
     client = TestClient(create_app(settings))
 
-    allowed = client.options(
-        "/api/health",
-        headers={
-            "Origin": "http://127.0.0.1:5173",
-            "Access-Control-Request-Method": "GET",
-        },
-    )
-    assert allowed.status_code in (200, 204)
-    assert allowed.headers.get("access-control-allow-origin") == "http://127.0.0.1:5173"
+    for origin in (
+        "http://127.0.0.1:5175",
+        "http://localhost:5175",
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    ):
+        allowed = client.options(
+            "/api/health",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert allowed.status_code in (200, 204)
+        assert allowed.headers.get("access-control-allow-origin") == origin
 
-    localhost = client.get("/api/health", headers={"Origin": "http://localhost:5173"})
-    assert localhost.headers.get("access-control-allow-origin") == "http://localhost:5173"
+        got = client.get("/api/health", headers={"Origin": origin})
+        assert got.headers.get("access-control-allow-origin") == origin
 
     blocked = client.get("/api/health", headers={"Origin": "http://evil.example"})
     assert blocked.headers.get("access-control-allow-origin") not in (

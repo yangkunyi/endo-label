@@ -9,10 +9,10 @@ export default defineConfig({
   },
   server: {
     host: "127.0.0.1",
-    port: 5173,
+    port: 5175,
     strictPort: true,
     proxy: {
-      "/api": process.env.ENDO_LABEL_API ?? "http://127.0.0.1:7880",
+      "/api": process.env.ENDO_LABEL_API ?? "http://127.0.0.1:7882",
     },
   },
 });

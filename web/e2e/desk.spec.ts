@@ -102,6 +102,15 @@ async function clearClipLabels(page: Page, clipId = "CLIP_E2E") {
   }
 }
 
+test("e2e sits on this worktree API 7892 and Vite 5192", async ({ page, request }) => {
+  await page.goto("/");
+  expect(new URL(page.url()).port).toBe("5192");
+  const health = await request.get("http://127.0.0.1:7892/api/health");
+  expect(health.ok()).toBeTruthy();
+  const body = (await health.json()) as { ok: boolean };
+  expect(body.ok).toBe(true);
+});
+
 test("root and Clip routes share one workbench shell", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Choose a Clip" })).toBeVisible();

@@ -10,8 +10,8 @@ const python =
   process.env.ENDO_LABEL_PYTHON ||
   (existsSync(venvPython) ? venvPython : "python3");
 
-const apiPort = 7881;
-const vitePort = 5174;
+const apiPort = 7892;
+const vitePort = 5192;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -45,7 +45,7 @@ export default defineConfig({
       cwd: repoRoot,
       env: { ...process.env, PYTHONPATH: repoRoot },
       url: `http://127.0.0.1:${apiPort}/api/health`,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 30_000,
     },
     {
@@ -53,7 +53,7 @@ export default defineConfig({
       cwd: webRoot,
       env: { ...process.env, ENDO_LABEL_API: `http://127.0.0.1:${apiPort}` },
       url: `http://127.0.0.1:${vitePort}`,
-      reuseExistingServer: !process.env.CI,
+      reuseExistingServer: false,
       timeout: 30_000,
     },
   ],
