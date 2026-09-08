@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type RefObject } from "react";
 import type { MaskRle, TrackRow } from "./api";
 import {
   clientToRelative,
@@ -122,7 +122,7 @@ export function MaskOverlay({
   const drag = useRef<{ start: Point; last: Point; samples: Point[]; label: 0 | 1 } | null>(null);
   const [layoutGen, setLayoutGen] = useState(0);
 
-  const bump = () => setLayoutGen((n) => n + 1);
+  const bump = useCallback(() => setLayoutGen((n) => n + 1), []);
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -158,6 +158,11 @@ export function MaskOverlay({
         drawInk(ctx, mark.points, dest, mark.label, mark.width);
       }
     }
+    // A mid-drag repaint redraws the partial ink instead of erasing it.
+    const live = drag.current;
+    if (live) {
+      drawInk(ctx, live.samples, dest, live.label, width);
+    }
     const pendingPoints = pending.filter((mark): mark is PendingPoint => !isPendingStroke(mark));
     for (const point of overlayPins(leftover, pendingPoints)) {
       ctx.beginPath();
@@ -168,7 +173,7 @@ export function MaskOverlay({
       ctx.strokeStyle = point.label === 1 ? "#16a34a" : "#dc2626";
       ctx.stroke();
     }
-  }, [layoutGen, leftover, masks, pending, tracks, videoRef]);
+  }, [layoutGen, leftover, masks, pending, tracks, videoRef, width]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -176,7 +181,6 @@ export function MaskOverlay({
     if (!canvas) {
       return;
     }
-    const bump = () => setLayoutGen((n) => n + 1);
     const ro = new ResizeObserver(bump);
     ro.observe(canvas);
     video?.addEventListener("loadedmetadata", bump);
@@ -184,19 +188,28 @@ export function MaskOverlay({
       ro.disconnect();
       video?.removeEventListener("loadedmetadata", bump);
     };
-  }, [videoRef]);
+  }, [bump, videoRef]);
 
-  function imageRect() {
+  // Pointer mapping needs the viewport-anchored rect; ink draws in
+  // canvas-local coordinates, the same basis as the committed repaint.
+  function imageRect(): { client: DisplayRect; ink: DisplayRect } | null {
     const canvas = canvasRef.current;
     const video = videoRef.current;
     if (!canvas || !video) {
       return null;
     }
     const box = canvas.getBoundingClientRect();
-    return displayedImageRect(
-      { left: box.left, top: box.top, width: box.width, height: box.height },
+    const ink = displayedImageRect(
+      { left: 0, top: 0, width: box.width, height: box.height },
       { width: video.videoWidth, height: video.videoHeight },
     );
+    if (!ink) {
+      return null;
+    }
+    return {
+      client: { ...ink, left: ink.left + box.left, top: ink.top + box.top },
+      ink,
+    };
   }
 
   function onPointerDown(event: PointerEvent<HTMLCanvasElement>) {
@@ -212,7 +225,7 @@ export function MaskOverlay({
     if (!rect) {
       return;
     }
-    const point = clientToRelative(event.clientX, event.clientY, rect);
+    const point = clientToRelative(event.clientX, event.clientY, rect.client);
     if (!point) {
       return;
     }
@@ -229,7 +242,7 @@ export function MaskOverlay({
     if (!rect) {
       return;
     }
-    const point = clientToRelative(event.clientX, event.clientY, rect);
+    const point = clientToRelative(event.clientX, event.clientY, rect.client);
     if (!point) {
       return;
     }
@@ -238,7 +251,7 @@ export function MaskOverlay({
     drag.current.samples.push(point);
     const ink = canvasRef.current?.getContext("2d");
     if (ink) {
-      drawInk(ink, [prev, point], rect, drag.current.label, width);
+      drawInk(ink, [prev, point], rect.ink, drag.current.label, width);
     }
   }
 
@@ -249,10 +262,6 @@ export function MaskOverlay({
       return;
     }
     const commit = dragCommit(gesture.start, gesture.last, gesture.samples, gesture.label, width);
-    if (!commit) {
-      bump();
-      return;
-    }
     if (isPendingStroke(commit)) {
       onStroke(commit);
       return;
@@ -261,7 +270,7 @@ export function MaskOverlay({
     if (commit.label === 1) {
       const rect = imageRect();
       if (rect) {
-        const hit = hitLeftoverPin(gesture.start, leftover, { width: rect.width, height: rect.height });
+        const hit = hitLeftoverPin(gesture.start, leftover, { width: rect.ink.width, height: rect.ink.height });
         if (hit != null) {
           onDeletePin(hit);
           return;

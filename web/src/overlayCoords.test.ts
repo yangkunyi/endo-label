@@ -134,7 +134,7 @@ test("a click commits a point; a drag commits a stroke with the current width", 
 
   const samples = [start, { x: 0.55, y: 0.5 }, { x: 0.6, y: 0.52 }];
   const stroke = dragCommit(start, { x: 0.6, y: 0.52 }, samples, 0, 24);
-  expect(isPendingStroke(stroke!)).toBe(true);
+  expect(isPendingStroke(stroke)).toBe(true);
   expect(stroke).toEqual({ points: samples, label: 0, width: 24 });
 });
 
@@ -142,7 +142,7 @@ test("a drag with no samples still commits start and last as the polyline", () =
   const start = { x: 0.2, y: 0.3 };
   const last = { x: 0.4, y: 0.3 };
   const stroke = dragCommit(start, last, [], 1, 8);
-  expect(isPendingStroke(stroke!)).toBe(true);
+  expect(isPendingStroke(stroke)).toBe(true);
   expect(stroke).toEqual({ points: [start, last], label: 1, width: 8 });
 });
 
@@ -184,12 +184,14 @@ test("slider width clamps to 1–40 with default 8", () => {
   expect(clampScribbleWidth(8.4)).toBe(8);
 });
 
-test("Ctrl/Cmd+Z is Undo; plain z and Shift alone are not", () => {
-  expect(isUndoKey({ key: "z", ctrlKey: true, metaKey: false })).toBe(true);
-  expect(isUndoKey({ key: "z", ctrlKey: false, metaKey: true })).toBe(true);
-  expect(isUndoKey({ key: "Z", ctrlKey: true, metaKey: false })).toBe(true);
-  expect(isUndoKey({ key: "z", ctrlKey: false, metaKey: false })).toBe(false);
-  expect(isUndoKey({ key: "y", ctrlKey: true, metaKey: false })).toBe(false);
+test("Ctrl/Cmd+Z is Undo; plain z, Shift (redo chord), and Ctrl+Y are not", () => {
+  expect(isUndoKey({ key: "z", ctrlKey: true, metaKey: false, shiftKey: false })).toBe(true);
+  expect(isUndoKey({ key: "z", ctrlKey: false, metaKey: true, shiftKey: false })).toBe(true);
+  expect(isUndoKey({ key: "Z", ctrlKey: true, metaKey: false, shiftKey: false })).toBe(true);
+  expect(isUndoKey({ key: "z", ctrlKey: true, metaKey: false, shiftKey: true })).toBe(false);
+  expect(isUndoKey({ key: "z", ctrlKey: false, metaKey: true, shiftKey: true })).toBe(false);
+  expect(isUndoKey({ key: "z", ctrlKey: false, metaKey: false, shiftKey: false })).toBe(false);
+  expect(isUndoKey({ key: "y", ctrlKey: true, metaKey: false, shiftKey: false })).toBe(false);
 });
 
 test("an Active Track the Undo removed leaves no Active Track", () => {

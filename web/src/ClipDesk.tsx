@@ -450,6 +450,7 @@ export function ClipDesk() {
       return;
     }
     predicting.current = true;
+    clearPredictTimer();
     setToast(null);
     try {
       await sendJson<SessionPublic>(sessionFrameMaskPath(activeTrackId, frameIndex), "DELETE");
@@ -462,13 +463,14 @@ export function ClipDesk() {
     } finally {
       predicting.current = false;
     }
-  }, [activeTrackId, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
+  }, [activeTrackId, clearPredictTimer, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
 
   const runUndo = useCallback(async () => {
     if (!clipId || predicting.current || jobRunning) {
       return;
     }
     predicting.current = true;
+    clearPredictTimer();
     setToast(null);
     try {
       const result = await sendJson<UndoResponse>(sessionUndoPath(), "POST", {
@@ -488,7 +490,7 @@ export function ClipDesk() {
     } finally {
       predicting.current = false;
     }
-  }, [clipId, frameIndex, jobRunning, mutateAnnotation, mutateFrameAnn]);
+  }, [clearPredictTimer, clipId, frameIndex, jobRunning, mutateAnnotation, mutateFrameAnn]);
 
   const runPropagate = useCallback(async () => {
     if (!clipId || predicting.current || jobRunning) {

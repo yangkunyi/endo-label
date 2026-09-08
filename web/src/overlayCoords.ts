@@ -88,7 +88,7 @@ export function dragCommit(
   samples: Point[],
   label: 0 | 1,
   width: number,
-): PendingMark | null {
+): PendingMark {
   if (!isClick(start, last)) {
     const points = samples.length > 0 ? samples : [start, last];
     return { points, label, width };
@@ -197,11 +197,17 @@ export function nextActiveTrack(
   return current;
 }
 
-export type UndoKeyEvent = { key: string; ctrlKey: boolean; metaKey: boolean };
+export type UndoKeyEvent = {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+};
 
-// Ctrl/Cmd+Z is Undo; inside editable targets it stays native text undo.
+// Ctrl/Cmd+Z is Undo; Shift is the redo chord, never another Undo. Inside
+// editable targets it stays native text undo.
 export function isUndoKey(event: UndoKeyEvent): boolean {
-  return event.key.toLowerCase() === "z" && (event.ctrlKey || event.metaKey);
+  return !event.shiftKey && event.key.toLowerCase() === "z" && (event.ctrlKey || event.metaKey);
 }
 
 // An Undo that removed the Active Track leaves no Active Track behind.
