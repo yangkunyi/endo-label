@@ -84,6 +84,7 @@ class _CellSnapshot:
     frame_index: int
     track_existed: bool
     mask: dict[str, Any] | None
+    score: float | None
     geometric_memory: list[dict[str, Any]]
     scribble_mask: dict[str, Any] | None
 
@@ -314,6 +315,10 @@ class SessionManager:
         return self.get_public()
 
     def close(self) -> dict[str, Any]:
+        with self._lock:
+            return self._close_unlocked()
+
+    def _close_unlocked(self) -> dict[str, Any]:
         if self._session is None:
             raise SessionNotFound("no active Session")
         self._fail_active_job("Session closed")
@@ -327,6 +332,10 @@ class SessionManager:
         return {"active": False}
 
     def reset(self) -> dict[str, Any]:
+        with self._lock:
+            return self._reset_unlocked()
+
+    def _reset_unlocked(self) -> dict[str, Any]:
         if self._session is None:
             raise SessionNotFound("no active Session")
         self._ensure_not_propagating()
@@ -465,6 +474,12 @@ class SessionManager:
         )
 
     def update_track_label(self, track_id: int, label: str) -> dict[str, Any]:
+        with self._lock:
+            return self._update_track_label_unlocked(track_id, label)
+
+    def _update_track_label_unlocked(
+        self, track_id: int, label: str
+    ) -> dict[str, Any]:
         if self._session is None:
             raise SessionNotFound("no active Session")
         self._ensure_not_propagating()
@@ -478,6 +493,10 @@ class SessionManager:
         return self.get_public()
 
     def delete_track(self, track_id: int) -> dict[str, Any]:
+        with self._lock:
+            return self._delete_track_unlocked(track_id)
+
+    def _delete_track_unlocked(self, track_id: int) -> dict[str, Any]:
         if self._session is None:
             raise SessionNotFound("no active Session")
         self._ensure_not_propagating()
@@ -496,6 +515,12 @@ class SessionManager:
 
     def clear_frame_mask(self, track_id: int, frame_index: int) -> dict[str, Any]:
         """Drop Active-Track pixel mask on one Frame; Track stays."""
+        with self._lock:
+            return self._clear_frame_mask_unlocked(track_id, frame_index)
+
+    def _clear_frame_mask_unlocked(
+        self, track_id: int, frame_index: int
+    ) -> dict[str, Any]:
         if self._session is None:
             raise SessionNotFound("no active Session")
         self._ensure_not_propagating()
@@ -518,6 +543,7 @@ class SessionManager:
                 frame_index=frame_index,
                 track_existed=True,
                 mask=_copy_mask(track.masks[frame_index]),
+                score=track.score,
                 geometric_memory=_copy_points(
                     track.geometric_memory.get(frame_index, [])
                 ),
@@ -627,6 +653,7 @@ class SessionManager:
                 "undone": False,
                 "session": self.get_public(frame_index=frame_index),
             }
+        track.score = snap.score
         if snap.mask is None:
             track.masks.pop(frame_index, None)
             track.geometric_memory.pop(frame_index, None)
@@ -1105,6 +1132,11 @@ class SessionManager:
             except Exception as exc:
                 raise PredictorRuntimeError(str(exc)) from exc
             if not scribble_mask:
+                self._rollback_scribble_memory(
+                    track_id=model_track_id,
+                    frame_index=frame_index,
+                    prior_mask=pre_scribble_mask,
+                )
                 public = [t.to_public(frame_index=frame_index) for t in s.tracks]
                 return PredictResult(
                     frame_index=frame_index,
@@ -1174,6 +1206,7 @@ class SessionManager:
                 mask=_copy_mask(target.masks[frame_index])
                 if target is not None and frame_index in target.masks
                 else None,
+                score=target.score if target is not None else None,
                 geometric_memory=_copy_points(
                     target.geometric_memory.get(frame_index, [])
                 )

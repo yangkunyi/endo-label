@@ -162,6 +162,56 @@ class _RecordingScribble(FakeScribbleModel):
         return super().predict(**kwargs)
 
 
+class _RecordingMemoryScribble(FakeScribbleModel):
+    """Fake Scribble that records mask-memory loads and clears."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.loads: list[dict] = []
+        self.clears: list[dict] = []
+
+    def load_memory(
+        self,
+        *,
+        session_id: str,
+        track_id: int,
+        frame_index: int,
+        mask: dict,
+    ) -> None:
+        self.loads.append(
+            {
+                "session_id": session_id,
+                "track_id": track_id,
+                "frame_index": frame_index,
+                "counts": list(mask.get("counts") or []),
+            }
+        )
+        super().load_memory(
+            session_id=session_id,
+            track_id=track_id,
+            frame_index=frame_index,
+            mask=mask,
+        )
+
+    def clear_memory(
+        self,
+        *,
+        session_id: str,
+        track_id: int | None = None,
+        frame_index: int | None = None,
+    ) -> None:
+        self.clears.append(
+            {
+                "session_id": session_id,
+                "track_id": track_id,
+                "frame_index": frame_index,
+            }
+        )
+        super().clear_memory(
+            session_id=session_id, track_id=track_id, frame_index=frame_index
+        )
+
+
 def _track_frame(client: TestClient, track_id: int, frame_index: int = 0) -> dict:
     session = client.get("/api/session", params={"frame_index": frame_index}).json()
     return next(row for row in session["tracks"] if row["track_id"] == track_id)
@@ -1005,7 +1055,8 @@ def test_undo_of_creating_predict_keeps_track_with_masks_on_other_frames(
 def test_undo_after_scribble_carve_restores_the_prior_silhouette(
     tmp_path: Path,
 ) -> None:
-    client = _sitting_with(tmp_path)
+    scrib = _RecordingMemoryScribble()
+    client = _sitting_with(tmp_path, scribble=scrib)
     _open(client)
     first = client.post(
         "/api/session/predict",
@@ -1037,6 +1088,66 @@ def test_undo_after_scribble_carve_restores_the_prior_silhouette(
         row for row in undone["session"]["tracks"] if row["track_id"] == tid
     )
     assert list(track["mask"]["counts"]) == prior_counts
+
+    # Undo reloaded the pre-edit silhouette into Scribble mask-memory, not
+    # just the Track mask; the last load is the undo's restore.
+    restored = scrib.loads[-1]
+    assert restored["track_id"] == tid
+    assert restored["frame_index"] == 0
+    assert list(restored["counts"]) == prior_counts
+
+
+def test_undo_of_refine_restores_the_concept_score(tmp_path: Path) -> None:
+    client = _sitting_with(tmp_path)
+    _open(client)
+    concept = client.post(
+        "/api/session/predict",
+        json={"frame_index": 0, "text": "grasper"},
+    )
+    assert concept.status_code == 200, concept.text
+    tid = concept.json()["tracks"][0]["track_id"]
+    score = concept.json()["tracks"][0]["score"]
+    assert score is not None
+
+    refined = client.post(
+        "/api/session/predict",
+        json={
+            "frame_index": 0,
+            "track_id": tid,
+            "points": [[0.8, 0.8]],
+            "point_labels": [1],
+        },
+    )
+    assert refined.status_code == 200, refined.text
+    assert refined.json()["tracks"][0]["score"] is None
+
+    undone = _undo(client)
+    assert undone["undone"] is True
+    track = next(
+        row for row in undone["session"]["tracks"] if row["track_id"] == tid
+    )
+    assert track["score"] == score
+
+
+def test_undo_conflicts_while_propagate_job_runs(tmp_path: Path) -> None:
+    client = _sitting_with(tmp_path)
+    _open(client)
+    seeded = client.post("/api/session/predict", json=_POINT)
+    assert seeded.status_code == 200, seeded.text
+    job = _start_propagate(client)
+    assert job["status"] == "queued"
+
+    refused = client.post("/api/session/undo", json={"frame_index": 0})
+    assert refused.status_code == 409, refused.text
+    assert "Propagate Job is running" in refused.json()["detail"]
+
+
+def test_undo_on_out_of_range_frame_is_404(tmp_path: Path) -> None:
+    client = _sitting_with(tmp_path)
+    _open(client)
+    response = client.post("/api/session/undo", json={"frame_index": 99})
+    assert response.status_code == 404, response.text
+    assert "out of range" in response.json()["detail"]
 
 
 def test_track_label_patch_persists_annotation_immediately(
