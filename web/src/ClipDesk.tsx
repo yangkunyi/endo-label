@@ -1246,6 +1246,7 @@ function LibraryList({
   inBrush,
   onPick,
   onToggleBrush,
+  brushIdentity,
   laneVisible,
   onToggleLane,
   disabled,
@@ -1262,6 +1263,7 @@ function LibraryList({
   inBrush: (name: string) => boolean;
   onPick: (name: string) => void;
   onToggleBrush: (name: string) => void;
+  brushIdentity: (name: string) => BrushIdentity;
   laneVisible: (name: string) => boolean;
   onToggleLane: (name: string) => void;
   disabled: boolean;
@@ -1277,6 +1279,7 @@ function LibraryList({
   const [renameFrom, setRenameFrom] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const trashBrush = useDeskStore((s) => s.trashBrush);
 
   useEffect(() => () => {
     if (clickTimer.current != null) {
@@ -1420,7 +1423,10 @@ function LibraryList({
                     return;
                   }
                   void run(async () => {
-                    const next = await sendJson<Vocab>(vocabDeletePath(listName, name), "DELETE");
+                    const next = await trashBrush(
+                      brushIdentity(name),
+                      sendJson<Vocab>(vocabDeletePath(listName, name), "DELETE"),
+                    );
                     await mutateVocab(next, { revalidate: false });
                     await onAfterChange?.();
                   });
@@ -1583,6 +1589,7 @@ function ClassEditor({
           names={classTags}
           isOnThisFrame={(name) => current.includes(name)}
           inBrush={(name) => brush.class.includes(name)}
+          brushIdentity={(name) => ({ kind: "class", name })}
           laneVisible={laneVisible}
           onToggleLane={onToggleLane}
           disabled={frameCount <= 0}
@@ -1669,6 +1676,7 @@ function PhaseEditor({
           names={phases}
           isOnThisFrame={(name) => name === current}
           inBrush={(name) => brush.phase === name}
+          brushIdentity={(name) => ({ kind: "phase", name })}
           laneVisible={laneVisible}
           onToggleLane={onToggleLane}
           disabled={frameCount <= 0}
@@ -1730,6 +1738,7 @@ function TripletEditor({
   const clickTimer = useRef<number | null>(null);
   const brush = useDeskStore((s) => s.brush);
   const toggleBrush = useDeskStore((s) => s.toggleBrush);
+  const trashBrush = useDeskStore((s) => s.trashBrush);
 
   useEffect(() => () => {
     if (clickTimer.current != null) {
@@ -1783,7 +1792,10 @@ function TripletEditor({
     }
     setError(null);
     try {
-      const next = await sendJson<Vocab>(vocabTripleDeletePath(row.instrument, row.verb, row.target), "DELETE");
+      const next = await trashBrush(
+        { kind: "triplet", instrument: row.instrument, verb: row.verb, target: row.target },
+        sendJson<Vocab>(vocabTripleDeletePath(row.instrument, row.verb, row.target), "DELETE"),
+      );
       await mutateVocab(next, { revalidate: false });
       await mutateTriplet();
     } catch (err) {

@@ -228,6 +228,8 @@ type DeskState = {
   clearSpanStart: () => void;
   toggleBrush: (identity: BrushIdentity) => void;
   dropBrush: (identity: BrushIdentity) => void;
+  /** Drops the identity from its kind's Brush once the trash request resolves; a failed request keeps the Brush. */
+  trashBrush: <T>(identity: BrushIdentity, request: Promise<T>) => Promise<T>;
   setLaneVisible: (key: string, visible: boolean) => void;
 };
 
@@ -280,6 +282,11 @@ export const useDeskStore = create<DeskState>((set, get) => ({
   clearSpanStart: () => set({ spanStart: null }),
   toggleBrush: (identity) => set((s) => ({ brush: toggleBrushMembership(s.brush, identity) })),
   dropBrush: (identity) => set((s) => ({ brush: dropBrushIdentity(s.brush, identity) })),
+  trashBrush: async (identity, request) => {
+    const result = await request;
+    set((s) => ({ brush: dropBrushIdentity(s.brush, identity) }));
+    return result;
+  },
   setLaneVisible: (key, visible) =>
     set((s) => {
       const laneVisibility = { ...s.laneVisibility, [key]: visible };

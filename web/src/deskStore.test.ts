@@ -182,3 +182,108 @@ test("setLaneVisible stores the eye choice without touching other keys", () => {
     "class:blurred": true,
   });
 });
+
+const vocabResponse = { phases: [], class_tags: [], triples: [] };
+
+function armAllKinds() {
+  useDeskStore.getState().toggleBrush({ kind: "class", name: "grasper" });
+  useDeskStore.getState().toggleBrush({ kind: "class", name: "blurred" });
+  useDeskStore.getState().toggleBrush({ kind: "phase", name: "dissection" });
+  useDeskStore.getState().toggleBrush({ kind: "triplet", instrument: "grasper", verb: "pull", target: "tissue" });
+  useDeskStore.getState().toggleBrush({ kind: "triplet", instrument: "scissors", verb: "cut", target: "duct" });
+}
+
+test("trashing a class tag drops it from the class Brush; other kinds stay", async () => {
+  armAllKinds();
+  const next = await useDeskStore.getState().trashBrush(
+    { kind: "class", name: "grasper" },
+    Promise.resolve(vocabResponse),
+  );
+  expect(next).toEqual(vocabResponse);
+  const s = useDeskStore.getState();
+  expect(s.brush.class).toEqual(["blurred"]);
+  expect(s.brush.phase).toBe("dissection");
+  expect(s.brush.triplet).toEqual([
+    { instrument: "grasper", verb: "pull", target: "tissue" },
+    { instrument: "scissors", verb: "cut", target: "duct" },
+  ]);
+});
+
+test("trashing a phase drops it from the phase Brush; other kinds stay", async () => {
+  armAllKinds();
+  await useDeskStore.getState().trashBrush(
+    { kind: "phase", name: "dissection" },
+    Promise.resolve(vocabResponse),
+  );
+  const s = useDeskStore.getState();
+  expect(s.brush.phase).toBeNull();
+  expect(s.brush.class).toEqual(["grasper", "blurred"]);
+  expect(s.brush.triplet).toEqual([
+    { instrument: "grasper", verb: "pull", target: "tissue" },
+    { instrument: "scissors", verb: "cut", target: "duct" },
+  ]);
+});
+
+test("trashing an exact triple drops that triple from the triplet Brush; other kinds and rows stay", async () => {
+  armAllKinds();
+  await useDeskStore.getState().trashBrush(
+    { kind: "triplet", instrument: "grasper", verb: "pull", target: "tissue" },
+    Promise.resolve(vocabResponse),
+  );
+  const s = useDeskStore.getState();
+  expect(s.brush.triplet).toEqual([{ instrument: "scissors", verb: "cut", target: "duct" }]);
+  expect(s.brush.class).toEqual(["grasper", "blurred"]);
+  expect(s.brush.phase).toBe("dissection");
+});
+
+test("trashing a Vocab name that is not in the Brush leaves every kind untouched", async () => {
+  armAllKinds();
+  await useDeskStore.getState().trashBrush({ kind: "class", name: "unused" }, Promise.resolve(vocabResponse));
+  await useDeskStore.getState().trashBrush({ kind: "phase", name: "unused" }, Promise.resolve(vocabResponse));
+  await useDeskStore.getState().trashBrush(
+    { kind: "triplet", instrument: "irrigator", verb: "wash", target: "field" },
+    Promise.resolve(vocabResponse),
+  );
+  const s = useDeskStore.getState();
+  expect(s.brush.class).toEqual(["grasper", "blurred"]);
+  expect(s.brush.phase).toBe("dissection");
+  expect(s.brush.triplet).toEqual([
+    { instrument: "grasper", verb: "pull", target: "tissue" },
+    { instrument: "scissors", verb: "cut", target: "duct" },
+  ]);
+});
+
+test("trash leaves the Lane-visibility store alone", async () => {
+  armAllKinds();
+  useDeskStore.setState({ laneVisibility: { "class:grasper": false, "phase:dissection": true } });
+  await useDeskStore.getState().trashBrush({ kind: "class", name: "grasper" }, Promise.resolve(vocabResponse));
+  await useDeskStore.getState().trashBrush({ kind: "phase", name: "dissection" }, Promise.resolve(vocabResponse));
+  expect(useDeskStore.getState().laneVisibility).toEqual({
+    "class:grasper": false,
+    "phase:dissection": true,
+  });
+});
+
+test("a failed trash request keeps the Brush exactly as it was", async () => {
+  armAllKinds();
+  const store = useDeskStore.getState();
+  await expect(
+    store.trashBrush({ kind: "class", name: "grasper" }, Promise.reject(new Error("HTTP 500"))),
+  ).rejects.toThrow("HTTP 500");
+  await expect(
+    store.trashBrush({ kind: "phase", name: "dissection" }, Promise.reject(new Error("HTTP 500"))),
+  ).rejects.toThrow("HTTP 500");
+  await expect(
+    store.trashBrush(
+      { kind: "triplet", instrument: "grasper", verb: "pull", target: "tissue" },
+      Promise.reject(new Error("HTTP 500")),
+    ),
+  ).rejects.toThrow("HTTP 500");
+  const s = useDeskStore.getState();
+  expect(s.brush.class).toEqual(["grasper", "blurred"]);
+  expect(s.brush.phase).toBe("dissection");
+  expect(s.brush.triplet).toEqual([
+    { instrument: "grasper", verb: "pull", target: "tissue" },
+    { instrument: "scissors", verb: "cut", target: "duct" },
+  ]);
+});
