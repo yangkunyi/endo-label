@@ -21,7 +21,7 @@ One exclusive surgical step along a Clip. Canonical store: one Phase per Frame. 
 _Avoid_: class (stackable), step (procedure documents)
 
 **Frame class** (spoken **class**):
-A named flag on a Frame that can stack with others (tool present, `blurred`, …). Names are a customizable list. The labeler may paint one flag on or off across an interval; other flags on those Frames stay.
+A named flag on a Frame that can stack with others (tool present, `blurred`, …). Names are a customizable list. The labeler may paint one or more flags on or off across an interval; other flags on those Frames stay.
 _Avoid_: Phase; CVS as its own task type
 
 **Triplet** (spoken **triplet**):
@@ -53,12 +53,28 @@ Disk store of mask silhouettes only (`data/mask/`). Not an umbrella word.
 Read-only source media (JPEG Clip folders and video files). This service never writes into the pool. Transcoded JPEG caches live outside it (`data/video-cache/`).
 
 **Ruler**:
-The always-present unlabeled seek track directly under the picture. Not a label lane. An empty Clip has only this track.
+The always-present unlabeled seek track directly under the picture. Not a label lane. An empty Clip still has this track; Lanes sit in the Lane well below it.
 _Avoid_: progress bar; MediaTimeRange; treating an unlabeled dim lane as the seek
 
 **Playhead**:
-The cursor on the Ruler showing the current Frame. Draggable on the Ruler only, frame-snapped. A display-only stem may cross label lanes; interval bars are not draggable.
-_Avoid_: cursor (text caret); using Playhead to mean the Frame index itself; dragging Playhead on interval bars
+The cursor on the Ruler showing the current Frame. Draggable on the Ruler only, frame-snapped. A display-only stem may cross Lanes. Clicking a Lane bar seeks to the Frame under the pointer. A selected bar can be trimmed by dragging its ends.
+_Avoid_: cursor (text caret); using Playhead to mean the Frame index itself; dragging the Playhead on interval bars; treating a bar click as a jump to the bar’s first Frame
+
+**Lane**:
+One row under the Ruler for a single Vocab identity of the focused Task type. Colored interval bars for that identity sit on it. Not a seek. A click on a bar still seeks (Playhead); holding Shift while clicking selects the bar for delete or trim.
+_Avoid_: Ruler; treating an unlabeled dim row as the seek; using the player progress range to select or delete labels
+
+**Lane well**:
+The reserved strip under the Ruler that holds visible Lanes. Its height does not follow how many Lanes exist and does not change the picture size. An empty Clip still shows this strip.
+_Avoid_: growing the strip with each new identity; overlaying Lanes on the picture
+
+**Lane visibility**:
+Sitting: whether a Vocab identity’s Lane is shown in the Lane well. Independent of Library Selection, Brush, and whether that identity is on the current Frame. Identities already present on the Clip start visible; unused ones start hidden (the labeler shows an empty Lane to paint them). A labeled Lane may still be hidden. Hiding does not delete labels or the Vocab name.
+_Avoid_: treating hide as Vocab trash; treating a hidden Lane as unlabeled
+
+**Brush**:
+Sitting set of Vocab identities the next interval paint will write or remove. Independent of Library Selection (whether those identities are on the current Frame). Holds identities of one Task type at a time; class and triplet may hold several; phase at most one.
+_Avoid_: paint chip as the name for this set; using Library Selection as the span payload; Arm; scribble (that is mask)
 
 **Task focus**:
 Which of phase / class / triplet the right rail is editing. One at a time. The other two show as a read-only summary on this Frame. Disk is unchanged: several Task types may exist on the same Frame. mask is not a focus tab.
@@ -70,7 +86,7 @@ _Avoid_: bare unbordered text headings with plain `<hr>` dividers
 
 **Library Selection**:
 The visual state of a Library row when its identity is present on the current Frame: a soft semantic-tint background, subtle border, and a checkmark (`✓`) indicator.
-_Avoid_: aggressive indigo stripe / scale rings; unselected-indistinguishable dark fills
+_Avoid_: aggressive indigo stripe / scale rings; unselected-indistinguishable dark fills; treating this state as the Brush; treating the Lane-visibility eye as this-Frame on/off
 
 **Triplet Grid**:
 The structured three-column table for exact triples (instrument, verb, target) with vertical hairline dividers (`divide-x`) between cells, supporting inline editing inside each cell.

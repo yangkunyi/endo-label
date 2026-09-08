@@ -21,4 +21,4 @@
 
 Interval payload is Brush, stored per Task type in `deskStore` (`class` / `triplet` / `phase`). Library name still writes this Frame only. Row control `aria-label="Brush"` toggles membership with no HTTP. Footer lists the focused Brush; × drops one. Empty Brush disables Mark from / Apply / Remove / `i` `[` `o` `]`. Clip change keeps Brush and clears Mark from. One identity per kind this ticket; several identities stay ticket 03.
 
-On `dev1`. `tsc` 0; vitest 34. Playwright not run.
+Commit `a8b5a9b` on `dev1`. `tsc` 0; vitest 34. Playwright not run. Class/triplet Brush is still one-slot (second pick replaces); ticket 03 opens the set.
