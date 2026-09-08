@@ -7,6 +7,6 @@ clips:
     path: fixtures/frames/CLIP_E2E_B
   - id: CLIP_VID
     kind: video
-    path: ../../tests/fixtures/tiny.mp4
+    path: fixtures/tiny.mp4
 labels_root: .work/labels
 annotations_root: .work/mask

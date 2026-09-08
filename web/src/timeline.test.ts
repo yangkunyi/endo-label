@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { foldClass, foldPhase, foldTriplet, labelColor } from "./timeline";
+import { foldClass, foldPhase, foldTriplet, frameFromClientX, labelColor } from "./timeline";
 
 test("phase folds one lane per phase name", () => {
   expect(foldPhase(4, { "0": "Calot", "1": "Calot", "3": "Pack" })).toEqual([
@@ -52,5 +52,19 @@ test("labelColor is stable, distinct, and desaturated for dark surfaces", () => 
   for (const identity of ["Calot", "blurred", "grasper / retract / gallbladder"]) {
     expect(labelColor(identity)).toMatch(/^hsl\(\d+ 35% 55%\)$/);
   }
+});
+
+test("frameFromClientX maps the pointer onto inclusive 0..N-1", () => {
+  expect(frameFromClientX(100, 100, 100, 4)).toBe(0);
+  expect(frameFromClientX(124, 100, 100, 4)).toBe(0);
+  expect(frameFromClientX(125, 100, 100, 4)).toBe(1);
+  expect(frameFromClientX(199, 100, 100, 4)).toBe(3);
+  expect(frameFromClientX(200, 100, 100, 4)).toBe(3);
+  expect(frameFromClientX(50, 100, 100, 4)).toBe(0);
+  expect(frameFromClientX(250, 100, 100, 4)).toBe(3);
+});
+
+test("frameFromClientX with no Frames is 0", () => {
+  expect(frameFromClientX(150, 100, 100, 0)).toBe(0);
 });
 

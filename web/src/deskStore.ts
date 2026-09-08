@@ -7,10 +7,114 @@ export type SpanStart = {
   frameIndex: number;
 };
 
-export type PaintChip =
+export type BrushIdentity =
   | { kind: "phase"; name: string }
   | { kind: "class"; name: string }
   | { kind: "triplet"; instrument: string; verb: string; target: string };
+
+export type DeskBrush = {
+  class: string[];
+  triplet: Array<{ instrument: string; verb: string; target: string }>;
+  phase: string | null;
+};
+
+function tripleKey(row: { instrument: string; verb: string; target: string }): string {
+  return `${row.instrument} / ${row.verb} / ${row.target}`;
+}
+
+export function brushOfKind(brush: DeskBrush, kind: EditorKind): BrushIdentity[] {
+  if (kind === "class") {
+    return brush.class.map((name) => ({ kind: "class", name }));
+  }
+  if (kind === "phase") {
+    return brush.phase ? [{ kind: "phase", name: brush.phase }] : [];
+  }
+  return brush.triplet.map((row) => ({ kind: "triplet", ...row }));
+}
+
+function toggleBrushMembership(brush: DeskBrush, identity: BrushIdentity): DeskBrush {
+  if (identity.kind === "class") {
+    const has = brush.class.includes(identity.name);
+    return {
+      ...brush,
+      class: has ? brush.class.filter((name) => name !== identity.name) : [...brush.class, identity.name],
+    };
+  }
+  if (identity.kind === "phase") {
+    return { ...brush, phase: brush.phase === identity.name ? null : identity.name };
+  }
+  const key = tripleKey(identity);
+  const has = brush.triplet.some((row) => tripleKey(row) === key);
+  return {
+    ...brush,
+    triplet: has
+      ? brush.triplet.filter((row) => tripleKey(row) !== key)
+      : [...brush.triplet, { instrument: identity.instrument, verb: identity.verb, target: identity.target }],
+  };
+}
+
+function dropBrushIdentity(brush: DeskBrush, identity: BrushIdentity): DeskBrush {
+  if (identity.kind === "class") {
+    return { ...brush, class: brush.class.filter((name) => name !== identity.name) };
+  }
+  if (identity.kind === "phase") {
+    return { ...brush, phase: brush.phase === identity.name ? null : brush.phase };
+  }
+  const key = tripleKey(identity);
+  return { ...brush, triplet: brush.triplet.filter((row) => tripleKey(row) !== key) };
+}
+
+export function laneVisibilityKey(kind: EditorKind, identity: string): string {
+  return `${kind}:${identity}`;
+}
+
+/** Missing key falls back to present-on-Clip; any stored boolean wins. */
+export function laneIsVisible(
+  stored: Record<string, boolean>,
+  key: string,
+  presentOnClip: boolean,
+): boolean {
+  const value = stored[key];
+  return typeof value === "boolean" ? value : presentOnClip;
+}
+
+export const LANE_VISIBILITY_STORAGE_KEY = "endo_label:lane-visibility-v1";
+
+export function normalizeLaneVisibility(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  const out: Record<string, boolean> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (key && typeof entry === "boolean") {
+      out[key] = entry;
+    }
+  }
+  return out;
+}
+
+function readStoredLaneVisibility(): Record<string, boolean> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const raw = window.localStorage.getItem(LANE_VISIBILITY_STORAGE_KEY);
+    return normalizeLaneVisibility(raw ? JSON.parse(raw) : null);
+  } catch {
+    return {};
+  }
+}
+
+function saveLaneVisibility(map: Record<string, boolean>) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(LANE_VISIBILITY_STORAGE_KEY, JSON.stringify(map));
+  } catch {
+    // localStorage can be unavailable in private browsing or a restricted iframe.
+  }
+}
 
 export type DeskLayout = {
   clipRailWidth: number;
@@ -114,14 +218,19 @@ type DeskState = {
   frameIndexes: Record<string, number>;
   layout: DeskLayout;
   spanStart: SpanStart | null;
-  paintChip: PaintChip | null;
+  brush: DeskBrush;
+  laneVisibility: Record<string, boolean>;
   openClip: (clipId: string, frameCount: number) => void;
   scrub: (frameIndex: number) => void;
   setLayout: (patch: Partial<DeskLayout>) => void;
   setEditorOrder: (order: EditorKind[]) => void;
   setSpanStart: (start: SpanStart | null) => void;
   clearSpanStart: () => void;
-  setPaintChip: (chip: PaintChip | null) => void;
+  toggleBrush: (identity: BrushIdentity) => void;
+  dropBrush: (identity: BrushIdentity) => void;
+  /** Drops the identity from its kind's Brush once the trash request resolves; a failed request keeps the Brush. */
+  trashBrush: <T>(identity: BrushIdentity, request: Promise<T>) => Promise<T>;
+  setLaneVisible: (key: string, visible: boolean) => void;
 };
 
 export const useDeskStore = create<DeskState>((set, get) => ({
@@ -131,7 +240,8 @@ export const useDeskStore = create<DeskState>((set, get) => ({
   frameIndexes: {},
   layout: readStoredLayout(),
   spanStart: null,
-  paintChip: null,
+  brush: { class: [], triplet: [], phase: null },
+  laneVisibility: readStoredLaneVisibility(),
   openClip: (clipId, frameCount) =>
     set((s) => {
       if (s.clipId === clipId) {
@@ -145,7 +255,6 @@ export const useDeskStore = create<DeskState>((set, get) => ({
         frameIndex,
         frameIndexes: { ...s.frameIndexes, [clipId]: frameIndex },
         spanStart: null,
-        paintChip: null,
       };
     }),
   scrub: (frameIndex) => {
@@ -171,5 +280,17 @@ export const useDeskStore = create<DeskState>((set, get) => ({
     }),
   setSpanStart: (spanStart) => set({ spanStart }),
   clearSpanStart: () => set({ spanStart: null }),
-  setPaintChip: (paintChip) => set({ paintChip }),
+  toggleBrush: (identity) => set((s) => ({ brush: toggleBrushMembership(s.brush, identity) })),
+  dropBrush: (identity) => set((s) => ({ brush: dropBrushIdentity(s.brush, identity) })),
+  trashBrush: async (identity, request) => {
+    const result = await request;
+    get().dropBrush(identity);
+    return result;
+  },
+  setLaneVisible: (key, visible) =>
+    set((s) => {
+      const laneVisibility = { ...s.laneVisibility, [key]: visible };
+      saveLaneVisibility(laneVisibility);
+      return { laneVisibility };
+    }),
 }));

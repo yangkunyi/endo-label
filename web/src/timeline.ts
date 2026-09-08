@@ -4,6 +4,21 @@ export type TimelineSeg = {
   label: string | null;
 };
 
+/** Map a pointer x onto Frame `0..N-1` using the same bins as the Ruler. */
+export function frameFromClientX(
+  clientX: number,
+  trackLeft: number,
+  trackWidth: number,
+  frameCount: number,
+): number {
+  if (frameCount <= 0) {
+    return 0;
+  }
+  const width = trackWidth || 1;
+  const frac = Math.min(1, Math.max(0, (clientX - trackLeft) / width));
+  return Math.min(frameCount - 1, Math.floor(frac * frameCount));
+}
+
 /** Stable sitting color for a phase name, class tag, or exact triple. Not stored. */
 export function labelColor(identity: string): string {
   let hash = 2166136261;
