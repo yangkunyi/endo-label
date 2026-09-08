@@ -284,7 +284,7 @@ export const useDeskStore = create<DeskState>((set, get) => ({
   dropBrush: (identity) => set((s) => ({ brush: dropBrushIdentity(s.brush, identity) })),
   trashBrush: async (identity, request) => {
     const result = await request;
-    set((s) => ({ brush: dropBrushIdentity(s.brush, identity) }));
+    get().dropBrush(identity);
     return result;
   },
   setLaneVisible: (key, visible) =>

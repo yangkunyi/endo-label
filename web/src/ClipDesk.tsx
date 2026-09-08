@@ -1793,7 +1793,7 @@ function TripletEditor({
     setError(null);
     try {
       const next = await trashBrush(
-        { kind: "triplet", instrument: row.instrument, verb: row.verb, target: row.target },
+        { kind: "triplet", ...row },
         sendJson<Vocab>(vocabTripleDeletePath(row.instrument, row.verb, row.target), "DELETE"),
       );
       await mutateVocab(next, { revalidate: false });
