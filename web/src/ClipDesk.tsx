@@ -238,7 +238,10 @@ export function ClipDesk() {
   const [pending, setPending] = useState<PendingMark[]>([]);
   const [scribbleWidth, setScribbleWidth] = useState(SCRIBBLE_WIDTH_DEFAULT);
   const [activeTrackId, setActiveTrackId] = useState<number | null>(null);
-  const [sessionTracks, setSessionTracks] = useState<TrackRow[]>([]);
+  // Session snapshot scoped to the Frame it was fetched for; leftover pins
+  // render only while that Frame is on screen (ticket 08).
+  const [sessionSnapshot, setSessionSnapshot] = useState<{ frame: number; tracks: TrackRow[] } | null>(null);
+  const sessionFetchSeq = useRef(0);
   const [propagateDirection, setPropagateDirection] = useState<PropagateDirection>("forward");
   const [propagateMaxFrames, setPropagateMaxFrames] = useState("");
   const [propagateJob, setPropagateJob] = useState<PropagateJobPublic | null>(null);
@@ -253,7 +256,12 @@ export function ClipDesk() {
   );
   const tracks: TrackRow[] = annotation?.tracks ?? [];
   const frameMasks = frameAnn?.masks ?? [];
-  const leftover = leftoverPinsForActive(sessionTracks, activeTrackId);
+  // A snapshot from another Frame renders no pins — including the window
+  // between scrub and its re-fetch landing (ticket 08 / story 36).
+  const leftover =
+    sessionSnapshot && sessionSnapshot.frame === frameIndex
+      ? leftoverPinsForActive(sessionSnapshot.tracks, activeTrackId)
+      : [];
 
   const togglePlayback = useCallback(() => {
     const el = videoRef.current;
@@ -277,17 +285,24 @@ export function ClipDesk() {
   }, []);
 
   const loadSessionFrame = useCallback(async (index: number) => {
+    const fetchSeq = ++sessionFetchSeq.current;
     try {
       const session = await getJson<SessionPublic>(sessionPath(index));
+      if (fetchSeq !== sessionFetchSeq.current) {
+        // A newer Frame fetch superseded this one; never apply the stale shot.
+        return;
+      }
       if (!session.active) {
         sessionOpen.current = false;
-        setSessionTracks([]);
+        setSessionSnapshot(null);
         return;
       }
       sessionOpen.current = true;
-      setSessionTracks(session.tracks ?? []);
+      setSessionSnapshot({ frame: index, tracks: session.tracks ?? [] });
     } catch {
-      setSessionTracks([]);
+      if (fetchSeq === sessionFetchSeq.current) {
+        setSessionSnapshot(null);
+      }
     }
   }, []);
 
@@ -387,7 +402,9 @@ export function ClipDesk() {
         setActiveTrackId((current) => nextActiveTrack(current, { kind: "created", trackId: created }));
       }
       sessionOpen.current = true;
-      await loadSessionFrame(frameIndex);
+      // pendingFrame tracks the Frame on screen: a scrub during Predict
+      // re-scopes the snapshot to that Frame, not the predicted one.
+      await loadSessionFrame(pendingFrame.current);
       await mutateAnnotation();
       await mutateFrameAnn();
     } catch (err) {
@@ -478,7 +495,10 @@ export function ClipDesk() {
       });
       sessionOpen.current = true;
       const sessionTracksNow = result.session.tracks ?? [];
-      setSessionTracks(sessionTracksNow);
+      // The response is in hand: supersede any in-flight frame fetch so its
+      // late landing cannot overwrite this snapshot.
+      sessionFetchSeq.current += 1;
+      setSessionSnapshot({ frame: frameIndex, tracks: sessionTracksNow });
       setActiveTrackId((current) => activeTrackOrNull(current, sessionTracksNow));
       await mutateAnnotation();
       await mutateFrameAnn();
@@ -679,11 +699,12 @@ export function ClipDesk() {
       return;
     }
     clearPredictTimer();
-    if (pendingRef.current.length === 0) {
-      return;
+    if (pendingRef.current.length > 0) {
+      pendingRef.current = dropPendingOnFrameChange(pendingRef.current, fromFrame, frameIndex);
+      setPending(pendingRef.current);
     }
-    pendingRef.current = dropPendingOnFrameChange(pendingRef.current, fromFrame, frameIndex);
-    setPending(pendingRef.current);
+    // Every Frame change re-scopes the snapshot: leftover pins from the
+    // previous Frame must not survive the scrub (ticket 08 / story 36).
     if (sessionOpen.current) {
       void loadSessionFrame(frameIndex);
     }
@@ -698,7 +719,8 @@ export function ClipDesk() {
     pendingRef.current = [];
     setPending([]);
     sessionOpen.current = false;
-    setSessionTracks([]);
+    sessionFetchSeq.current += 1;
+    setSessionSnapshot(null);
     setActiveTrackId(null);
     clearPredictTimer();
     stopJobPolling();
@@ -827,7 +849,7 @@ export function ClipDesk() {
             activeTrackId={activeTrackId}
             pendingCount={pending.length}
             scribbleWidth={scribbleWidth}
-            canUndo={sessionTracks.length > 0}
+            canUndo={(sessionSnapshot?.tracks.length ?? 0) > 0}
             busy={jobRunning}
             canPropagate={frameMasks.length > 0}
             propagateJob={propagateJob}
