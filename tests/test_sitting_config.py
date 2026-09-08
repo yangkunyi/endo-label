@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from endo_label.app import create_app
-from endo_label.config import default_config_path, load_settings
+from endo_label.config import ConfigError, default_config_path, load_settings
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -229,3 +229,52 @@ def test_cors_allows_this_worktree_and_main_vite_origins(tmp_path: Path) -> None
         "http://evil.example",
         "*",
     )
+
+
+def _worker_yaml(tmp_path: Path, body: str) -> Path:
+    config = tmp_path / "config.yaml"
+    config.write_text(body, encoding="utf-8")
+    return config
+
+
+def test_worker_backends_parse_from_yaml(tmp_path: Path) -> None:
+    config = _worker_yaml(
+        tmp_path,
+        "frames_root: /tmp/f\n"
+        "predictor_backend: sam31\n"
+        "gpu_id: 2\n"
+        "scribble_backend: scribble\n"
+        "scribble_model_path: models/scribble.pt\n"
+        "scribble_sam2_checkpoint: models/sam2.pt\n"
+        "scribble_gpu_id: 3\n",
+    )
+    settings = load_settings(config)
+    assert settings.predictor_backend == "sam31"
+    assert settings.gpu_id == 2
+    assert settings.scribble_backend == "scribble"
+    assert settings.scribble_model_path == tmp_path / "models" / "scribble.pt"
+    assert settings.scribble_sam2_checkpoint == tmp_path / "models" / "sam2.pt"
+    assert settings.scribble_gpu_id == 3
+
+
+def test_worker_backends_default_fake_without_yaml_keys(tmp_path: Path) -> None:
+    config = _worker_yaml(tmp_path, "frames_root: /tmp/f\n")
+    settings = load_settings(config)
+    assert settings.predictor_backend == "fake"
+    assert settings.scribble_backend == "fake"
+    assert settings.scribble_model_path is None
+
+
+def test_unknown_worker_backend_refuses(tmp_path: Path) -> None:
+    config = _worker_yaml(tmp_path, "frames_root: /tmp/f\npredictor_backend: vlm\n")
+    with pytest.raises(ConfigError, match="predictor_backend"):
+        load_settings(config)
+
+
+def test_sam31_paths_default_to_old_tool_kit(tmp_path: Path) -> None:
+    config = _worker_yaml(tmp_path, "frames_root: /tmp/f\npredictor_backend: sam31\n")
+    settings = load_settings(config)
+    assert settings.sam31_checkpoint == Path(
+        "/data3/yky/sam3_1_label_tool/sam31_label_kit/ckpt/sam3.1_multiplex.pt"
+    )
+    assert settings.sam31_repo == Path("/data3/yky/sam3_1_label_tool/sam3")

@@ -106,6 +106,32 @@ def _parse_clips(value: object, path: Path, base: Path) -> tuple[ClipEntry, ...]
     return tuple(entries)
 
 
+def _parse_backend(
+    value: object, path: Path, key: str, allowed: tuple[str, ...], default: str
+) -> str:
+    if value is None:
+        return default
+    text = str(value).strip()
+    if text not in allowed:
+        raise ConfigError(f"{path}: {key} must be one of {' / '.join(allowed)}")
+    return text
+
+
+def _optional_path(value: object, base: Path) -> Path | None:
+    if value is None or not str(value).strip():
+        return None
+    return _resolve_path(str(value).strip(), base)
+
+
+def _optional_int(value: object, path: Path, key: str) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ConfigError(f"{path}: {key} must be an integer") from None
+
+
 def load_settings(config_path: Path | str | None = None) -> Settings:
     path = Path(config_path) if config_path is not None else default_config_path()
     if not path.is_file():
@@ -153,6 +179,7 @@ def load_settings(config_path: Path | str | None = None) -> Settings:
         video_cache_root = _resolve_path(str(cache_raw).strip(), base)
 
     allowlist = tuple(entry.id for entry in clips) if clips else _clip_allowlist(data.get("clip_allowlist"), path)
+
     return Settings(
         frames_root=frames_root,
         clip_allowlist=allowlist,
@@ -160,4 +187,17 @@ def load_settings(config_path: Path | str | None = None) -> Settings:
         annotations_root=annotations_root,
         labels_root=labels_root,
         video_cache_root=video_cache_root,
+        predictor_backend=_parse_backend(
+            data.get("predictor_backend"), path, "predictor_backend", ("fake", "sam31"), "fake"
+        ),
+        sam31_checkpoint=_optional_path(data.get("sam31_checkpoint"), base)
+        or _default_sam31_checkpoint(),
+        sam31_repo=_optional_path(data.get("sam31_repo"), base) or _default_sam31_repo(),
+        gpu_id=_optional_int(data.get("gpu_id"), path, "gpu_id"),
+        scribble_backend=_parse_backend(
+            data.get("scribble_backend"), path, "scribble_backend", ("fake", "scribble"), "fake"
+        ),
+        scribble_model_path=_optional_path(data.get("scribble_model_path"), base),
+        scribble_sam2_checkpoint=_optional_path(data.get("scribble_sam2_checkpoint"), base),
+        scribble_gpu_id=_optional_int(data.get("scribble_gpu_id"), path, "scribble_gpu_id"),
     )
