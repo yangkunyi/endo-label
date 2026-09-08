@@ -1,3 +1,8 @@
+export type Me = {
+  username: string;
+  roles: { admin: boolean; reviewer: boolean; annotator: boolean };
+};
+
 export type ClipRow = { id: string; kind: "jpeg" | "video"; frame_count: number; fps: number };
 
 export type ClipListResponse = { clips: ClipRow[] };
@@ -179,7 +184,7 @@ async function readError(response: Response): Promise<string> {
 }
 
 export async function getJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+  const response = await fetch(url, { credentials: "include" });
   if (!response.ok) {
     throw new Error(await readError(response));
   }
@@ -193,6 +198,7 @@ export async function sendJson<T>(
 ): Promise<T> {
   const response = await fetch(url, {
     method,
+    credentials: "include",
     headers:
       body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),

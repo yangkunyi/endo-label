@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
+from endo_label.auth import install_auth, router as auth_router
 from endo_label.config import Settings, load_settings
 from endo_label.frame_class.router import make_router as class_router
 from endo_label.mask.http import create_app as create_mask_app
@@ -51,6 +52,8 @@ def _mount_built_desk(app: FastAPI, dist: Path) -> None:
 def create_app(settings: Settings | None = None, web_dist: Path | None = None):
     cfg = settings if settings is not None else load_settings()
     app = create_mask_app(cfg)
+    install_auth(app)
+    app.include_router(auth_router)
     app.include_router(phase_router(cfg))
     app.include_router(class_router(cfg))
     app.include_router(triplet_router(cfg))

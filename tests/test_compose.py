@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from endo_label.app import create_app
 from endo_label.config import Settings, load_settings
+from tests.sitting_http import authed_client, login, seed_admin
 
 _VOCAB_LISTS = ("phases", "class_tags", "triples")
 
@@ -44,15 +45,13 @@ def _sitting(tmp_path: Path, clip_ids: tuple[str, ...]) -> TestClient:
     hidden = frames / "HIDDENCLIP"
     hidden.mkdir()
     (hidden / "00001.jpg").write_bytes(b"hidden-jpeg")
-    return TestClient(
-        create_app(
-            Settings(
-                frames_root=frames,
-                clip_allowlist=clip_ids,
-                annotations_root=tmp_path / "mask",
-                labels_root=tmp_path / "labels",
-                predictor_backend="fake",
-            )
+    return authed_client(
+        Settings(
+            frames_root=frames,
+            clip_allowlist=clip_ids,
+            annotations_root=tmp_path / "mask",
+            labels_root=tmp_path / "labels",
+            predictor_backend="fake",
         )
     )
 
@@ -109,7 +108,7 @@ def test_yaml_clips_skip_bad_path_and_unknown_kind(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    client = TestClient(create_app(load_settings(yaml_path)))
+    client = authed_client(load_settings(yaml_path))
     clips = client.get("/api/clips")
     assert clips.status_code == 200
     assert clips.json()["clips"] == [
@@ -147,7 +146,7 @@ def test_video_clip_media_is_read_only_and_maps_frames(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     before = _TINY_MP4.stat().st_mtime_ns
-    client = TestClient(create_app(load_settings(yaml_path)))
+    client = authed_client(load_settings(yaml_path))
     listed = client.get("/api/clips").json()["clips"]
     assert listed == [{"id": "VID", "kind": "video", "frame_count": 2, "fps": 25}]
     meta = client.get("/api/clips/VID").json()
@@ -181,7 +180,7 @@ def test_listing_clips_does_not_write_frame_pool(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    client = TestClient(create_app(load_settings(yaml_path)))
+    client = authed_client(load_settings(yaml_path))
     assert client.get("/api/clips").status_code == 200
     assert client.get("/api/clips/GOOD/frames/0").status_code == 200
     assert jpeg.stat().st_mtime_ns == before
@@ -729,7 +728,9 @@ def test_class_span_is_durable_across_app_instances(tmp_path: Path) -> None:
         labels_root=tmp_path / "labels",
         predictor_backend="fake",
     )
+    seed_admin(settings)
     first = TestClient(create_app(settings))
+    login(first)
     _add_names(first, class_tags="blurred")
     painted = first.post(
         "/api/class/CLIPA/span",
@@ -737,6 +738,7 @@ def test_class_span_is_durable_across_app_instances(tmp_path: Path) -> None:
     )
     assert painted.status_code == 200
     second = TestClient(create_app(settings))
+    login(second)
     assert second.get("/api/class/CLIPA").json()["frames"] == {
         "0": ["blurred"],
         "1": ["blurred"],
@@ -886,7 +888,9 @@ def test_triplet_span_is_durable_across_app_instances(tmp_path: Path) -> None:
         labels_root=tmp_path / "labels",
         predictor_backend="fake",
     )
+    seed_admin(settings)
     first = TestClient(create_app(settings))
+    login(first)
     _add_triples(first, _GRASPER_RETRACT_GB)
     painted = first.post(
         "/api/triplet/CLIPA/span",
@@ -901,6 +905,7 @@ def test_triplet_span_is_durable_across_app_instances(tmp_path: Path) -> None:
     )
     assert painted.status_code == 200
     second = TestClient(create_app(settings))
+    login(second)
     assert second.get("/api/triplet/CLIPA").json()["frames"] == {
         "0": [{
             "id": 1,
@@ -1001,11 +1006,14 @@ def test_class_survives_new_app_instance(tmp_path: Path) -> None:
         labels_root=tmp_path / "labels",
         predictor_backend="fake",
     )
+    seed_admin(settings)
     first = TestClient(create_app(settings))
+    login(first)
     _add_names(first, class_tags=["grasper", "blurred"])
     put = first.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper", "blurred"]})
     assert put.status_code == 200
     second = TestClient(create_app(settings))
+    login(second)
     loaded = second.get("/api/class/CLIPA")
     assert loaded.status_code == 200
     assert loaded.json()["frames"] == {"0": ["grasper", "blurred"]}
@@ -1346,7 +1354,9 @@ def test_triplet_survives_new_app_instance(tmp_path: Path) -> None:
         labels_root=tmp_path / "labels",
         predictor_backend="fake",
     )
+    seed_admin(settings)
     first = TestClient(create_app(settings))
+    login(first)
     _add_triples(first, _GRASPER_RETRACT_GB)
     added = first.post(
         "/api/triplet/CLIPA/frames/0",
@@ -1354,6 +1364,7 @@ def test_triplet_survives_new_app_instance(tmp_path: Path) -> None:
     )
     assert added.status_code == 200
     second = TestClient(create_app(settings))
+    login(second)
     loaded = second.get("/api/triplet/CLIPA")
     assert loaded.status_code == 200
     assert loaded.json()["frames"] == {
@@ -1383,7 +1394,9 @@ def test_phase_survives_new_app_instance(tmp_path: Path) -> None:
         labels_root=tmp_path / "labels",
         predictor_backend="fake",
     )
+    seed_admin(settings)
     first = TestClient(create_app(settings))
+    login(first)
     _add_names(first, phases="Preparation")
     painted = first.post(
         "/api/phase/CLIPA/span",
@@ -1391,6 +1404,7 @@ def test_phase_survives_new_app_instance(tmp_path: Path) -> None:
     )
     assert painted.status_code == 200
     second = TestClient(create_app(settings))
+    login(second)
     loaded = second.get("/api/phase/CLIPA")
     assert loaded.status_code == 200
     assert loaded.json()["frames"] == {"0": "Preparation", "1": "Preparation"}
@@ -1963,17 +1977,16 @@ def test_vocab_triple_migrate_once_keeps_plus_row(tmp_path: Path) -> None:
         json={"instrument": "grasper", "verb": "retract", "target": "gallbladder"},
     )
     assert added.status_code == 200
-    second = TestClient(
-        create_app(
-            Settings(
-                frames_root=tmp_path / "frames",
-                clip_allowlist=("CLIPA",),
-                annotations_root=tmp_path / "mask",
-                labels_root=labels,
-                predictor_backend="fake",
-            )
-        )
+    second_settings = Settings(
+        frames_root=tmp_path / "frames",
+        clip_allowlist=("CLIPA",),
+        annotations_root=tmp_path / "mask",
+        labels_root=labels,
+        predictor_backend="fake",
     )
+    seed_admin(second_settings)
+    second = TestClient(create_app(second_settings))
+    login(second)
     body = second.get("/api/vocab").json()
     assert body["triples"] == [
         {"instrument": "grasper", "verb": "retract", "target": "gallbladder"},

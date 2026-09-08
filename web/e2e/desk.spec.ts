@@ -1,4 +1,5 @@
 import { expect, type APIRequestContext, type Locator, type Page, test } from "@playwright/test";
+import { loginApi } from "./auth";
 
 test.describe.configure({ mode: "serial" });
 
@@ -16,8 +17,9 @@ async function ensureVocab(request: APIRequestContext, lists: Record<string, str
   }
 }
 
-test.beforeEach(async ({ request }) => {
-  await ensureVocab(request, {
+test.beforeEach(async ({ page }) => {
+  await loginApi(page.request);
+  await ensureVocab(page.request, {
     phases: ["Preparation", "Clipping and cutting"],
     class_tags: ["grasper", "hook", "clipper", "scissors", "blurred"],
   });

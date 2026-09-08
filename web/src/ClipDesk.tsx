@@ -299,7 +299,7 @@ export function ClipDesk() {
   }, [data, openClip]);
 
   return (
-    <main className="flex h-screen min-h-0 flex-col overflow-hidden bg-background text-foreground">
+    <main className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
       <header className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-2">
         <span className="text-sm font-semibold tracking-wide">endo_label</span>
         <span className="text-muted-foreground" aria-hidden="true">/</span>

@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from endo_label.app import create_app
 from endo_label.config import Settings
+from tests.sitting_http import authed_client
 
 REPO = Path(__file__).resolve().parents[1]
 DESK_HTML = (
@@ -44,7 +44,7 @@ def _write_dist(path: Path) -> Path:
 
 def _client(tmp_path: Path, *, web_dist: Path | None = None) -> TestClient:
     dist = web_dist if web_dist is not None else _write_dist(tmp_path / "dist")
-    return TestClient(create_app(_settings(tmp_path), web_dist=dist))
+    return authed_client(_settings(tmp_path), web_dist=dist)
 
 
 def test_built_desk_is_served_at_root_and_api_stays_compose_http(tmp_path: Path) -> None:
@@ -99,7 +99,7 @@ def test_sitting_without_built_desk_still_serves_api(tmp_path: Path) -> None:
     reason="web/dist not built",
 )
 def test_default_sitting_serves_repo_web_dist(tmp_path: Path) -> None:
-    client = TestClient(create_app(_settings(tmp_path)))
+    client = authed_client(_settings(tmp_path))
     desk = client.get("/")
     assert desk.status_code == 200
     assert b'id="root"' in desk.content

@@ -46,6 +46,10 @@ One Track’s pixel mask on one Frame.
 Live **mask** working state (prompts, Tracks, SAM / Scribble memory). At most one. Opens when mask Predict / Propagate actually runs. Phase, class, and triplet do not need a Session.
 _Avoid_: requiring a Session to edit phase/class/triplet
 
+**Account**:
+One person's login, created by the admin (name + password, changed by its owner). Carries stacked role flags — admin, reviewer, annotator — any combination. Roles gate what the Account may call; being the item's assignee gates whether a given write is theirs.
+_Avoid_: Session (that is the mask working state); one role per person; self-signup; email recovery
+
 **Annotation**:
 Disk store of mask silhouettes only (`data/mask/`). Not an umbrella word.
 

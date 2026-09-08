@@ -10,3 +10,4 @@ clips:
     path: ../../tests/fixtures/tiny.mp4
 labels_root: .work/labels
 annotations_root: .work/mask
+coordination_db: .work/coordination.sqlite

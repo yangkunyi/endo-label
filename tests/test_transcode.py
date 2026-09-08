@@ -12,8 +12,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 import endo_label.catalog as catalog
-from endo_label.app import create_app
 from endo_label.config import Settings
+from tests.sitting_http import authed_client
 
 # 1x1 white JPEG. Real pixels so ffmpeg can decode it in the smoke test.
 _ONE_PX_JPEG = base64.b64decode(
@@ -30,15 +30,13 @@ def _sitting(tmp_path: Path, jpeg_bytes: bytes = _ONE_PX_JPEG) -> TestClient:
     clip.mkdir(parents=True)
     (clip / "00001.jpg").write_bytes(jpeg_bytes)
     (clip / "00002.jpg").write_bytes(jpeg_bytes)
-    return TestClient(
-        create_app(
-            Settings(
-                frames_root=frames,
-                clip_allowlist=("CLIPA",),
-                annotations_root=tmp_path / "mask",
-                labels_root=tmp_path / "labels",
-                predictor_backend="fake",
-            )
+    return authed_client(
+        Settings(
+            frames_root=frames,
+            clip_allowlist=("CLIPA",),
+            annotations_root=tmp_path / "mask",
+            labels_root=tmp_path / "labels",
+            predictor_backend="fake",
         )
     )
 
