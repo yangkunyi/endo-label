@@ -106,6 +106,24 @@ export type PropagateJobPublic = {
   error: string | null;
 };
 
+export type WorkerHealth = {
+  ready: boolean;
+  status: string;
+  backend?: string;
+  message?: string | null;
+};
+
+export type HealthResponse = {
+  ok: boolean;
+  service: string;
+  version: string;
+  worker: WorkerHealth;
+};
+
+export function healthPath(): string {
+  return "/api/health";
+}
+
 export function clipDeskPath(clipId: string): string {
   return `/clips/${encodeURIComponent(clipId)}`;
 }

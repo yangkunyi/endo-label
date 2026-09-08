@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
-import { Check, Trash2 } from "lucide-react";
+import { Check, Loader2, Trash2 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
 import {
@@ -15,6 +15,7 @@ import {
   frameTripletRows,
   getJson,
   getJsonAllow404,
+  healthPath,
   jobPath,
   phaseClipPath,
   phaseFramePath,
@@ -43,6 +44,7 @@ import {
   type ClipListResponse,
   type ClipMeta,
   type FrameAnnotations,
+  type HealthResponse,
   type PhaseDoc,
   type PredictResult,
   type PropagateDirection,
@@ -79,6 +81,12 @@ import {
 import { libraryRowSemanticStyle, nowEmptyText } from "./editorCards";
 import { cn } from "./lib/utils";
 import { foldClass, foldPhase, foldTriplet, labelColor, type TimelineLane } from "./timeline";
+import {
+  WORKER_LOADING_LABEL,
+  formatElapsed,
+  workerLoadingToast,
+  workerStatusIsLoading,
+} from "./workerStatus";
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
@@ -248,6 +256,25 @@ export function ClipDesk() {
   const jobPollRef = useRef<number | null>(null);
   // Story 86: overlay geometry input is off while a Job runs.
   const jobRunning = propagateJob != null;
+  // Ticket 09: the Job blocks, so the desk shows an indeterminate state with
+  // elapsed time — the whole span streams inside the first poll, so no honest
+  // per-frame number exists (maintainer decision: no async).
+  const [propagateElapsed, setPropagateElapsed] = useState(0);
+  const { data: health } = useSWR(healthPath(), getJson<HealthResponse>, {
+    refreshInterval: 5000,
+  });
+  const workerLoading = workerStatusIsLoading(health?.worker);
+
+  useEffect(() => {
+    if (!jobRunning) {
+      return;
+    }
+    const startedAt = Date.now();
+    const tick = window.setInterval(() => {
+      setPropagateElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(tick);
+  }, [jobRunning]);
 
   const frameIndex = data && storedIndex >= data.frame_count ? Math.max(0, data.frame_count - 1) : storedIndex;
   const { data: frameAnn, mutate: mutateFrameAnn } = useSWR(
@@ -408,7 +435,8 @@ export function ClipDesk() {
       await mutateAnnotation();
       await mutateFrameAnn();
     } catch (err) {
-      setToast({ text: err instanceof Error ? err.message : "Predict failed", error: true });
+      // A failure while the checkpoint loads is a state, not an unexplained error.
+      setToast(workerLoadingToast(err, "Predict failed"));
     } finally {
       predicting.current = false;
     }
@@ -546,12 +574,14 @@ export function ClipDesk() {
         setToast({ text: "Propagate complete: no Frames to fill from here", error: false });
         return;
       }
+      // Elapsed is reset here at Job start; the interval effect only ticks.
+      setPropagateElapsed(0);
       setPropagateJob(job);
       jobPollRef.current = window.setInterval(() => {
         void pollJob(job.job_id);
       }, JOB_POLL_MS);
     } catch (err) {
-      setToast({ text: err instanceof Error ? err.message : "Propagate failed", error: true });
+      setToast(workerLoadingToast(err, "Propagate failed"));
     } finally {
       predicting.current = false;
     }
@@ -853,6 +883,7 @@ export function ClipDesk() {
             busy={jobRunning}
             canPropagate={frameMasks.length > 0}
             propagateJob={propagateJob}
+            propagateElapsed={propagateElapsed}
             propagateDirection={propagateDirection}
             propagateMaxFrames={propagateMaxFrames}
             onPropagateDirection={setPropagateDirection}
@@ -972,6 +1003,12 @@ export function ClipDesk() {
         <Button type="button" size="sm" variant="secondary" disabled={!hasChip} onClick={() => void applyRange(true)}>
           Remove from frames {rangeFrom}–{rangeTo}
         </Button>
+        {workerLoading ? (
+          // Health poll says the SAM 3.1 worker is still loading (ticket 09).
+          <span role="status" className="shrink-0 text-xs text-muted-foreground">
+            {WORKER_LOADING_LABEL}
+          </span>
+        ) : null}
         {toast ? (
           <span role={toast.error ? "alert" : "status"} className={toast.error ? "text-xs text-destructive" : "text-xs text-foreground"}>
             {toast.text}
@@ -1121,6 +1158,7 @@ function TrackRail({
   busy,
   canPropagate,
   propagateJob,
+  propagateElapsed,
   propagateDirection,
   propagateMaxFrames,
   onPropagateDirection,
@@ -1142,6 +1180,7 @@ function TrackRail({
   busy: boolean;
   canPropagate: boolean;
   propagateJob: PropagateJobPublic | null;
+  propagateElapsed: number;
   propagateDirection: PropagateDirection;
   propagateMaxFrames: string;
   onPropagateDirection: (direction: PropagateDirection) => void;
@@ -1255,9 +1294,14 @@ function TrackRail({
           Propagate
         </Button>
         {propagateJob ? (
-          <p role="status" data-propagate-progress="" className="text-xs text-muted-foreground">
-            Propagating {propagateJob.frames_done}/{propagateJob.frames_total} from Frame{" "}
-            {propagateJob.start_frame_index} — mask edits wait until it finishes.
+          // Indeterminate: progress stays 0 while the first poll streams the
+          // whole span, so elapsed time is the only honest readout (ticket 09).
+          <p role="status" data-propagate-progress="" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Loader2 aria-hidden="true" size={12} className="shrink-0 animate-spin" />
+            <span>
+              Propagating… {formatElapsed(propagateElapsed)} from Frame{" "}
+              {propagateJob.start_frame_index} — mask edits wait until it finishes.
+            </span>
           </p>
         ) : (
           <p className="text-xs text-muted-foreground">
