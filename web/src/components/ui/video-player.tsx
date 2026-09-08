@@ -1,4 +1,4 @@
-import { useState, type RefObject } from "react";
+import { useState, type ReactNode, type RefObject } from "react";
 import { Maximize, Pause, Play, Volume2, VolumeX } from "lucide-react";
 import { Button } from "./button";
 
@@ -6,6 +6,7 @@ import { Button } from "./button";
  * Hand-built player on a native <video>: the picture element plus an always
  * visible transport row. No autohide, no fade anywhere. The transport time is
  * display-only seconds; the Ruler stays the only progress and seek surface.
+ * `children` overlay the picture (mask canvas).
  */
 export function VideoPlayer({
   src,
@@ -16,6 +17,7 @@ export function VideoPlayer({
   onPlayChange,
   onRateChange,
   onVolumeChange,
+  children,
 }: {
   src: string;
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -25,25 +27,29 @@ export function VideoPlayer({
   onPlayChange: (playing: boolean) => void;
   onRateChange: (rate: number) => void;
   onVolumeChange: (muted: boolean, volume: number) => void;
+  children?: ReactNode;
 }) {
   return (
-    <video
-      ref={videoRef}
-      className="h-full w-full object-contain"
-      src={src}
-      playsInline
-      preload="metadata"
-      aria-label={frameLabel}
-      onPlay={() => onPlayChange(true)}
-      onPause={() => onPlayChange(false)}
-      onTimeUpdate={(event) => onTimeUpdate(event.currentTarget.currentTime)}
-      onLoadedMetadata={(event) => onLoadedMetadata(event.currentTarget)}
-      onRateChange={(event) => onRateChange(event.currentTarget.playbackRate)}
-      onVolumeChange={(event) => {
-        const el = event.currentTarget;
-        onVolumeChange(el.muted, el.volume);
-      }}
-    />
+    <div className="relative h-full w-full">
+      <video
+        ref={videoRef}
+        className="h-full w-full object-contain"
+        src={src}
+        playsInline
+        preload="metadata"
+        aria-label={frameLabel}
+        onPlay={() => onPlayChange(true)}
+        onPause={() => onPlayChange(false)}
+        onTimeUpdate={(event) => onTimeUpdate(event.currentTarget.currentTime)}
+        onLoadedMetadata={(event) => onLoadedMetadata(event.currentTarget)}
+        onRateChange={(event) => onRateChange(event.currentTarget.playbackRate)}
+        onVolumeChange={(event) => {
+          const el = event.currentTarget;
+          onVolumeChange(el.muted, el.volume);
+        }}
+      />
+      {children}
+    </div>
   );
 }
 

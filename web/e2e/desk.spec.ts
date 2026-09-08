@@ -686,7 +686,8 @@ test("i/o/[ paint a span onto the timeline while the player is focused", async (
   await clearClipLabels(page);
   await page.goto("/clips/CLIP_E2E");
   await setBrush(page, "phase", "ChipApplyP");
-  await page.locator("video").click();
+  // Picture is the mask canvas; click the Brush well, not the video.
+  await page.locator("[data-brush]").click();
   await page.locator("video").evaluate((el: HTMLVideoElement) => {
     el.pause();
     el.currentTime = 0;

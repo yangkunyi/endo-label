@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from endo_label.app import create_app
-from endo_label.config import default_config_path, load_settings
+from endo_label.config import ConfigError, default_config_path, load_settings
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -33,6 +33,46 @@ def test_invalid_port_refuses_to_start() -> None:
     result = _sitting("--port", "0")
     assert result.returncode == 2
     assert "invalid --port" in result.stderr
+
+
+def test_sitting_help_names_default_ports() -> None:
+    result = _sitting("--help")
+    assert result.returncode == 0
+    assert "7880" in result.stdout
+    assert "7881" in result.stdout
+    assert "default: 7880" in result.stdout
+
+
+def test_sitting_binds_7880_unless_port_passed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    frames = _write_pool(tmp_path / "frames", "CLIPA")
+    yaml_path = _write_yaml(
+        tmp_path / "sitting.yaml",
+        frames_root=frames,
+        labels_root=tmp_path / "labels",
+        allowlist=["CLIPA"],
+    )
+    captured: dict[str, object] = {}
+
+    def fake_run(app, *, host: str, port: int, workers: int) -> None:
+        captured["host"] = host
+        captured["port"] = port
+        captured["workers"] = workers
+        captured["app"] = app
+
+    monkeypatch.setattr("endo_label.__main__.uvicorn.run", fake_run)
+    from endo_label.__main__ import main
+
+    main(["--config", str(yaml_path)])
+    assert captured["host"] == "127.0.0.1"
+    assert captured["port"] == 7880
+    assert captured["workers"] == 1
+
+    captured.clear()
+    main(["--config", str(yaml_path), "--port", "7999"])
+    assert captured["port"] == 7999
+    assert captured["host"] == "127.0.0.1"
 
 
 def test_missing_config_file_refuses_to_start(tmp_path: Path) -> None:
@@ -164,21 +204,74 @@ def test_cors_allows_only_vite_origin(tmp_path: Path) -> None:
     )
     client = TestClient(create_app(settings))
 
-    allowed = client.options(
-        "/api/health",
-        headers={
-            "Origin": "http://127.0.0.1:5173",
-            "Access-Control-Request-Method": "GET",
-        },
-    )
-    assert allowed.status_code in (200, 204)
-    assert allowed.headers.get("access-control-allow-origin") == "http://127.0.0.1:5173"
+    for origin in (
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    ):
+        allowed = client.options(
+            "/api/health",
+            headers={
+                "Origin": origin,
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert allowed.status_code in (200, 204)
+        assert allowed.headers.get("access-control-allow-origin") == origin
 
-    localhost = client.get("/api/health", headers={"Origin": "http://localhost:5173"})
-    assert localhost.headers.get("access-control-allow-origin") == "http://localhost:5173"
+        got = client.get("/api/health", headers={"Origin": origin})
+        assert got.headers.get("access-control-allow-origin") == origin
 
     blocked = client.get("/api/health", headers={"Origin": "http://evil.example"})
     assert blocked.headers.get("access-control-allow-origin") not in (
         "http://evil.example",
         "*",
     )
+
+
+def _worker_yaml(tmp_path: Path, body: str) -> Path:
+    config = tmp_path / "config.yaml"
+    config.write_text(body, encoding="utf-8")
+    return config
+
+
+def test_worker_backends_parse_from_yaml(tmp_path: Path) -> None:
+    config = _worker_yaml(
+        tmp_path,
+        "frames_root: /tmp/f\n"
+        "predictor_backend: sam31\n"
+        "gpu_id: 2\n"
+        "scribble_backend: scribble\n"
+        "scribble_model_path: models/scribble.pt\n"
+        "scribble_sam2_checkpoint: models/sam2.pt\n"
+        "scribble_gpu_id: 3\n",
+    )
+    settings = load_settings(config)
+    assert settings.predictor_backend == "sam31"
+    assert settings.gpu_id == 2
+    assert settings.scribble_backend == "scribble"
+    assert settings.scribble_model_path == tmp_path / "models" / "scribble.pt"
+    assert settings.scribble_sam2_checkpoint == tmp_path / "models" / "sam2.pt"
+    assert settings.scribble_gpu_id == 3
+
+
+def test_worker_backends_default_fake_without_yaml_keys(tmp_path: Path) -> None:
+    config = _worker_yaml(tmp_path, "frames_root: /tmp/f\n")
+    settings = load_settings(config)
+    assert settings.predictor_backend == "fake"
+    assert settings.scribble_backend == "fake"
+    assert settings.scribble_model_path is None
+
+
+def test_unknown_worker_backend_refuses(tmp_path: Path) -> None:
+    config = _worker_yaml(tmp_path, "frames_root: /tmp/f\npredictor_backend: vlm\n")
+    with pytest.raises(ConfigError, match="predictor_backend"):
+        load_settings(config)
+
+
+def test_sam31_paths_default_to_old_tool_kit(tmp_path: Path) -> None:
+    config = _worker_yaml(tmp_path, "frames_root: /tmp/f\npredictor_backend: sam31\n")
+    settings = load_settings(config)
+    assert settings.sam31_checkpoint == Path(
+        "/data3/yky/sam3_1_label_tool/sam31_label_kit/ckpt/sam3.1_multiplex.pt"
+    )
+    assert settings.sam31_repo == Path("/data3/yky/sam3_1_label_tool/sam3")

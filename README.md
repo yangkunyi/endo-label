@@ -68,4 +68,4 @@ PYTHONPATH=. python -m pytest tests -q
 cd web && npm test && npm run test:e2e
 ```
 
-`npm run test:e2e` is local Chromium against `127.0.0.1:7881` + Vite `5174`. Needs repo `.venv` (`python3 -m venv .venv && .venv/bin/pip install fastapi uvicorn pyyaml`). Uses system Google Chrome. Not CI. Sitting on `7880` can stay up. `npm run test:e2e:ui` opens the Playwright runner.
+`npm run test:e2e` is local Chromium against `127.0.0.1:7881` + Vite `5174` (mask worker-down sitting on `7893`). Needs repo `.venv` (`python3 -m venv .venv && .venv/bin/pip install fastapi uvicorn pyyaml`). Uses system Google Chrome. Not CI. Sitting on `7880` can stay up. `npm run test:e2e:ui` opens the Playwright runner.

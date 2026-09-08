@@ -38,6 +38,92 @@ export type Vocab = {
   triples: VocabTriple[];
 };
 
+export type MaskRle = {
+  format: string;
+  size: number[];
+  counts: number[];
+  source?: string;
+  track_id?: number;
+};
+
+export type LeftoverPoint = { x: number; y: number; positive: boolean };
+
+export type TrackRow = {
+  track_id: number;
+  label: string;
+  color: string;
+  score: number | null;
+  mask?: MaskRle;
+  geometric_memory?: LeftoverPoint[];
+};
+
+export type SessionPublic = {
+  active: boolean;
+  session_id?: string;
+  clip_id?: string;
+  tracks?: TrackRow[];
+};
+
+export type AnnotationSummary = {
+  clip_id: string;
+  tracks: TrackRow[];
+  frame_count: number;
+};
+
+export type FrameAnnotations = {
+  clip_id: string;
+  frame_index: number;
+  frame_stem: string;
+  masks: Array<MaskRle & { track_id: number }>;
+};
+
+export type PredictResult = {
+  frame_index: number;
+  empty: boolean;
+  message: string | null;
+  tracks: TrackRow[];
+};
+
+export type UndoResponse = {
+  undone: boolean;
+  session: SessionPublic;
+};
+
+export type PropagateDirection = "forward" | "backward" | "both";
+
+export type PropagateJobPublic = {
+  job_id: string;
+  session_id: string;
+  clip_id: string;
+  direction: PropagateDirection;
+  start_frame_index: number;
+  max_frames: number | null;
+  status: "queued" | "running" | "completed" | "failed";
+  progress: number;
+  frames_done: number;
+  frames_total: number;
+  current_frame_index: number | null;
+  error: string | null;
+};
+
+export type WorkerHealth = {
+  ready: boolean;
+  status: string;
+  backend?: string;
+  message?: string | null;
+};
+
+export type HealthResponse = {
+  ok: boolean;
+  service: string;
+  version: string;
+  worker: WorkerHealth;
+};
+
+export function healthPath(): string {
+  return "/api/health";
+}
+
 export function clipDeskPath(clipId: string): string {
   return `/clips/${encodeURIComponent(clipId)}`;
 }
@@ -96,6 +182,56 @@ export function tripletRowPath(
 
 export function vocabPath(): string {
   return "/api/vocab";
+}
+
+export function sessionPath(frameIndex?: number): string {
+  if (frameIndex == null) {
+    return "/api/session";
+  }
+  return `/api/session?frame_index=${frameIndex}`;
+}
+
+export function sessionPredictPath(): string {
+  return "/api/session/predict";
+}
+
+export function sessionPointPath(
+  trackId: number,
+  frameIndex: number,
+  pointIndex: number,
+): string {
+  return `/api/session/tracks/${trackId}/frames/${frameIndex}/points/${pointIndex}`;
+}
+
+export function sessionFrameMaskPath(
+  trackId: number,
+  frameIndex: number,
+): string {
+  return `/api/session/tracks/${trackId}/frames/${frameIndex}`;
+}
+
+export function sessionTrackPath(trackId: number): string {
+  return `/api/session/tracks/${trackId}`;
+}
+
+export function sessionUndoPath(): string {
+  return "/api/session/undo";
+}
+
+export function sessionPropagatePath(): string {
+  return "/api/session/propagate";
+}
+
+export function jobPath(jobId: string): string {
+  return `/api/jobs/${encodeURIComponent(jobId)}`;
+}
+
+export function annotationSummaryPath(clipId: string): string {
+  return `/api/clips/${encodeURIComponent(clipId)}/annotations`;
+}
+
+export function annotationFramePath(clipId: string, frameIndex: number): string {
+  return `/api/clips/${encodeURIComponent(clipId)}/annotations/frames/${frameIndex}`;
 }
 
 export function vocabListPath(listName: string): string {
@@ -180,6 +316,17 @@ async function readError(response: Response): Promise<string> {
 
 export async function getJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+  return response.json() as Promise<T>;
+}
+
+export async function getJsonAllow404<T>(url: string): Promise<T | null> {
+  const response = await fetch(url);
+  if (response.status === 404) {
+    return null;
+  }
   if (!response.ok) {
     throw new Error(await readError(response));
   }

@@ -72,6 +72,15 @@ class UpdateTrackBody(BaseModel):
     label: str = Field(..., min_length=1)
 
 
+class UndoBody(BaseModel):
+    """Undo this Frame's last committed mask edit (Predict / pin delete / Clear).
+
+    Empty Undo stack is a 200 no-op; there is no Redo.
+    """
+
+    frame_index: int = Field(..., ge=0)
+
+
 class PropagateBody(BaseModel):
     """Start a Propagate Job for the active Session.
 
@@ -318,6 +327,54 @@ def create_app(
                 status_code=404,
                 detail=f"Frame index out of range: {frame_index}",
             ) from None
+        except SessionClipNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from None
+
+    @app.delete(
+        "/api/session/tracks/{track_id}/frames/{frame_index}/points/{point_index}"
+    )
+    def drop_geometric_point(
+        track_id: int, frame_index: int, point_index: int
+    ) -> dict:
+        try:
+            return sessions.drop_geometric_point(
+                track_id, frame_index, point_index
+            )
+        except SessionNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from None
+        except SessionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        except TrackNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from None
+        except SessionFrameNotFound:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Frame index out of range: {frame_index}",
+            ) from None
+        except SessionClipNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from None
+        except BadPredictRequest as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except WorkerNotReady as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from None
+        except PredictorRuntimeError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from None
+
+    @app.post("/api/session/undo")
+    def undo(body: UndoBody) -> dict:
+        try:
+            return sessions.undo(frame_index=body.frame_index)
+        except SessionNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from None
+        except SessionConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
+        except SessionFrameNotFound:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Frame index out of range: {body.frame_index}",
+            ) from None
+        except SessionClipNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from None
 
     @app.post("/api/session/save")
     def save_annotations() -> dict:
