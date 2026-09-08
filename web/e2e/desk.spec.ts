@@ -48,6 +48,50 @@ async function cssBackground(locator: Locator) {
   return locator.evaluate((el) => getComputedStyle(el).backgroundColor);
 }
 
+/** media-chrome is removed from the desk: no media-* custom element may render. */
+async function expectNoMediaChrome(page: Page) {
+  const count = await page.evaluate(
+    () => Array.from(document.querySelectorAll("*")).filter((el) => el.tagName.toLowerCase().startsWith("media-")).length,
+  );
+  expect(count).toBe(0);
+}
+
+/** Pixel probe on the playing surface (ADR 0022 reproduction pattern): share of pixels that are not black. */
+async function nonBlackRatio(page: Page) {
+  return page.evaluate(() => {
+    const video = document.querySelector("video");
+    if (!(video instanceof HTMLVideoElement) || video.readyState < 2) {
+      return -1;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return -1;
+    }
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let nonBlack = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i] + data[i + 1] + data[i + 2] > 60) {
+        nonBlack += 1;
+      }
+    }
+    return nonBlack / (data.length / 4);
+  });
+}
+
+async function expectSurfaceOpaque(page: Page) {
+  const opacities = await page.evaluate(() => {
+    const surface = document.querySelector('section[aria-label="Player"]');
+    return [surface, surface?.querySelector(":scope > div"), surface?.querySelector("video")].map((el) =>
+      el instanceof Element ? getComputedStyle(el).opacity : "missing",
+    );
+  });
+  expect(opacities).toEqual(["1", "1", "1"]);
+}
+
 async function focusTask(page: Page, kind: "class" | "phase" | "triplet") {
   await page.getByRole("tab", { name: kind }).click();
 }
@@ -336,52 +380,125 @@ test("empty add-name placeholder is Type to add", async ({ page }) => {
   await expect(page.getByRole("combobox", { name: "target" })).toHaveAttribute("placeholder", "target");
 });
 
-test("playback advances without looping; media-chrome owns the transport", async ({ page }) => {
+test("playback advances without looping from the hand-built transport", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await expect(page.locator("video[aria-label='Frame 0']")).toBeVisible();
   await expect.poll(() => page.locator("video").evaluate((el) => (el as HTMLVideoElement).readyState)).toBeGreaterThanOrEqual(1);
   await expect(page.locator("select")).toHaveCount(0);
-  await expect(page.locator("media-time-range")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Playback rate/i })).toBeVisible();
+  const transport = page.getByRole("toolbar", { name: "Transport" });
+  await expect(transport).toBeVisible();
+  await expect(transport.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Playback rate" })).toBeVisible();
+  await expect(page.locator("[data-transport-time]")).toHaveText("0:00 / 0:00");
   await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
   await expect(page.getByRole("slider", { name: "Ruler" })).toBeVisible();
+  await expectNoMediaChrome(page);
 
-  await page.getByRole("button", { name: "play", exact: true }).click();
+  await page.getByRole("button", { name: "Play", exact: true }).click();
   await expect(page.locator("video[aria-label='Frame 1']")).toBeVisible();
 });
 
-test("rate menu opens a list including 0.25 on jpeg and video Clips", async ({ page }) => {
+test("rate menu opens a list including 0.25 and applies the choice on jpeg and video Clips", async ({ page }) => {
   for (const path of ["/clips/CLIP_E2E", "/clips/CLIP_VID"]) {
     await page.goto(path);
     const video = page.locator("video");
     await expect(video).toBeVisible();
     await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.readyState)).toBeGreaterThanOrEqual(1);
     expect(await video.evaluate((el: HTMLVideoElement) => el.playbackRate)).toBe(1);
-    const rate = page.getByRole("button", { name: /Playback rate/i });
+    const rate = page.getByRole("button", { name: "Playback rate" });
     await expect(rate).toBeVisible();
-    await expect(page.getByRole("menuitemradio", { name: "0.25x" })).toHaveCount(0);
     await rate.click();
+    // a list, not a cycle: opening the menu never changes the rate
     expect(await video.evaluate((el: HTMLVideoElement) => el.playbackRate)).toBe(1);
-    await expect(page.getByRole("menuitemradio", { name: "0.25x" })).toBeVisible();
-    await expect(page.getByRole("menuitemradio", { name: "0.5x" })).toBeVisible();
-    await expect(page.getByRole("menuitemradio", { name: "1x" })).toBeVisible();
-    await expect(page.getByRole("menuitemradio", { name: "1.5x" })).toBeVisible();
-    await expect(page.getByRole("menuitemradio", { name: "2x" })).toBeVisible();
+    const menu = page.getByRole("menu", { name: "Playback rate" });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitemradio", { name: "0.25×" })).toHaveAttribute("aria-checked", "false");
+    await expect(menu.getByRole("menuitemradio", { name: "0.5×" })).toBeVisible();
+    await expect(menu.getByRole("menuitemradio", { name: "1×" })).toHaveAttribute("aria-checked", "true");
+    await expect(menu.getByRole("menuitemradio", { name: "1.5×" })).toBeVisible();
+    await expect(menu.getByRole("menuitemradio", { name: "2×" })).toBeVisible();
+    await menu.getByRole("menuitemradio", { name: "0.25×" }).click();
+    await expect(menu).toHaveCount(0);
+    await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.playbackRate)).toBe(0.25);
+    await expect(rate).toHaveText("0.25×");
   }
 });
 
-test("jpeg player shows media-chrome transport and Frame print", async ({ page }) => {
+test("jpeg player shows the hand-built transport and Frame print", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await expect(page.getByRole("region", { name: "Player" })).toBeVisible();
   await expect(page.locator("video")).toBeVisible();
-  await expect(page.locator("media-control-bar")).toBeVisible();
-  await expect(page.locator("media-play-button")).toBeVisible();
-  await expect(page.locator("[data-player-clock]")).toHaveCount(0);
-  await expect(page.getByLabel("Player controls").locator("media-control-bar")).toHaveCount(0);
+  const transport = page.getByRole("toolbar", { name: "Transport" });
+  await expect(transport.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  await expect(transport.getByRole("button", { name: "Playback rate" })).toBeVisible();
+  await expect(transport.getByRole("button", { name: "Mute" })).toBeVisible();
+  await expect(transport.getByRole("slider", { name: "Volume" })).toBeVisible();
+  await expect(transport.getByRole("button", { name: "Fullscreen" })).toBeVisible();
+  await expect(page.locator("[data-transport-time]")).toHaveText("0:00 / 0:00");
+  await expectNoMediaChrome(page);
   await expect(page.getByLabel("Player controls").getByText("Frame 0 of 2")).toBeVisible();
+  // transport row sits directly under the Ruler and above the Lane well, in the player column
+  const playerBox = await page.getByRole("region", { name: "Player", exact: true }).boundingBox();
+  const rulerBox = await page.getByRole("slider", { name: "Ruler" }).boundingBox();
+  const transportBox = await transport.boundingBox();
+  const wellBox = await page.getByRole("region", { name: "Lane well" }).boundingBox();
+  expect(playerBox && rulerBox && transportBox && wellBox).toBeTruthy();
+  expect(transportBox!.y).toBeGreaterThanOrEqual(rulerBox!.y + rulerBox!.height - 1);
+  expect(wellBox!.y).toBeGreaterThanOrEqual(transportBox!.y + transportBox!.height - 1);
+  expect(transportBox!.x).toBeGreaterThanOrEqual(playerBox!.x - 2);
   await scrubToFrame(page, 1);
   await expect(page.getByText("Frame 1 of 2")).toBeVisible();
   await expect(page.locator("video[aria-label='Frame 1']")).toBeVisible();
+});
+
+test("fresh open shows the first frame with no hover; the player surface never fades", async ({ page }) => {
+  await page.goto("/clips/CLIP_VID");
+  const video = page.locator("video");
+  await expect(video).toBeVisible();
+  await expect(page.locator("[data-transport-time]")).toHaveText("0:00 / 0:04");
+  await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.readyState)).toBeGreaterThanOrEqual(2);
+  // no mouse movement: give the old ~1s autohide fade (ADR 0022) its window, then probe
+  await page.waitForTimeout(1200);
+  await expectSurfaceOpaque(page);
+  await expect.poll(async () => await nonBlackRatio(page)).toBeGreaterThan(0.9);
+});
+
+test("playing with the mouse away keeps the picture fully visible", async ({ page }) => {
+  await page.goto("/clips/CLIP_VID");
+  const video = page.locator("video");
+  await expect(video).toBeVisible();
+  await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.readyState)).toBeGreaterThanOrEqual(2);
+  await page.getByRole("button", { name: "Play", exact: true }).click();
+  await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.paused)).toBe(false);
+  await page.mouse.move(2, 2);
+  // old autohide faded the whole controller within ~1s of mouse-out (ADR 0022)
+  await page.waitForTimeout(1200);
+  await expectSurfaceOpaque(page);
+  await expect.poll(async () => await nonBlackRatio(page)).toBeGreaterThan(0.9);
+  // time display follows timeupdate while the picture stays up
+  await expect(page.locator("[data-transport-time]")).not.toHaveText("0:00 / 0:04");
+  await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.paused)).toBe(false);
+});
+
+test("mute, volume, and fullscreen drive the native video element and Fullscreen API", async ({ page }) => {
+  await page.goto("/clips/CLIP_VID");
+  const video = page.locator("video");
+  await expect(video).toBeVisible();
+  const transport = page.getByRole("toolbar", { name: "Transport" });
+  await transport.getByRole("button", { name: "Mute" }).click();
+  await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.muted)).toBe(true);
+  await expect(transport.getByRole("button", { name: "Unmute" })).toBeVisible();
+  await transport.getByRole("button", { name: "Unmute" }).click();
+  await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.muted)).toBe(false);
+  await transport.getByRole("slider", { name: "Volume" }).fill("0.3");
+  await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.volume)).toBe(0.3);
+
+  await transport.getByRole("button", { name: "Fullscreen" }).click();
+  await expect.poll(async () => page.evaluate(() => document.fullscreenElement?.getAttribute("aria-label"))).toBe("Player");
+  // headless chrome does not route the Esc key to the fullscreen handler; exit via the API
+  await page.evaluate(() => document.exitFullscreen());
+  await expect.poll(async () => page.evaluate(() => document.fullscreenElement)).toBeNull();
+  await expect(page.getByRole("region", { name: "Player", exact: true })).toBeVisible();
 });
 
 test("Library double-click rename phase and class is desk-wide", async ({ page }) => {
@@ -985,14 +1102,15 @@ test("empty Clip shows Ruler and Lane well; picture height stays put when a Lane
   await expect(timeline).toBeVisible();
   await expect(ruler).toBeVisible();
   await expect(well).toBeVisible();
-  await expect(page.locator("media-time-range")).toBeVisible();
-  await expect(page.locator("media-play-button")).toBeVisible();
-  await expect(page.locator("media-time-display")).toBeVisible();
-  await expect(page.locator("media-duration-display")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Playback rate/i })).toBeVisible();
-  await expect(page.locator("media-mute-button")).toBeVisible();
-  await expect(page.locator("media-volume-range")).toBeVisible();
-  await expect(page.locator("media-fullscreen-button")).toBeVisible();
+  const transport = page.getByRole("toolbar", { name: "Transport" });
+  await expect(transport).toBeVisible();
+  await expect(transport.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  await expect(transport.getByRole("button", { name: "Playback rate" })).toBeVisible();
+  await expect(transport.getByRole("button", { name: "Mute" })).toBeVisible();
+  await expect(transport.getByRole("slider", { name: "Volume" })).toBeVisible();
+  await expect(transport.getByRole("button", { name: "Fullscreen" })).toBeVisible();
+  await expect(page.locator("[data-transport-time]")).toBeVisible();
+  await expectNoMediaChrome(page);
   await expect(page.locator("[data-timeline-lane]")).toHaveCount(0);
   await expect(page.locator("[data-timeline-seg]")).toHaveCount(0);
   await expect(page.locator("[data-lane-head]")).toHaveCount(0);
@@ -1002,11 +1120,13 @@ test("empty Clip shows Ruler and Lane well; picture height stays put when a Lane
   const timelineBox = await timeline.boundingBox();
   const editorsBox = await editors.boundingBox();
   const rulerBox = await ruler.boundingBox();
+  const transportBox = await transport.boundingBox();
   const wellBox = await well.boundingBox();
-  expect(clipsBox && playerBox && timelineBox && editorsBox && rulerBox && wellBox).toBeTruthy();
+  expect(clipsBox && playerBox && timelineBox && editorsBox && rulerBox && transportBox && wellBox).toBeTruthy();
   expect(timelineBox!.y).toBeGreaterThanOrEqual(playerBox!.y + playerBox!.height - 1);
   expect(rulerBox!.y).toBeGreaterThanOrEqual(playerBox!.y + playerBox!.height - 1);
-  expect(wellBox!.y).toBeGreaterThanOrEqual(rulerBox!.y + rulerBox!.height - 1);
+  expect(transportBox!.y).toBeGreaterThanOrEqual(rulerBox!.y + rulerBox!.height - 1);
+  expect(wellBox!.y).toBeGreaterThanOrEqual(transportBox!.y + transportBox!.height - 1);
   expect(Math.abs(timelineBox!.x - clipsBox!.x)).toBeLessThan(2);
   expect(Math.abs(timelineBox!.x + timelineBox!.width - (playerBox!.x + playerBox!.width))).toBeLessThan(2);
   expect(timelineBox!.x + timelineBox!.width).toBeLessThanOrEqual(editorsBox!.x + 1);
@@ -1047,15 +1167,19 @@ test("empty Clip shows Ruler and Lane well; picture height stays put when a Lane
   await page.goto("/clips/CLIP_VID");
   const videoPlayer = page.getByRole("region", { name: "Player", exact: true });
   const videoRuler = page.getByRole("slider", { name: "Ruler" });
+  const videoTransport = page.getByRole("toolbar", { name: "Transport" });
   const videoWell = page.getByRole("region", { name: "Lane well" });
   await expect(videoWell).toBeVisible();
   await expect(videoRuler).toBeVisible();
+  await expect(videoTransport).toBeVisible();
   const videoPlayerBox = await videoPlayer.boundingBox();
   const videoRulerBox = await videoRuler.boundingBox();
+  const videoTransportBox = await videoTransport.boundingBox();
   const videoWellBox = await videoWell.boundingBox();
-  expect(videoPlayerBox && videoRulerBox && videoWellBox).toBeTruthy();
+  expect(videoPlayerBox && videoRulerBox && videoTransportBox && videoWellBox).toBeTruthy();
   expect(videoRulerBox!.y).toBeGreaterThanOrEqual(videoPlayerBox!.y + videoPlayerBox!.height - 1);
-  expect(videoWellBox!.y).toBeGreaterThanOrEqual(videoRulerBox!.y + videoRulerBox!.height - 1);
+  expect(videoTransportBox!.y).toBeGreaterThanOrEqual(videoRulerBox!.y + videoRulerBox!.height - 1);
+  expect(videoWellBox!.y).toBeGreaterThanOrEqual(videoTransportBox!.y + videoTransportBox!.height - 1);
   expect(Math.abs(videoWellBox!.height - emptyWellHeight)).toBeLessThan(2);
 });
 
@@ -1217,9 +1341,9 @@ test("video Clip uses video element and seek updates Now", async ({ page }) => {
   await expect(video).toBeVisible();
   await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.readyState)).toBeGreaterThanOrEqual(1);
   await expect(page.getByRole("img")).toHaveCount(0);
-  await expect(page.locator("media-control-bar")).toBeVisible();
+  await expect(page.getByRole("toolbar", { name: "Transport" })).toBeVisible();
   await expect(page.locator("select")).toHaveCount(0);
-  await expect(page.locator("media-time-range")).toBeVisible();
+  await expectNoMediaChrome(page);
   await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
   const player = page.getByRole("region", { name: "Player", exact: true });
   const clips = page.getByRole("navigation", { name: "Clips" });
@@ -1234,11 +1358,11 @@ test("video Clip uses video element and seek updates Now", async ({ page }) => {
   expect(timelineBox!.y).toBeGreaterThanOrEqual(playerBox!.y + playerBox!.height - 1);
   expect(Math.abs(timelineBox!.x - clipsBox!.x)).toBeLessThan(2);
   expect(Math.abs(timelineBox!.x + timelineBox!.width - (playerBox!.x + playerBox!.width))).toBeLessThan(2);
-  await expect(page.getByText("Frame 0 of 2")).toBeVisible();
+  await expect(page.getByText("Frame 0 of 100")).toBeVisible();
   await pickName(page, "phase", "VidPhase");
   await expect(page.getByRole("tabpanel").getByRole("paragraph").filter({ hasText: /^VidPhase$/ })).toBeVisible();
   await scrubToFrame(page, 1);
-  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  await expect(page.getByText("Frame 1 of 100")).toBeVisible();
   await expect(page.getByRole("tabpanel").getByRole("paragraph").filter({ hasText: /^No phase on frame 1$/ })).toBeVisible();
   await expect.poll(async () => await clipFrames(page, "phase", "CLIP_VID")).toMatchObject({ "0": "VidPhase" });
 });
