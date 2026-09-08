@@ -6,7 +6,7 @@ import hashlib
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, Sequence
 
 from endo_label.config import Settings
 from endo_label.mask.mask_codec import (
@@ -136,6 +136,19 @@ class Predictor(Protocol):
         track_id: int | None = None,
     ) -> MaskRle:
         """Extend a seed pixel mask from seed frame to target frame."""
+        ...
+
+    def propagate_span(
+        self,
+        *,
+        clip_id: str,
+        seed_frame_index: int,
+        target_frame_index: int,
+        target_frame_indices: Sequence[int],
+        seed_mask: MaskRle,
+        track_id: int | None = None,
+    ) -> MaskRle:
+        """Return one target mask while adapter owns span/cache policy."""
         ...
 
 
@@ -306,6 +319,26 @@ class FakePredictor:
         delta = target_frame_index - seed_frame_index
         nudge = delta * 0.002
         return translate_mask(seed_mask, dx_rel=nudge, dy_rel=nudge * 0.5)
+
+    def propagate_span(
+        self,
+        *,
+        clip_id: str,
+        seed_frame_index: int,
+        target_frame_index: int,
+        target_frame_indices: Sequence[int],
+        seed_mask: MaskRle,
+        track_id: int | None = None,
+    ) -> MaskRle:
+        """Fake has no stream; return requested target directly."""
+        del target_frame_indices
+        return self.propagate_mask(
+            clip_id=clip_id,
+            seed_frame_index=seed_frame_index,
+            target_frame_index=target_frame_index,
+            seed_mask=seed_mask,
+            track_id=track_id,
+        )
 
 
 def _resample_mask(
@@ -564,26 +597,28 @@ class Sam31Predictor:
         track_id: int,
         mask: MaskRle,
     ) -> None:
-        """Seed Mask Prior for SAM: pixel RLE → positive box prompt (SAM API).
+        """Seed SAM2 with the Track-on-Frame pixel mask (not a VG box).
 
-        Session/Annotation still store the full rle_fg; model prompt is AABB.
+        VG ``add_prompt(boxes)`` calls ``reset_state`` and runs the detector
+        without text, which wipes clicks and crashes Propagate. Mask Handoff
+        (rle_fg + empty points) stays on the SAM2 tracker path.
         """
-        box = bbox_rel_from_mask(mask)
-        if box is None:
+        if mask_area(mask) <= 0:
             return
         pred, sid = self._require_session()
-        boxes_xywh = [xyxy_to_xywh(list(box))]
-        labels = [1]
         pred.handle_request(
             {
                 "type": "add_prompt",
                 "session_id": sid,
                 "frame_index": int(frame_index),
-                "bounding_boxes": boxes_xywh,
-                "bounding_box_labels": labels,
                 "obj_id": int(track_id),
-                "clear_old_boxes": True,
+                "clear_old_points": True,
                 "rel_coordinates": True,
+                "mask": {
+                    "format": mask.get("format") or MASK_FORMAT,
+                    "size": list(mask.get("size") or [0, 0]),
+                    "counts": list(mask.get("counts") or []),
+                },
             }
         )
         self._prop_cache.clear()
@@ -717,19 +752,27 @@ class Sam31Predictor:
             self._seeded_tracks.add(seed_key)
 
         # Stream this span; cache frames so later polls do not re-run GPU work.
-        for response in pred.handle_stream_request(
-            {
-                "type": "propagate_in_video",
-                "session_id": sid,
-                "propagation_direction": direction,
-                "start_frame_index": int(seed_frame_index),
-                "max_frame_num_to_track": int(max_frames),
-            }
-        ):
-            fi = int(response.get("frame_index", -1))
-            mask = self._mask_for_obj(response.get("outputs") or {}, obj_id=tid)
-            if mask is not None:
-                self._prop_cache[(seed_frame_index, tid, fi)] = mask
+        # add_prompt wraps CUDA bf16 autocast; handle_stream_request does not.
+        # Init-time bf16_context.__enter__() is thread-local and does not
+        # follow uvicorn's worker thread, so VG backbone Linear sees bf16
+        # activations vs fp32 weights without this wrap.
+        import torch
+
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            stream = pred.handle_stream_request(
+                {
+                    "type": "propagate_in_video",
+                    "session_id": sid,
+                    "propagation_direction": direction,
+                    "start_frame_index": int(seed_frame_index),
+                    "max_frame_num_to_track": int(max_frames),
+                }
+            )
+            for response in stream:
+                fi = int(response.get("frame_index", -1))
+                mask = self._mask_for_obj(response.get("outputs") or {}, obj_id=tid)
+                if mask is not None:
+                    self._prop_cache[(seed_frame_index, tid, fi)] = mask
 
         if cache_key not in self._prop_cache:
             raise RuntimeError(
@@ -737,6 +780,69 @@ class Sam31Predictor:
                 f"frame {target_frame_index}"
             )
         return self._prop_cache[cache_key]
+
+    def propagate_span(
+        self,
+        *,
+        clip_id: str,
+        seed_frame_index: int,
+        target_frame_index: int,
+        target_frame_indices: Sequence[int],
+        seed_mask: MaskRle,
+        track_id: int | None = None,
+    ) -> MaskRle:
+        """Stream/cache a span while returning only the requested target.
+
+        Session supplies planned targets, not SAM-specific span details. For a
+        ``both`` job, only targets on the requested side of the seed are used
+        to choose the farthest stream endpoint; the other side gets its own
+        stream when that side is polled.
+        """
+        if target_frame_index == seed_frame_index:
+            return self.propagate_mask(
+                clip_id=clip_id,
+                seed_frame_index=seed_frame_index,
+                target_frame_index=target_frame_index,
+                seed_mask=seed_mask,
+                track_id=track_id,
+            )
+        candidates = [int(target_frame_index), *map(int, target_frame_indices)]
+        going_forward = target_frame_index >= seed_frame_index
+        same_direction = [
+            fi
+            for fi in candidates
+            if (fi >= seed_frame_index) == going_forward
+        ]
+        span_end = max(
+            same_direction,
+            key=lambda fi: abs(fi - seed_frame_index),
+        )
+        if span_end != target_frame_index:
+            self.propagate_mask(
+                clip_id=clip_id,
+                seed_frame_index=seed_frame_index,
+                target_frame_index=span_end,
+                seed_mask=seed_mask,
+                track_id=track_id,
+            )
+            cache_key = (
+                int(seed_frame_index),
+                int(track_id) if track_id is not None else 1,
+                int(target_frame_index),
+            )
+            if cache_key not in self._prop_cache:
+                raise RuntimeError(
+                    "SAM 3.1 Propagate span produced no requested target "
+                    f"frame {target_frame_index}"
+                )
+            return self._prop_cache[cache_key]
+        return self.propagate_mask(
+            clip_id=clip_id,
+            seed_frame_index=seed_frame_index,
+            target_frame_index=target_frame_index,
+            seed_mask=seed_mask,
+            track_id=track_id,
+        )
 
     @staticmethod
     def _pick_output(outputs: dict[str, Any], *keys: str) -> Any:

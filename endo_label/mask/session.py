@@ -907,10 +907,11 @@ class SessionManager:
                 if existing is not None and annotations.is_protected(existing):
                     # Protected Mask: never overwrite (ADR 0003)
                     continue
-                out_mask = self._predictor.propagate_mask(
+                out_mask = self._predictor.propagate_span(
                     clip_id=s.clip_id,
                     seed_frame_index=job.start_frame_index,
                     target_frame_index=fi,
+                    target_frame_indices=job.pending_frames,
                     seed_mask=seed,
                     track_id=tid,
                 )
