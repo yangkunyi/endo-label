@@ -567,7 +567,7 @@ export function ClipDesk() {
             maxFrames: job.max_frames,
           });
         }
-        // ADR 0023: the completed Job already wrote Annotation. Refresh this
+        // ADR 0025: the completed Job already wrote Annotation. Refresh this
         // Frame and every Frame the Job planned to fill (SWR cache of a
         // neighbor Frame would otherwise stay empty).
         const planned = data

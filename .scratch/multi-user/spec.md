@@ -2,7 +2,7 @@
 
 Status: ready-for-agent
 Map: `.scratch/multi-user/map.md` (8 decision tickets, all closed; this spec is their convergence)
-ADRs: `docs/adr/0021` (vocab registry), `docs/adr/0022` (storage split)
+ADRs: `docs/adr/0026` (vocab registry), `docs/adr/0027` (storage split)
 State names below: Unassigned → Labeling → Submitted → Reviewing → Done (canonical terms in `CONTEXT.md`).
 
 ## Problem Statement
@@ -56,7 +56,7 @@ Turn it into a multi-user system: each person gets an Account (created by the ad
 
 **Domain vocabulary** follows root `CONTEXT.md`: Clip, Frame, Task type, Assignment, Review, Project, Account, Vocab name; "Session" still means the mask working state only — the auth domain says login/Account.
 
-**Four decision records underpin this spec and are not restated here**: assignment unit and ownership (ticket 03), review state machine (ticket 04), vocab registry (ADR 0021), storage split (ADR 0022).
+**Four decision records underpin this spec and are not restated here**: assignment unit and ownership (ticket 03), review state machine (ticket 04), vocab registry (ADR 0026), storage split (ADR 0027).
 
 **Coordination database (SQLite, WAL mode)**, new:
 - Tables: users (stackable role flags admin/reviewer/annotator), login sessions, projects (name + hospital field), clips (registered into exactly one Project; replaces the clips list in the config file), vocab registry (stable id, display name, archived flag) + per-Project enablement/candidates, assignments ((clip, task type) key; state, assignee, reviewer, note, reviewed_by, reviewed_at, delivered_at), per-clip version (optimistic concurrency).
@@ -71,7 +71,7 @@ Turn it into a multi-user system: each person gets an Account (created by the ad
 
 **Mask/SAM (ticket 07)**: model resident, single shared instance; a global inference lock wraps the inference entry point (hard constraint from predictor instance state); SessionManager moves from "one per process" to keyed by (user, Clip), auto-opened on first mask action, kept across Clip switches, LRU-capped at 2 per user / 8 global (config); manual close/reset stays. Predict waits synchronously on the lock with an "inferring…" hint and a 30-second timeout; Propagate keeps its single-active-job + polling unchanged.
 
-**Vocab service (ADR 0021)**: registry as the single identity source; per-Project enabled subsets; annotators create candidates, the admin promotes; retiring = disable per Project or archive globally (labels kept), hard delete only for zero-reference names. Typeahead semantics unchanged (drawn from existing triples).
+**Vocab service (ADR 0026)**: registry as the single identity source; per-Project enabled subsets; annotators create candidates, the admin promotes; retiring = disable per Project or archive globally (labels kept), hard delete only for zero-reference names. Typeahead semantics unchanged (drawn from existing triples).
 
 **Frontend (ticket 08, option B)**:
 - Routes: `/login`, `/desk/:clipId/:kind`, `/admin/users`, `/admin/assignments`, `/admin/projects`, `/admin/vocab`; two layouts (auth shell, app shell with top bar).

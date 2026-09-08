@@ -41,8 +41,8 @@ Status: complete
 - [03 任务分配模型](issues/03-assignment-model.md) — 分配单位是 (Clip, Task type)，一条同一时刻至多一个标注员；标签跟 Clip 走；标注员只见自己的条目；自动分配按持有量均衡。
 - [04 审阅工作流状态机](issues/04-review-workflow.md) — 五态 未分配/标注中/已提交/审阅中/完成；提交不分支，"完成"=审阅通过（唯一终态）；未审条目可直接取用并记已交付标记；审阅指派照抄标注指派且审阅人≠标注员；打回+备注；留痕只到条目级。
 - [01 词表体系方案调研](issues/01-vocab-taxonomy-research.md) — 推荐混合模型：全局 Vocab registry（稳定 id）+ 每批次启用/扩展；存储 durable key 须从字符串改 id；手术界无跨数据集标准词表。报告见 research/vocab-taxonomy-approaches.md。
-- [02 词表模型决策](issues/02-vocab-model-decision.md) — 混合模型落地：Project=研究（带医院字段）启用子集，全局注册表按稳定 id，候选词管理员提升；全局写权仅管理员；停用/归档优先、硬删仅限零引用；同媒体两项目=两个 Clip。ADR 0021（部分取代 0010/0012）。
-- [05 存储与并发架构](issues/05-storage-concurrency.md) — SQLite(WAL) 管协调数据（Project/注册表/分配/状态/Clip 注册/用户），标注与 mask 留 JSON 文件，标注写入带乐观版本号（409 重拉）；导出按钮时后端 join 注册表出 id+名字。ADR 0022。
+- [02 词表模型决策](issues/02-vocab-model-decision.md) — 混合模型落地：Project=研究（带医院字段）启用子集，全局注册表按稳定 id，候选词管理员提升；全局写权仅管理员；停用/归档优先、硬删仅限零引用；同媒体两项目=两个 Clip。ADR 0026（部分取代 0010/0012）。
+- [05 存储与并发架构](issues/05-storage-concurrency.md) — SQLite(WAL) 管协调数据（Project/注册表/分配/状态/Clip 注册/用户），标注与 mask 留 JSON 文件，标注写入带乐观版本号（409 重拉）；导出按钮时后端 join 注册表出 id+名字。ADR 0027。
 - [06 认证实现选型](issues/06-auth-implementation.md) — 服务端 session cookie（会话表同库，禁用即掉线）+ pwdlib/argon2id；权限两层共用 Depends：角色粗门 + assignee/状态细查；CLI create-admin 引导。无 ADR（标准做法）。
 - [07 SAM GPU 争用](issues/07-sam-gpu-contention.md) — 模型常驻单实例共享 + 全局推理锁（predictor 实例态硬约束）；Session 按 (用户，Clip) 自动开关、每用户 2 / 全机 8 的 LRU；Predict 同步等锁+超时提示，Propagate 维持轮询；多 GPU 为后置加法（缺 sticky 路由）。
 - [08 三侧界面范围](issues/08-admin-reviewer-ui.md) — B 方案：路由化（URL=条目，可深链）、能力由服务器下发渲染单一工作台、TanStack Query + 乐观更新对齐 409、/admin/vocab 词表管理屏、管理台三屏、ClipDesk 按面板渐进拆解（每刀 e2e 守门）；v1 非目标：通知/图表/导出管线/意见楼层/注册向导。

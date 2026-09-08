@@ -556,7 +556,7 @@ test("transport walkthrough on jpeg and video Clips: Space, rate list, mute/volu
     await expect.poll(async () => page.evaluate(() => document.fullscreenElement)).toBeNull();
 
     // the Ruler is the only seek: the footer has no slider. Picture click is a
-    // mask prompt (ADR 0022), so do not click the video here.
+    // mask prompt (ADR 0024), so do not click the video here.
     await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
     const framePrint = page.getByLabel("Player controls").locator("output");
     const frameText = await framePrint.innerText();

@@ -28,4 +28,4 @@ Status: resolved
 
 对比过程：A（进程内锁）当场撤回——锁跨进程失效；A'（flock）解决锁但看板等关联查询仍全手写；B（全量 SQLite）把 mask/标注文档 blob 化，无可读性与 diff 收益。备注：当日 web_search 不可用（额度 402），选型依据为 SQLite/FastAPI 稳定工程共识，实现时以官方文档校验 WAL 参数。
 
-落地记录：ADR `docs/adr/0022-sqlite-coordination-files-payloads.md`。工单 06 解锁，用户表进同一个库。
+落地记录：ADR `docs/adr/0027-sqlite-coordination-files-payloads.md`。工单 06 解锁，用户表进同一个库。

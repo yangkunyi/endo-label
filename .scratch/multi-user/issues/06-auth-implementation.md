@@ -16,7 +16,7 @@ Blocked by: 05
 
 ## Answer（2026-09-08）
 
-- **会话**：服务端 session——cookie 存 session id，会话表在 SQLite（与 ADR 0022 同库）。登出、禁用账号即时掉线（外部标注员场景的硬要求）。cookie 参数：`httponly` + `samesite=lax`；`secure` 做成配置项，localhost http 下关闭，将来上 https（ngrok）再打开。JWT 与签名 cookie 否决：撤销不能即时生效。
+- **会话**：服务端 session——cookie 存 session id，会话表在 SQLite（与 ADR 0027 同库）。登出、禁用账号即时掉线（外部标注员场景的硬要求）。cookie 参数：`httponly` + `samesite=lax`；`secure` 做成配置项，localhost http 下关闭，将来上 https（ngrok）再打开。JWT 与签名 cookie 否决：撤销不能即时生效。
 - **密码**：`pwdlib[argon2]`（argon2id）；passlib 已停维护，不用。
 - **权限两层，同一套 FastAPI Depends 机制**：
   - 粗门（角色）：用户管理 / 分配 / 全局注册表写 = admin；项目词表操作、审阅状态迁移 = 审阅者+；登录登出 = 公开。

@@ -488,7 +488,7 @@ class SessionManager:
         if not cleaned:
             raise BadPredictRequest("Track Label must be non-empty")
         track.label = cleaned
-        # ADR 0023: a Track Label patch writes Annotation immediately.
+        # ADR 0025: a Track Label patch writes Annotation immediately.
         self._persist_session()
         return self.get_public()
 
@@ -683,7 +683,7 @@ class SessionManager:
                     frame_index=frame_index,
                     mask=snap.scribble_mask,
                 )
-        # ADR 0023: Undo restore writes Annotation immediately.
+        # ADR 0025: Undo restore writes Annotation immediately.
         self._persist_session()
         return {
             "undone": True,

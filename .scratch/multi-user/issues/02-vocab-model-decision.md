@@ -25,4 +25,4 @@ Blocked by: 01
 
 依据：`research/vocab-taxonomy-approaches.md`（Labelbox workspace ontology 与 archive、Supervisely 动态扩展、CVAT/doccano 按 id 引用改名生效、Label Studio 字符串残留反例、手术界无跨数据集标准词表）。
 
-落地记录：ADR `docs/adr/0021-vocab-registry-project-enablement.md`（声明对 0010/0012 的部分取代）；`CONTEXT.md` 新增 Project、修订 Vocab name。下游：工单 05 的存储决策需容纳注册表与 Project 实体、id 化迁移。
+落地记录：ADR `docs/adr/0026-vocab-registry-project-enablement.md`（声明对 0010/0012 的部分取代）；`CONTEXT.md` 新增 Project、修订 Vocab name。下游：工单 05 的存储决策需容纳注册表与 Project 实体、id 化迁移。
