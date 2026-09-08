@@ -501,6 +501,80 @@ test("mute, volume, and fullscreen drive the native video element and Fullscreen
   await expect(page.getByRole("region", { name: "Player", exact: true })).toBeVisible();
 });
 
+test("transport walkthrough on jpeg and video Clips: Space, rate list, mute/volume, fullscreen, time display, Ruler-only seek", async ({ page }) => {
+  for (const [path, durationText, lastFrame] of [
+    ["/clips/CLIP_E2E", "0:00 / 0:00", "Frame 1 of 2"],
+    ["/clips/CLIP_VID", "0:00 / 0:04", "Frame 99 of 100"],
+  ] as const) {
+    await page.goto(path);
+    const video = page.locator("video");
+    await expect(video).toBeVisible();
+    await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.readyState)).toBeGreaterThanOrEqual(1);
+    const transport = page.getByRole("toolbar", { name: "Transport" });
+    await expect(transport).toBeVisible();
+    await expectNoMediaChrome(page);
+    await expect(transport.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+    await expect(transport.getByRole("button", { name: "Playback rate" })).toBeVisible();
+    await expect(transport.getByRole("button", { name: "Mute" })).toBeVisible();
+    await expect(transport.getByRole("slider", { name: "Volume" })).toBeVisible();
+    await expect(transport.getByRole("button", { name: "Fullscreen" })).toBeVisible();
+    await expect(page.locator("[data-transport-time]")).toHaveText(durationText);
+
+    await transport.getByRole("button", { name: "Playback rate" }).click();
+    await page.getByRole("menu", { name: "Playback rate" }).getByRole("menuitemradio", { name: "0.25×" }).click();
+    await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.playbackRate)).toBe(0.25);
+
+    // leave the rate button so Space toggles playback instead of activating it
+    await page.evaluate(() => {
+      const v = document.querySelector("video");
+      if (v instanceof HTMLVideoElement) {
+        v.currentTime = 0;
+      }
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    });
+    await page.keyboard.press("Space");
+    // jpeg is ~0.08 s; 0.25× still ends quickly, so accept playing, ended, or time advanced
+    await expect.poll(async () =>
+      video.evaluate((el: HTMLVideoElement) => !el.paused || el.ended || el.currentTime > 0),
+    ).toBe(true);
+    if (path === "/clips/CLIP_VID") {
+      await expect(transport.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
+    }
+    const stillPlaying = await video.evaluate((el: HTMLVideoElement) => !el.paused);
+    if (stillPlaying) {
+      await transport.getByRole("button", { name: "Pause", exact: true }).click();
+    }
+    await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.paused)).toBe(true);
+    await expect(transport.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+
+    await transport.getByRole("button", { name: "Mute" }).click();
+    await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.muted)).toBe(true);
+    await transport.getByRole("button", { name: "Unmute" }).click();
+    await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.muted)).toBe(false);
+    await transport.getByRole("slider", { name: "Volume" }).fill("0.4");
+    await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.volume)).toBe(0.4);
+
+    await transport.getByRole("button", { name: "Fullscreen" }).click();
+    await expect.poll(async () => page.evaluate(() => document.fullscreenElement?.getAttribute("aria-label"))).toBe("Player");
+    await page.evaluate(() => document.exitFullscreen());
+    await expect.poll(async () => page.evaluate(() => document.fullscreenElement)).toBeNull();
+
+    await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
+    const framePrint = page.getByLabel("Player controls").locator("output");
+    const frameText = await framePrint.innerText();
+    await video.click({ position: { x: 10, y: 10 } });
+    await expect(framePrint).toHaveText(frameText);
+
+    const ruler = page.getByRole("slider", { name: "Ruler" });
+    const rulerBox = await ruler.boundingBox();
+    expect(rulerBox).not.toBeNull();
+    await ruler.click({ position: { x: rulerBox!.width - 2, y: rulerBox!.height / 2 } });
+    await expect(page.getByLabel("Player controls").getByText(lastFrame)).toBeVisible();
+  }
+});
+
 test("Library double-click rename phase and class is desk-wide", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await pickName(page, "phase", "DeskRenameP1");
@@ -612,6 +686,63 @@ test("trashing a Vocab triple confirms then drops it from every Clip", async ({ 
       || (framesB["0"] ?? []).some((row) => row.instrument === "DeskTrashTool");
   }).toBe(false);
   await expect(page.getByRole("button", { name: "DeskTrashTool / grasp / gallbladder", exact: true })).toHaveCount(0);
+});
+
+test("trashing a Brushed identity drops its footer chip; surviving kinds keep theirs; non-Brushed trash changes nothing", async ({ page }) => {
+  await clearClipLabels(page);
+  await page.goto("/clips/CLIP_E2E");
+  await setBrush(page, "class", "clipper");
+  const brushBox = page.locator("[data-brush]");
+  await expect(brushBox.getByText("class: clipper", { exact: true })).toBeVisible();
+
+  await setBrush(page, "phase", "Preparation");
+  const phaseChip = brushBox.locator("span[data-label-color]").filter({ hasText: "phase: Preparation" });
+  await expect(phaseChip).toBeVisible();
+  const phaseColor = await phaseChip.getAttribute("data-label-color");
+  expect(phaseColor).toBeTruthy();
+
+  await focusTask(page, "triplet");
+  await page.getByRole("combobox", { name: "instrument" }).fill("BrushTrashTool");
+  await page.getByRole("combobox", { name: "verb" }).fill("grasp");
+  await page.getByRole("combobox", { name: "target" }).fill("gallbladder");
+  await page.getByRole("button", { name: "Add triplet row" }).click();
+  const tripleRow = page
+    .getByRole("table", { name: "Library" })
+    .getByRole("row")
+    .filter({ hasText: "BrushTrashTool" });
+  await tripleRow.getByRole("button", { name: "Brush", exact: true }).click();
+  const tripletChipText = "triplet: BrushTrashTool / grasp / gallbladder";
+  await expect(brushBox.getByText(tripletChipText, { exact: true })).toBeVisible();
+  await focusTask(page, "class");
+  await expect(brushBox.getByText("class: clipper", { exact: true })).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("list", { name: "Library" }).getByRole("button", { name: "Delete class tag clipper" }).click();
+  await expect(brushBox.getByText("class: clipper", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Mark from" })).toBeDisabled();
+  await focusTask(page, "phase");
+  await expect(phaseChip).toBeVisible();
+  await expect(phaseChip).toHaveAttribute("data-label-color", phaseColor!);
+  await focusTask(page, "triplet");
+  await expect(brushBox.getByText(tripletChipText, { exact: true })).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete triple BrushTrashTool / grasp / gallbladder" }).click();
+  await expect(brushBox.getByText(tripletChipText, { exact: true })).toHaveCount(0);
+  await focusTask(page, "phase");
+  await expect(phaseChip).toBeVisible();
+  await expect(phaseChip).toHaveAttribute("data-label-color", phaseColor!);
+
+  await focusTask(page, "phase");
+  const chipsBefore = await brushBox.locator("span[data-label-color]").allInnerTexts();
+  await focusTask(page, "class");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("list", { name: "Library" }).getByRole("button", { name: "Delete class tag hook" }).click();
+  await expect(page.getByRole("list", { name: "Library" }).getByRole("button", { name: "hook", exact: true })).toHaveCount(0);
+  await focusTask(page, "phase");
+  const chipsAfter = await brushBox.locator("span[data-label-color]").allInnerTexts();
+  expect(chipsAfter).toEqual(chipsBefore);
+  await expect(phaseChip).toHaveAttribute("data-label-color", phaseColor!);
 });
 
 test("empty Brush: span keys and commit controls do nothing", async ({ page }) => {
@@ -1455,7 +1586,7 @@ test("span keys and Backspace/Delete are ignored while typing in an input or com
   await expect.poll(async () => await clipFrames(page, "triplet")).toEqual({});
 });
 
-test("new controls use English copy: Brush, Show lane, Hide lane", async ({ page }) => {
+test("new controls use English copy: Brush, Show lane, Hide lane, Transport", async ({ page }) => {
   await clearClipLabels(page);
   await page.goto("/clips/CLIP_E2E");
   await focusTask(page, "class");
@@ -1468,6 +1599,12 @@ test("new controls use English copy: Brush, Show lane, Hide lane", async ({ page
   await expect(page.locator("[data-paint-chip]")).toHaveCount(0);
   await expect(page.getByText("Arm class span")).toHaveCount(0);
   await expect(page.getByText("Write to span")).toHaveCount(0);
+  const transport = page.getByRole("toolbar", { name: "Transport" });
+  await expect(transport.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  await expect(transport.getByRole("button", { name: "Playback rate" })).toBeVisible();
+  await expect(transport.getByRole("button", { name: "Mute" })).toBeVisible();
+  await expect(transport.getByRole("slider", { name: "Volume" })).toBeVisible();
+  await expect(transport.getByRole("button", { name: "Fullscreen" })).toBeVisible();
 });
 
 test("e2e closeout: span paint preserves Vocab, Now read-only, Library trash works after span", async ({ page }) => {
