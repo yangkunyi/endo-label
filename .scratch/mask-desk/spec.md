@@ -1,4 +1,4 @@
-Status: implemented — tickets 01–07 resolved on `dev2` (commits `ea43908`…`1863f57`)
+Status: implemented — tickets 01–10 resolved (01–07 `ea43908`…`1863f57`; 08 `c5d7c76`; 09 `d3ad216`; 10 `96529aa` + `497e657`)
 
 # Spec: mask on the sitting player (Geometric Prompt, Scribble, Propagate)
 

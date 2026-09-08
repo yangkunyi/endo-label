@@ -17,14 +17,14 @@ Protected = `manual` ∪ `refined` (`endo_label/mask/annotations.py:26`). Each m
 
 **Category:** enhancement
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Track rail shows the current Frame's state per Track: empty / manual / refined / propagated (badge or colour tag; copy matches CONTEXT.md Source wording)
-- [ ] Protected is visible as such (manual / refined read as Protected; e.g. lock marker or legend) — not as a separate hidden concept
-- [ ] `model_provenance.mask_handoff` is shown alongside the state when present (e.g. "manual · handoff")
-- [ ] When Propagate skips a Protected slot, the desk reflects that (e.g. "kept" indicator), not silently
-- [ ] No behaviour change: Propagate overwrite rules, Undo, and Clear behave exactly as today
-- [ ] e2e closeout for 08–10, run ONCE here: pin frame-scoping (08), running/loading status (09), state badges incl. handoff + kept indicator (10); full mask-desk suite green
+- [x] Track rail shows the current Frame's state per Track: empty / manual / refined / propagated (badge or colour tag; copy matches CONTEXT.md Source wording)
+- [x] Protected is visible as such (manual / refined read as Protected; e.g. lock marker or legend) — not as a separate hidden concept
+- [x] `model_provenance.mask_handoff` is shown alongside the state when present (e.g. "manual · handoff")
+- [x] When Propagate skips a Protected slot, the desk reflects that (e.g. "kept" indicator), not silently
+- [x] No behaviour change: Propagate overwrite rules, Undo, and Clear behave exactly as today
+- [x] e2e closeout for 08–10, run ONCE here: pin frame-scoping (08), running/loading status (09), state badges incl. handoff + kept indicator (10); full mask-desk suite green
 
 ## Comments
 
@@ -40,3 +40,11 @@ Facts for the agent:
 - A per-frame state strip across the whole Clip (which frames are filled) is deliberately NOT in this ticket — propose it separately if wanted.
 
 Verification: this is the e2e closeout ticket for 08–10 — extend `web/e2e/mask-desk.spec.ts` once here (manual badge on first Predict, flips to refined on re-Predict, propagated after an unprotected Propagate, kept indicator when Protected, plus 08 pin-scoping and 09 status states), full mask suite green, plus operator eyeball on the real desk. Tickets 08 and 09 must NOT run Playwright themselves.
+
+## Answer
+
+Display only. Rail Track row shows this Frame's Source as `empty` / `manual` / `refined` / `propagated` (CONTEXT.md Source words). Protected (`manual` or `refined`) gets a lock marker plus `data-protected` / aria-label "Protected". Scribble Handoff appends ` · handoff` from `model_provenance.mask_handoff`. After a completed Propagate Job, a Protected slot that sat in the Job's planned Frames (seed excluded, same plan as `session.py` `_planned_frames`) reads ` · kept`; the seed Frame does not. Predict / pin-delete / Clear / Undo / Clip change drop the kept readout. Propagate overwrite, Undo, and Clear are unchanged.
+
+Desk files: `web/src/trackState.ts` (pure mapping), `web/src/ClipDesk.tsx` Track rail badge + `keptJob` + neighbor Frame SWR refresh after Propagate (empty cache on a Frame visited before the Job would otherwise keep showing empty). No new endpoints; `endo_label/mask/session.py` job model untouched.
+
+e2e closeout lives in `web/e2e/mask-desk.spec.ts`: leftover pins stay on their Frame (08); badges walk manual, refined, empty, then propagated; handoff; kept; footer "Loading SAM model…"; rail "Propagating…" (09–10). Validation this sitting: vitest 81/81, `tsc -b --noEmit` clean, oxlint 0 errors / 1 pre-existing warning, pytest mask+sitting 51 passed, Playwright `e2e/mask-desk.spec.ts` 17 passed. Code landed in `96529aa` and `497e657`.

@@ -39,6 +39,9 @@ A spec for a local endoscopic surgical-video labeling product (one labeler): whi
 - [Undo this Frame's last committed mask edit](../mask-desk/issues/05-undo.md) — per-cell undo stack, `POST /api/session/undo`, Ctrl/Cmd+Z + rail Undo, restore mask + pins + Scribble Memory. Commit `a135ddd`.
 - [Propagate Job from this Frame; Protected stay](../mask-desk/issues/06-propagate-job.md) — explicit rail Job, forward/backward/both, pollable, `source=propagated`, `manual`/`refined` protected, 409 matrix while running. Commit `b4cd640`.
 - [Desk Playwright closeout](../mask-desk/issues/07-e2e-closeout.md) — 11 mask e2e on `7892`/`5192` + worker-down compose on `7893`; full Playwright 46 passed. Commit `1863f57`.
+- [Leftover pins stay on their Frame](../mask-desk/issues/08-pins-stay-on-their-frame.md) — Session snapshot tagged with the Frame it was fetched for; leftover pins render only while that Frame is on screen. Commit `c5d7c76`.
+- [Propagate / SAM-loading status](../mask-desk/issues/09-propagate-status-display-blocking-stays.md) — rail "Propagating…" with elapsed time; footer "Loading SAM model…". Blocking Job model stays. Commit `d3ad216`.
+- [Track-on-Frame Source and Protected on the rail](../mask-desk/issues/10-protected-visible-in-desk.md) — per-Track badge empty/manual/refined/propagated, lock for Protected, ` · handoff`, ` · kept` when Propagate skips a Protected slot. e2e closeout 08–10 (`web/e2e/mask-desk.spec.ts` 17 passed). Commits `96529aa`, `497e657`.
 
 ## Not yet specified
 
