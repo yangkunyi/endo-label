@@ -16,6 +16,22 @@ _Avoid_: Image (when meaning a video position); seconds as the durable key
 A kind of label on a Clip. One Clip and one Frame may carry several Task types at once.
 _Avoid_: annotation type, modality
 
+**Assignment**:
+The (Clip, Task type) pair handed to one labeler. One assignee at a time per pair; the assignee is the only one who edits that Task type's labels on that Clip while the item is in labeling — during Review the assigned reviewer may also edit. Reassignment and unassignment move the write permission only — labels stay on the Clip. Auto-assign balances by holding count.
+_Avoid_: task (that is Task type); one assignee per Clip across all Task types; deleting labels on unassignment; labels belonging to the person (they belong to the Clip)
+
+**Project**:
+One study: the long-lived grouping a Clip belongs to (exactly one). Carries a hospital field and study name; scopes the enabled Vocab subset. One source media may be registered as separate Clips under different Projects — the Clip is the labeling unit, the media is shared read-only. Clips may carry extra free tags for cross-cutting filtering; tags never confer ownership or vocab.
+_Avoid_: import batch (an informal grouping, not an entity); hospital as Clip ownership; one Clip in two Projects; tags deciding vocab or assignment
+
+**Account**:
+One person's login, created by the admin (name + password, changed by its owner). Carries stacked role flags — admin, reviewer, annotator — any combination. Roles gate what the Account may call; being the item's assignee gates whether a given write is theirs.
+_Avoid_: Session (that is the mask working state); one role per person; self-signup; email recovery
+
+**Review**:
+The optional second phase of an Assignment: a reviewer other than the assignee inspects and may edit the labels. Submitting from labeling always lands the item in **Submitted** (labeled, unreviewed) — there is no skip-review branch at submit; the item is usable downstream from Submitted onward, and reviewed-by tells reviewed from unreviewed. States: Unassigned → Labeling → Submitted → Reviewing → Done; **Done** means reviewed-and-passed and is the only terminal state. A delivered flag (with timestamp, set by admin/reviewer) records that the item was taken for downstream use; it rides outside the state machine, and the item may still be reviewed afterwards. Reviewer assignment mirrors annotation assignment (manual or balanced auto); reject sends the item back to Labeling with one short note.
+_Avoid_: a skip-review transition at submit; treating delivery as a workflow state; reading Done as covering unreviewed items; reviewer = assignee; frame-level authorship records (only item-level reviewed-by)
+
 **Phase** (spoken **phase**):
 One exclusive surgical step along a Clip. Canonical store: one Phase per Frame. The labeler may paint an interval. Names are a customizable list.
 _Avoid_: class (stackable), step (procedure documents)
@@ -29,8 +45,8 @@ A row on a Frame: instrument, verb, target. The desk-wide identity is that exact
 _Avoid_: action, relation; subject–verb–object as the column names; two identical triples on one Frame; instruments/verbs/targets as separate vocabs; a cartesian product of three lists
 
 **Vocab name**:
-A desk-wide identity: a phase name, a class tag, or an exact triple. Lists start empty; the labeler adds. Renaming or deleting a phase, class tag, or exact triple rewrites every Clip of that kind (delete clears that phase, drops that flag, or drops that triplet row). Typeahead words for a new triple come from triples that already exist.
-_Avoid_: built-in seed names the labeler cannot remove; changing only the picker while leaving old strings on disk; treating a class-tag `grasper` as the same identity as a word inside a triple; independent instrument/verb/target lists; orphan Frame strings
+An identity in the global Vocab registry, held as a stable id: a phase name, a class tag, or an exact triple. Lists start empty. Each Project enables a subset for its labelers; the labeler adds project-local candidates and only the admin writes the registry (including promoting candidates). Renaming by id applies to every Clip of every Project at once. Retiring a name is disabling it per Project or archiving it globally — existing labels stay; hard delete is only for zero-reference names. Typeahead words for a new triple come from triples that already exist.
+_Avoid_: bare strings as the durable key; the labeler writing the registry; per-project spellings of one word; hard-deleting a referenced name; built-in seed names the labeler cannot remove; changing only the picker while leaving old strings on disk; treating a class-tag `grasper` as the same identity as a word inside a triple; independent instrument/verb/target lists; orphan Frame strings
 
 **mask**:
 Pixel silhouette on a Track-on-Frame. Predict writes this Frame only. Propagate (SAM 3.1) fills other Frames. Propagate does not write phase, class, or triplet.
