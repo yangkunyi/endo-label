@@ -38,12 +38,15 @@ export type Vocab = {
   triples: VocabTriple[];
 };
 
+export type MaskProvenance = { mask_handoff?: boolean };
+
 export type MaskRle = {
   format: string;
   size: number[];
   counts: number[];
   source?: string;
   track_id?: number;
+  model_provenance?: MaskProvenance | null;
 };
 
 export type LeftoverPoint = { x: number; y: number; positive: boolean };
