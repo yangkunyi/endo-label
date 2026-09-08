@@ -1,4 +1,4 @@
-Status: specified — tickets 01–02 resolved; ticket 03 ready-for-agent
+Status: specified — tickets 01–03 resolved
 
 # Spec: Trash clears the Brush; the player transport is hand-built and always visible
 
@@ -8,7 +8,7 @@ Parents: `.scratch/desk-brush-lanes/spec.md`, `.scratch/desk-ruler/spec.md`, `.s
 
 - [01 — Trash clears the Brush](issues/01-trash-clears-brush.md) (`resolved`)
 - [02 — Hand-built transport replaces media-chrome](issues/02-hand-built-transport.md) (`resolved`)
-- [03 — Full desk e2e closeout](issues/03-e2e-closeout.md) (`ready-for-agent`, blocked by 01, 02)
+- [03 — Full desk e2e closeout](issues/03-e2e-closeout.md) (`resolved`)
 
 ## Problem Statement
 
