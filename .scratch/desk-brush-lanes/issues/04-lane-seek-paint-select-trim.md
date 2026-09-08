@@ -20,4 +20,4 @@
 
 A Lane is a paint and edit surface. Unmodified click on a colored bar seeks the Frame under the pointer (`frameFromClientX`, same bins as the Ruler) and clears bar selection. Empty-track click seeks; empty-track drag POSTs that Lane’s identity on min–max Frames inclusive. Shift-click toggles a folded labeled segment (no seek); selected bars show an inset primary ring (`data-selected`). Backspace/Delete (not while typing) inverse-span each selected segment of that identity only. Escape and Clip or Task-focus change clear selection with no disk write. Drag ends of a selected bar, pointer up, trims (expand paints, shrink removes); drag middle seeks and does not relocate. No marquee. Bottom Remove stays the Brush + In–Out eraser. Ruler and MediaTimeRange do not delete. `i` is still Mark from.
 
-On `dev1`. `tsc` 0; vitest 38. Playwright not run or edited. Nested `/code-review` spawn failed (`not_found`); Standards and Spec axes skipped.
+Commit `bcfac6f` on `dev1`. `tsc` 0; vitest 38. Playwright not run or edited. Nested `/code-review` spawn failed (`not_found`); Standards and Spec axes skipped.

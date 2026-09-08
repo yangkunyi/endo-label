@@ -19,4 +19,4 @@
 
 Class and triplet Brushes append on a second pick; toggling again drops only that identity. Phase still replaces. Apply/Remove loops one existing span POST per armed identity in Library/Vocab order; first failure toasts red, leaves Mark from, and does not toast success. With Mark from set and Brush non-empty, the Ruler fills from–to in Playhead indigo; visible Brush Lanes show 40% ghost bars (`pointer-events: none`). Footer lists every armed identity.
 
-Commit `d90f8e5` on `dev1`. `tsc` 0; vitest 36. Playwright not run. Nested `/code-review` spawn failed (depth-limit / not_found); Standards and Spec axes skipped.
+Commit `b019a6c` on `dev1`. `tsc` 0; vitest 36. Playwright not run. Nested `/code-review` spawn failed (depth-limit / not_found); Standards and Spec axes skipped.

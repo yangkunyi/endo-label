@@ -13,3 +13,9 @@
 - [x] Lane-head column width follows the Clips rail; bars align with the picture, not the Clips list
 - [x] JPEG and video Clips share this geometry
 - [x] Playwright: empty Clip still has the well (rewrite the old “Ruler only” case); picture height stays put when a Lane appears
+
+## Answer
+
+Lane well is always on for an open Clip with Frames: `h-24 shrink-0 overflow-y-auto` under the Ruler (`aria-label="Lane well"`). Picture height does not follow Lane count. Extra Lanes scroll inside. JPEG and video share the geometry.
+
+Commit `7c39a9c` on `dev1`. typecheck 0; vitest 31; Playwright grep for the well case 0. Full suite is ticket 06.

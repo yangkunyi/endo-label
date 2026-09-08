@@ -13,7 +13,7 @@ Sitting: `npm run build`, then only FastAPI. The process serves `web/dist` at `h
 
 ```bash
 npm test
-npm run test:e2e                  # headless, isolated API :7881 + Vite :5174 (system Chrome)
+npm run test:e2e                  # headless, isolated API :7891 + Vite :5191 (system Chrome)
 npm run test:e2e:ui               # Playwright runner (needs a display)
 ```
 

@@ -24,7 +24,7 @@ def main(argv: list[str] | None = None) -> None:
         "--port",
         type=int,
         default=7880,
-        help="Bind port (default: 7880). Playwright e2e uses 7881.",
+        help="Bind port (default: 7880). Playwright e2e uses 7891.",
     )
     args = parser.parse_args(argv)
     if args.port <= 0 or args.port > 65535:
