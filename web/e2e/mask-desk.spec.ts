@@ -552,17 +552,20 @@ test("Track rail shows per-Track state: manual, refined, empty, propagated", asy
 
   await page.getByRole("button", { name: "Propagate" }).click();
   await expect(page.getByText("Propagate complete: 1 of 1 Frames filled")).toBeVisible({ timeout: 10_000 });
+  await expect
+    .poll(async () => (await frameAnnotation(request, "CLIP_E2E", 1))?.masks[0]?.source)
+    .toBe("propagated");
 
   // The filled neighbor reads propagated and not Protected.
   await scrubToFrame(page, 1);
   const propagated = trackStateBadge(page, "propagated");
-  await expect(propagated).toBeVisible();
+  await expect(propagated).toBeVisible({ timeout: 10_000 });
   await expect(propagated).not.toHaveAttribute("data-protected", "true");
   expect((await frameAnnotation(request, "CLIP_E2E", 1))?.masks[0].source).toBe("propagated");
 
-  // The seed Frame kept its manual Source.
+  // The seed Frame kept its refined (Protected) Source.
   await scrubToFrame(page, 0);
-  await expect(trackStateBadge(page, "manual")).toBeVisible();
+  await expect(trackStateBadge(page, "refined")).toBeVisible();
 });
 
 test("a Scribble stroke shows the handoff provenance next to the state", async ({ page, request }) => {

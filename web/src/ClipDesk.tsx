@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { Brush, Check, Eye, EyeOff, Loader2, Lock, Trash2, X } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
-import useSWR, { type KeyedMutator } from "swr";
+import useSWR, { type KeyedMutator, useSWRConfig } from "swr";
 import {
   annotationFramePath,
   annotationSummaryPath,
@@ -537,6 +537,21 @@ export function ClipDesk() {
     }
   }, []);
 
+  const { mutate: mutateKey } = useSWRConfig();
+  const refreshMaskReads = useCallback(
+    async (extraFrames: Iterable<number> = []) => {
+      await mutateAnnotation();
+      await mutateFrameAnn();
+      if (!clipId) {
+        return;
+      }
+      const frames = new Set<number>(extraFrames);
+      frames.add(frameIndex);
+      await Promise.all([...frames].map((index) => mutateKey(annotationFramePath(clipId, index))));
+    },
+    [clipId, frameIndex, mutateAnnotation, mutateFrameAnn, mutateKey],
+  );
+
   useEffect(() => () => stopJobPolling(), [stopJobPolling]);
 
   const pollJob = useCallback(async (jobId: string) => {
@@ -552,9 +567,20 @@ export function ClipDesk() {
             maxFrames: job.max_frames,
           });
         }
-        // ADR 0023: the completed Job already wrote Annotation; refresh both reads.
-        await mutateAnnotation();
-        await mutateFrameAnn();
+        // ADR 0023: the completed Job already wrote Annotation. Refresh this
+        // Frame and every Frame the Job planned to fill (SWR cache of a
+        // neighbor Frame would otherwise stay empty).
+        const planned = data
+          ? propagateTargetFrames(
+              {
+                start: job.start_frame_index,
+                direction: job.direction,
+                maxFrames: job.max_frames,
+              },
+              data.frame_count,
+            )
+          : [];
+        await refreshMaskReads(planned);
         if (job.status === "failed") {
           setToast({ text: job.error ?? "Propagate failed", error: true });
         } else {
@@ -569,7 +595,7 @@ export function ClipDesk() {
     } catch {
       // Transient poll error: keep polling; the next tick retries.
     }
-  }, [mutateAnnotation, mutateFrameAnn, stopJobPolling]);
+  }, [data, refreshMaskReads, stopJobPolling]);
 
   const runPredict = useCallback(async () => {
     if (!clipId || predicting.current || jobRunning || pendingRef.current.length === 0) {
@@ -757,8 +783,7 @@ export function ClipDesk() {
       setKeptJob(null);
       if (job.status === "completed") {
         // Zero-target Job: its Annotation merge write already happened.
-        await mutateAnnotation();
-        await mutateFrameAnn();
+        await refreshMaskReads();
         setToast({ text: "Propagate complete: no Frames to fill from here", error: false });
         return;
       }
@@ -778,11 +803,10 @@ export function ClipDesk() {
     ensureSession,
     frameIndex,
     jobRunning,
-    mutateAnnotation,
-    mutateFrameAnn,
     pollJob,
     propagateDirection,
     propagateMaxFrames,
+    refreshMaskReads,
   ]);
 
   const onRenameTrack = useCallback(async (trackId: number, label: string) => {

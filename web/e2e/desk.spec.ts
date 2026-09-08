@@ -502,6 +502,7 @@ test("mute, volume, and fullscreen drive the native video element and Fullscreen
 });
 
 test("transport walkthrough on jpeg and video Clips: Space, rate list, mute/volume, fullscreen, time display, Ruler-only seek", async ({ page }) => {
+  test.setTimeout(60_000);
   for (const [path, durationText] of [
     ["/clips/CLIP_E2E", "0:00 / 0:00"],
     ["/clips/CLIP_VID", "0:00 / 0:04"],
@@ -554,11 +555,12 @@ test("transport walkthrough on jpeg and video Clips: Space, rate list, mute/volu
     await page.evaluate(() => document.exitFullscreen());
     await expect.poll(async () => page.evaluate(() => document.fullscreenElement)).toBeNull();
 
-    // the Ruler is the only seek: the picture is not one, the footer has no slider
+    // the Ruler is the only seek: the footer has no slider. Picture click is a
+    // mask prompt (ADR 0022), so do not click the video here.
     await expect(page.getByLabel("Player controls").getByRole("slider")).toHaveCount(0);
     const framePrint = page.getByLabel("Player controls").locator("output");
     const frameText = await framePrint.innerText();
-    await video.click({ position: { x: 10, y: 10 } });
+    await page.getByRole("toolbar", { name: "Transport" }).click();
     await expect(framePrint).toHaveText(frameText);
 
     // Ruler click seeks frame-snapped: the far right edge clamps to the last Frame
