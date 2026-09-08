@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
-import { Check, Loader2, Trash2 } from "lucide-react";
+import { Check, Loader2, Lock, Trash2 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
 import {
@@ -80,6 +80,12 @@ import {
 } from "./overlayCoords";
 import { libraryRowSemanticStyle, nowEmptyText } from "./editorCards";
 import { cn } from "./lib/utils";
+import {
+  hasMaskHandoff,
+  isProtectedState,
+  propagateTargetFrames,
+  trackState,
+} from "./trackState";
 import { foldClass, foldPhase, foldTriplet, labelColor, type TimelineLane } from "./timeline";
 import {
   WORKER_LOADING_LABEL,
@@ -254,6 +260,13 @@ export function ClipDesk() {
   const [propagateMaxFrames, setPropagateMaxFrames] = useState("");
   const [propagateJob, setPropagateJob] = useState<PropagateJobPublic | null>(null);
   const jobPollRef = useRef<number | null>(null);
+  // Ticket 10: planned span of the last completed Propagate Job, so a
+  // Protected slot inside it that still reads manual/refined shows as kept.
+  const [keptJob, setKeptJob] = useState<{
+    start: number;
+    direction: PropagateDirection;
+    maxFrames: number | null;
+  } | null>(null);
   // Story 86: overlay geometry input is off while a Job runs.
   const jobRunning = propagateJob != null;
   // Ticket 09: the Job blocks, so the desk shows an indeterminate state with
@@ -283,6 +296,8 @@ export function ClipDesk() {
   );
   const tracks: TrackRow[] = annotation?.tracks ?? [];
   const frameMasks = frameAnn?.masks ?? [];
+  const frameKept =
+    keptJob != null && propagateTargetFrames(keptJob, data?.frame_count ?? 0).has(frameIndex);
   // A snapshot from another Frame renders no pins — including the window
   // between scrub and its re-fetch landing (ticket 08 / story 36).
   const leftover =
@@ -370,6 +385,13 @@ export function ClipDesk() {
       if (job.status === "completed" || job.status === "failed") {
         stopJobPolling();
         setPropagateJob(null);
+        if (job.status === "completed") {
+          setKeptJob({
+            start: job.start_frame_index,
+            direction: job.direction,
+            maxFrames: job.max_frames,
+          });
+        }
         // ADR 0023: the completed Job already wrote Annotation; refresh both reads.
         await mutateAnnotation();
         await mutateFrameAnn();
@@ -434,6 +456,8 @@ export function ClipDesk() {
       await loadSessionFrame(pendingFrame.current);
       await mutateAnnotation();
       await mutateFrameAnn();
+      // A hand edit supersedes the last Job's kept readout.
+      setKeptJob(null);
     } catch (err) {
       // A failure while the checkpoint loads is a state, not an unexplained error.
       setToast(workerLoadingToast(err, "Predict failed"));
@@ -483,6 +507,7 @@ export function ClipDesk() {
       await loadSessionFrame(frameIndex);
       await mutateAnnotation();
       await mutateFrameAnn();
+      setKeptJob(null);
     } catch (err) {
       setToast({ text: err instanceof Error ? err.message : "Pin delete failed", error: true });
     } finally {
@@ -503,6 +528,7 @@ export function ClipDesk() {
       await loadSessionFrame(frameIndex);
       await mutateAnnotation();
       await mutateFrameAnn();
+      setKeptJob(null);
     } catch (err) {
       setToast({ text: err instanceof Error ? err.message : "Clear mask failed", error: true });
     } finally {
@@ -530,6 +556,7 @@ export function ClipDesk() {
       setActiveTrackId((current) => activeTrackOrNull(current, sessionTracksNow));
       await mutateAnnotation();
       await mutateFrameAnn();
+      setKeptJob(null);
       if (!result.undone) {
         setToast({ text: "Nothing to undo on this Frame", error: false });
       }
@@ -567,6 +594,7 @@ export function ClipDesk() {
         start_frame_index: frameIndex,
         max_frames: maxFrames,
       });
+      setKeptJob(null);
       if (job.status === "completed") {
         // Zero-target Job: its Annotation merge write already happened.
         await mutateAnnotation();
@@ -755,6 +783,7 @@ export function ClipDesk() {
     clearPredictTimer();
     stopJobPolling();
     setPropagateJob(null);
+    setKeptJob(null);
     void sendJson(sessionPath(), "DELETE").catch(() => undefined);
   }, [clearPredictTimer, clipId, stopJobPolling]);
 
@@ -882,6 +911,8 @@ export function ClipDesk() {
             canUndo={(sessionSnapshot?.tracks.length ?? 0) > 0}
             busy={jobRunning}
             canPropagate={frameMasks.length > 0}
+            frameMasks={frameMasks}
+            frameKept={frameKept}
             propagateJob={propagateJob}
             propagateElapsed={propagateElapsed}
             propagateDirection={propagateDirection}
@@ -1157,6 +1188,8 @@ function TrackRail({
   canUndo,
   busy,
   canPropagate,
+  frameMasks,
+  frameKept,
   propagateJob,
   propagateElapsed,
   propagateDirection,
@@ -1179,6 +1212,8 @@ function TrackRail({
   canUndo: boolean;
   busy: boolean;
   canPropagate: boolean;
+  frameMasks: FrameAnnotations["masks"];
+  frameKept: boolean;
   propagateJob: PropagateJobPublic | null;
   propagateElapsed: number;
   propagateDirection: PropagateDirection;
@@ -1313,47 +1348,78 @@ function TrackRail({
         <p className="text-sm text-muted-foreground">No Tracks</p>
       ) : (
         <ul aria-label="Track list" className="space-y-1">
-          {tracks.map((track) => (
-            <li key={track.track_id}>
-              {renaming?.trackId === track.track_id ? (
-                <Input
-                  aria-label="Track Label"
-                  value={renaming.draft}
-                  autoFocus
-                  className="h-7 text-xs"
-                  onChange={(event) => setRenaming({ trackId: track.track_id, draft: event.target.value })}
-                  onBlur={() => setRenaming(null)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      commitRename();
-                    }
-                    if (event.key === "Escape") {
-                      setRenaming(null);
-                    }
-                  }}
-                />
-              ) : (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={activeTrackId === track.track_id ? "secondary" : "ghost"}
-                  aria-pressed={activeTrackId === track.track_id}
-                  className="w-full justify-start gap-2"
-                  title="Double-click to rename"
-                  onClick={() => onSelectTrack(track.track_id)}
-                  onDoubleClick={() => setRenaming({ trackId: track.track_id, draft: track.label })}
-                >
-                  <span
-                    aria-hidden
-                    className="h-2.5 w-2.5 shrink-0 rounded-sm"
-                    style={{ backgroundColor: track.color }}
+          {tracks.map((track) => {
+            const mask = frameMasks.find((row) => row.track_id === track.track_id);
+            const state = trackState(mask?.source);
+            const protectedState = isProtectedState(state);
+            const handoff = hasMaskHandoff(mask?.model_provenance);
+            const kept = frameKept && protectedState;
+            const badge = `${state}${handoff ? " · handoff" : ""}${kept ? " · kept" : ""}`;
+            return (
+              <li key={track.track_id} className="flex items-center gap-1">
+                {renaming?.trackId === track.track_id ? (
+                  <Input
+                    aria-label="Track Label"
+                    value={renaming.draft}
+                    autoFocus
+                    className="h-7 min-w-0 flex-1 text-xs"
+                    onChange={(event) => setRenaming({ trackId: track.track_id, draft: event.target.value })}
+                    onBlur={() => setRenaming(null)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        commitRename();
+                      }
+                      if (event.key === "Escape") {
+                        setRenaming(null);
+                      }
+                    }}
                   />
-                  <span className="truncate">{track.label}</span>
-                </Button>
-              )}
-            </li>
-          ))}
+                ) : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={activeTrackId === track.track_id ? "secondary" : "ghost"}
+                    aria-pressed={activeTrackId === track.track_id}
+                    className="min-w-0 flex-1 justify-start gap-2"
+                    title="Double-click to rename"
+                    onClick={() => onSelectTrack(track.track_id)}
+                    onDoubleClick={() => setRenaming({ trackId: track.track_id, draft: track.label })}
+                  >
+                    <span
+                      aria-hidden
+                      className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                      style={{ backgroundColor: track.color }}
+                    />
+                    <span className="truncate">{track.label}</span>
+                  </Button>
+                )}
+                <span
+                  role="img"
+                  data-track-state={state}
+                  data-protected={protectedState ? "true" : undefined}
+                  data-kept={kept ? "true" : undefined}
+                  aria-label={`${badge}${protectedState ? " — Protected" : ""}`}
+                  title={
+                    protectedState
+                      ? kept
+                        ? "Protected — the last Propagate left this mask untouched"
+                        : "Protected — Propagate will not overwrite this mask"
+                      : undefined
+                  }
+                  className={cn(
+                    "flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[10px] leading-none",
+                    protectedState
+                      ? "bg-secondary font-medium text-foreground"
+                      : "bg-secondary/60 text-muted-foreground",
+                  )}
+                >
+                  {protectedState ? <Lock aria-hidden="true" size={10} className="shrink-0" /> : null}
+                  <span className="whitespace-nowrap">{badge}</span>
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

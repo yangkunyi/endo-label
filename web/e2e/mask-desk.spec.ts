@@ -238,8 +238,11 @@ test("leftover pin is visible, a click on it deletes only the pin", async ({ pag
   await expect.poll(async () => (await overlayPixel(page, 0.4, 0.5)).a).toBe(255);
 
   await clickAt(page, 0.4, 0.5);
+  // The delete round-trips before the Session reflects it; poll the result.
+  await expect
+    .poll(async () => (await sessionState(request, 0)).tracks?.[0].geometric_memory ?? [])
+    .toHaveLength(1);
   const memory = (await sessionState(request, 0)).tracks?.[0].geometric_memory ?? [];
-  expect(memory).toHaveLength(1);
   expect(memory[0].x).toBeCloseTo(0.62, 2);
   await expect.poll(async () => (await overlayPixel(page, 0.4, 0.5)).a).toBe(120);
   const countsAfter = (await frameAnnotation(request, "CLIP_E2E", 0))?.masks[0].counts;
@@ -491,4 +494,151 @@ test("worker-down sitting still edits phase, class, and triplet", async ({ page,
   expect(classDoc).toMatchObject({ "0": ["grasper"] });
   const tripletDoc = (await (await request.get(`${DOWN_API}/api/triplet/CLIP_E2E`)).json()).frames;
   expect(tripletDoc).toMatchObject({ "0": [{ instrument: "DownTool" }] });
+});
+
+// --- Closeout for tickets 08–10 (run once here, ticket 10) ---
+
+function trackStateBadge(page: Page, state: string): Locator {
+  return page.getByRole("list", { name: "Track list" }).locator(`[data-track-state="${state}"]`);
+}
+
+test("leftover pins stay on their Frame: hidden after scrub, back on return", async ({ page, request }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await videoReady(page);
+  await clickAt(page, 0.4, 0.5);
+  await expect(trackRow(page, "track-1")).toBeVisible();
+  await clickAt(page, 0.62, 0.5);
+  await expect
+    .poll(async () => (await sessionState(request, 0)).tracks?.[0].geometric_memory?.length)
+    .toBe(2);
+  await expect.poll(async () => (await overlayPixel(page, 0.62, 0.5)).a).toBe(255);
+
+  // Frame 1: no pins render, and the rail reads the frame-scoped state.
+  await scrubToFrame(page, 1);
+  await expect(trackStateBadge(page, "empty")).toBeVisible();
+  await expect.poll(async () => (await overlayPixel(page, 0.62, 0.5)).a).toBe(0);
+  expect((await sessionState(request, 1)).tracks?.[0].geometric_memory ?? []).toHaveLength(0);
+
+  await scrubToFrame(page, 0);
+  await expect.poll(async () => (await overlayPixel(page, 0.62, 0.5)).a).toBe(255);
+});
+
+test("Track rail shows per-Track state: manual, refined, empty, propagated", async ({ page, request }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await videoReady(page);
+
+  await clickAt(page, 0.5, 0.5);
+  await expect(trackRow(page, "track-1")).toBeVisible();
+  const manual = trackStateBadge(page, "manual");
+  await expect(manual).toBeVisible();
+  await expect(manual).toHaveAttribute("data-protected", "true");
+  await expect(manual).toContainText("manual");
+
+  // A second Predict with the prior on this Track-on-Frame refines it.
+  await clickAt(page, 0.62, 0.5);
+  await expect(trackStateBadge(page, "refined")).toBeVisible();
+  expect((await frameAnnotation(request, "CLIP_E2E", 0))?.masks[0].source).toBe("refined");
+
+  await scrubToFrame(page, 1);
+  await expect(trackStateBadge(page, "empty")).toBeVisible();
+  await scrubToFrame(page, 0);
+
+  await page.getByRole("button", { name: "Propagate" }).click();
+  await expect(page.getByText("Propagate complete: 1 of 1 Frames filled")).toBeVisible({ timeout: 10_000 });
+
+  // The filled neighbor reads propagated and not Protected.
+  await scrubToFrame(page, 1);
+  const propagated = trackStateBadge(page, "propagated");
+  await expect(propagated).toBeVisible();
+  await expect(propagated).not.toHaveAttribute("data-protected", "true");
+  expect((await frameAnnotation(request, "CLIP_E2E", 1))?.masks[0].source).toBe("propagated");
+
+  // The seed Frame kept its manual Source.
+  await scrubToFrame(page, 0);
+  await expect(trackStateBadge(page, "manual")).toBeVisible();
+});
+
+test("a Scribble stroke shows the handoff provenance next to the state", async ({ page, request }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await videoReady(page);
+
+  await dragStroke(page, [0.35, 0.35], [0.65, 0.35]);
+  await expect(trackRow(page, "track-1")).toBeVisible();
+  const badge = trackStateBadge(page, "manual");
+  await expect(badge).toContainText("manual");
+  await expect(badge).toContainText("handoff");
+  const masks = (await frameAnnotation(request, "CLIP_E2E", 0))?.masks ?? [];
+  expect(masks[0]?.model_provenance?.mask_handoff).toBe(true);
+  await expect(badge).toHaveAttribute("data-protected", "true");
+});
+
+test("Propagate leaves a Protected slot and the desk says kept", async ({ page, request }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await videoReady(page);
+
+  await clickAt(page, 0.5, 0.5);
+  await expect(trackRow(page, "track-1")).toBeVisible();
+  await page.getByRole("button", { name: "Propagate" }).click();
+  await expect(page.getByText("Propagate complete: 1 of 1 Frames filled")).toBeVisible({ timeout: 10_000 });
+
+  // Refine the filled Frame: refined is Protected, so a re-run must skip it.
+  await scrubToFrame(page, 1);
+  await clickAt(page, 0.3, 0.3);
+  await expect(trackStateBadge(page, "refined")).toBeVisible();
+
+  await scrubToFrame(page, 0);
+  await page.getByRole("button", { name: "Propagate" }).click();
+  await expect(page.getByText("Propagate complete: 1 of 1 Frames filled")).toBeVisible({ timeout: 10_000 });
+
+  // The seed Frame is not a Job target: manual without a kept marker.
+  const seed = trackStateBadge(page, "manual");
+  await expect(seed).toBeVisible();
+  await expect(seed).not.toHaveAttribute("data-kept", "true");
+
+  await scrubToFrame(page, 1);
+  const kept = page.getByRole("list", { name: "Track list" }).locator('[data-kept="true"]');
+  await expect(kept).toBeVisible();
+  await expect(kept).toHaveAttribute("data-track-state", "refined");
+  expect((await frameAnnotation(request, "CLIP_E2E", 1))?.masks[0].source).toBe("refined");
+});
+
+test("footer shows the SAM loading state while the worker loads, then clears", async ({ page }) => {
+  await page.route("**/api/health", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        service: "endo_label",
+        version: "test",
+        worker: { ready: false, status: "loading", message: "Loading SAM 3.1 checkpoint" },
+      }),
+    });
+  });
+  await page.goto("/clips/CLIP_E2E");
+  await videoReady(page);
+  await expect(page.getByText("Loading SAM model…")).toBeVisible();
+
+  // Once health stops saying loading, the footer state clears on the next poll.
+  await page.unroute("**/api/health");
+  await expect(page.getByText("Loading SAM model…")).toBeHidden({ timeout: 8_000 });
+});
+
+test("rail shows the indeterminate Propagating line while the Job runs", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await videoReady(page);
+  await clickAt(page, 0.5, 0.5);
+  await expect(trackRow(page, "track-1")).toBeVisible();
+
+  // Hold the first status poll so the running state stays observable.
+  await page.route("**/api/jobs/*", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    await route.continue();
+  });
+  await page.getByRole("button", { name: "Propagate" }).click();
+  const running = page.locator("[data-propagate-progress]");
+  await expect(running).toContainText("Propagating…");
+  await expect(running).toContainText("from Frame 0");
+  await expect(page.getByText("Propagate complete: 1 of 1 Frames filled")).toBeVisible({ timeout: 15_000 });
+  await expect(running).toHaveCount(0);
 });

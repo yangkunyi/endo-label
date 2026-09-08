@@ -31,13 +31,21 @@ A spec for a local endoscopic surgical-video labeling product (one labeler): whi
 - [One Session per Clip for all task types, or not](issues/08-session-across-tasks.md) — Session = mask/SAM only, lazy-open on Predict/Propagate. All four editors usable at once on the same Frame. No Task-focus switch.
 - [What to reuse from the current mask desk](issues/09-reuse-mask-desk.md) — **New repo** `/data3/yky/endo_label`. Port a thin mask module from this desk. Four sibling backends. Do not grow `video_label_service.app`. Do not copy `.scratch` / superseded ADRs.
 - phase / class / triplet product slice — spec + tickets 01–07 resolved: [../phase-class-triplet/spec.md](../phase-class-triplet/spec.md). Desk-wide vocab. Triplet has no Track. Sitting is YAML + FastAPI `:7880` serving `web/dist`. Local Playwright is `cd web && npm run test:e2e` (isolated `:7881` / Vite `:5174`), not CI.
+- mask on the sitting player — spec implemented: [../mask-desk/spec.md](../mask-desk/spec.md). Geometric Prompt + Scribble + Propagate Job. Overlay on the player; Track list on the right rail; Session lazy; Annotation immediate. Tickets 01–07 resolved, commits `ea43908`…`1863f57`. class/triplet bind later.
+- [This worktree uses its own ports](../mask-desk/issues/01-worktree-ports.md) — `dev2` sitting `7882`, Vite `5175`, Playwright e2e `7892`/`5192`. Commit `ea4390821c0d6929d702bac66f5a04d0287c2f0f`.
+- [Click a point, see a Track, Annotation is on disk](../mask-desk/issues/02-point-overlay-persist.md) — overlay Geometric Prompt, 800 ms / rail Predict, lazy Session, immediate Annotation. Commit `9f956d8755bcff4fa2acd457101fd41c1f0d1493`.
+- [Leftover points stay; click a pin to delete](../mask-desk/issues/03-geometric-memory.md) — Geometric Memory pins, click-pin delete + re-Predict, rail-only Active Track, New Track. Commit `326b8e3c5992ea9715f9bfc0475abc85180fc9c9`.
+- [Drag is Scribble; Mask Handoff to SAM](../mask-desk/issues/04-scribble-handoff.md) — drag ≥0.005 is Scribble, width 1–40 default 8 stamped per stroke, Scribble→Handoff provenance `mask_handoff`, Scribble-down 503 keeps mask. Commit `504af2e`.
+- [Undo this Frame's last committed mask edit](../mask-desk/issues/05-undo.md) — per-cell undo stack, `POST /api/session/undo`, Ctrl/Cmd+Z + rail Undo, restore mask + pins + Scribble Memory. Commit `a135ddd`.
+- [Propagate Job from this Frame; Protected stay](../mask-desk/issues/06-propagate-job.md) — explicit rail Job, forward/backward/both, pollable, `source=propagated`, `manual`/`refined` protected, 409 matrix while running. Commit `b4cd640`.
+- [Desk Playwright closeout](../mask-desk/issues/07-e2e-closeout.md) — 11 mask e2e on `7892`/`5192` + worker-down compose on `7893`; full Playwright 46 passed. Commit `1863f57`.
 
 ## Not yet specified
 
 - Review / Protected Mask rules for non-mask records.
 - Export / interchange formats.
-- Role of Concept Prompt / Geometric Prompt for mask (keep current desk?) vs other task types.
-- mask / Track / SAM product spec (later `/to-spec`; Session stays lazy and mask-only).
+- Binding Frame class / Triplet to a Track (parked; [research/class-triplet-mask-binding.md](research/class-triplet-mask-binding.md)).
+- Concept Prompt on this sitting.
 
 ## Out of scope
 

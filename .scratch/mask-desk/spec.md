@@ -1,4 +1,4 @@
-Status: ready-for-agent — tickets 01–05 resolved; frontier 06
+Status: implemented — tickets 01–07 resolved on `dev2` (commits `ea43908`…`1863f57`)
 
 # Spec: mask on the sitting player (Geometric Prompt, Scribble, Propagate)
 
