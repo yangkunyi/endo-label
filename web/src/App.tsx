@@ -1,16 +1,19 @@
 import { Route, Routes } from "react-router-dom";
 import { SWRConfig } from "swr";
+import { AppShell } from "./AppShell";
 import { ClipDesk } from "./ClipDesk";
+import { Login } from "./Login";
 
 export default function App() {
   return (
     <SWRConfig value={{ shouldRetryOnError: false }}>
-      <div className="min-h-screen bg-background text-foreground">
-        <Routes>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route element={<AppShell />}>
           <Route path="/" element={<ClipDesk />} />
           <Route path="/clips/:clipId" element={<ClipDesk />} />
-        </Routes>
-      </div>
+        </Route>
+      </Routes>
     </SWRConfig>
   );
 }

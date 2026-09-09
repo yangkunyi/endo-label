@@ -4,9 +4,14 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] compose seam: any /api endpoint without a session returns 401; correct login yields a working cookie; wrong password 401; disabled accounts are refused at login and their existing session gets 401 on the very next request
-- [ ] compose seam: role flags read/write correctly per user (data prep for the coarse gates)
-- [ ] e2e: login → desk → logout → login again; unauthenticated deep links land on /login
-- [ ] WAL and busy_timeout in effect: two interleaved clients read/write without corrupting each other
+- [x] compose seam: any /api endpoint without a session returns 401; correct login yields a working cookie; wrong password 401; disabled accounts are refused at login and their existing session gets 401 on the very next request
+- [x] compose seam: role flags read/write correctly per user (data prep for the coarse gates)
+- [x] e2e: login → desk → logout → login again; unauthenticated deep links land on /login
+- [x] WAL and busy_timeout in effect: two interleaved clients read/write without corrupting each other
+
+## Answer
+
+SQLite WAL + `busy_timeout=5000` at `labels_root.parent / coordination.sqlite` (override `coordination_db`). Users table holds username, argon2id hash (`pwdlib`), stackable admin/reviewer/annotator flags, disabled. Login sessions table; cookie `session_id` is httponly + samesite=lax, `secure` via `session_cookie_secure` (off by default). `/api/health`, `/api/auth/login`, `/api/auth/logout` are public; every other `/api/*` is 401 without a live session or when the Account is disabled. CLI: `python -m endo_label create-admin NAME [--password] [--config]`. Frontend `/login` + app-shell username/logout; unauthenticated pages go to `/login`.
+

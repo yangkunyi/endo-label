@@ -64,6 +64,9 @@ class Settings:
     scribble_sam2_checkpoint: Path | None = None
     # None / unset SCRIBBLE_GPU_ID: share this Session's gpu_id. Do not default 0/1/5.
     scribble_gpu_id: int | None = None
+    # Coordination SQLite (WAL). None → labels_root.parent / "coordination.sqlite".
+    coordination_db: Path | None = None
+    session_cookie_secure: bool = False
 
 
 def default_config_path() -> Path:
@@ -180,6 +183,15 @@ def load_settings(config_path: Path | str | None = None) -> Settings:
 
     allowlist = tuple(entry.id for entry in clips) if clips else _clip_allowlist(data.get("clip_allowlist"), path)
 
+    coord_raw = data.get("coordination_db")
+    if coord_raw is None or not str(coord_raw).strip():
+        coordination_db = None
+    else:
+        coordination_db = _resolve_path(str(coord_raw).strip(), base)
+
+    secure_raw = data.get("session_cookie_secure")
+    session_cookie_secure = bool(secure_raw)
+
     return Settings(
         frames_root=frames_root,
         clip_allowlist=allowlist,
@@ -200,4 +212,6 @@ def load_settings(config_path: Path | str | None = None) -> Settings:
         scribble_model_path=_optional_path(data.get("scribble_model_path"), base),
         scribble_sam2_checkpoint=_optional_path(data.get("scribble_sam2_checkpoint"), base),
         scribble_gpu_id=_optional_int(data.get("scribble_gpu_id"), path, "scribble_gpu_id"),
+        coordination_db=coordination_db,
+        session_cookie_secure=session_cookie_secure,
     )

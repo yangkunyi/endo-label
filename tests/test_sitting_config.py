@@ -8,10 +8,10 @@ import sys
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
 from endo_label.app import create_app
 from endo_label.config import ConfigError, default_config_path, load_settings
+from tests.sitting_http import authed_client
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -121,7 +121,7 @@ def test_config_flag_loads_frame_pool_allowlist_and_label_roots(tmp_path: Path) 
     )
 
     settings = load_settings(yaml_path)
-    client = TestClient(create_app(settings))
+    client = authed_client(settings)
     clips = client.get("/api/clips")
     assert clips.status_code == 200
     assert clips.json()["clips"] == [
@@ -137,7 +137,7 @@ def test_config_flag_loads_frame_pool_allowlist_and_label_roots(tmp_path: Path) 
     assert span.status_code == 200
     assert span.json()["frames"]["0"] == "Preparation"
 
-    again = TestClient(create_app(load_settings(yaml_path)))
+    again = authed_client(load_settings(yaml_path))
     got = again.get("/api/phase/YAMLCLIP")
     assert got.status_code == 200
     assert got.json()["frames"]["0"] == "Preparation"
@@ -171,7 +171,7 @@ def test_environment_variables_are_not_sitting_config(tmp_path: Path, monkeypatc
     monkeypatch.setenv("CLIP_ALLOWLIST", "ENVCLIP")
     monkeypatch.setenv("LABELS_ROOT", str(tmp_path / "env_labels"))
 
-    client = TestClient(create_app(load_settings(yaml_path)))
+    client = authed_client(load_settings(yaml_path))
     clips = client.get("/api/clips").json()["clips"]
     assert clips == [{"id": "YAMLCLIP", "kind": "jpeg", "frame_count": 1, "fps": 25}]
     ids = {row["id"] for row in clips}
@@ -186,7 +186,7 @@ def test_empty_allowlist_means_zero_clips(tmp_path: Path) -> None:
         labels_root=tmp_path / "labels",
         allowlist=[],
     )
-    client = TestClient(create_app(load_settings(yaml_path)))
+    client = authed_client(load_settings(yaml_path))
     clips = client.get("/api/clips")
     assert clips.status_code == 200
     assert clips.json() == {"clips": []}
@@ -202,7 +202,7 @@ def test_cors_allows_only_vite_origin(tmp_path: Path) -> None:
             allowlist=["CLIPA"],
         )
     )
-    client = TestClient(create_app(settings))
+    client = authed_client(settings)
 
     for origin in (
         "http://127.0.0.1:5173",

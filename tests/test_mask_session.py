@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from endo_label.app import create_app
 from endo_label.config import Settings
+from tests.sitting_http import authed_client, login, seed_admin
 from endo_label.mask import annotations
 from endo_label.mask.mask_codec import decode_rle, encode_rle
 from endo_label.mask.predictor import FakePredictor
@@ -50,7 +51,14 @@ def _sitting(
     *,
     frames: int = 2,
 ) -> TestClient:
-    return TestClient(create_app(_settings_for(tmp_path, clip_ids, frames=frames)))
+    return authed_client(_settings_for(tmp_path, clip_ids, frames=frames))
+
+
+def _authed_session(settings: Settings, session_manager: SessionManager) -> TestClient:
+    seed_admin(settings)
+    client = TestClient(create_app(settings, session_manager=session_manager))
+    login(client)
+    return client
 
 
 class _RecordingGeometry(FakePredictor):
@@ -118,10 +126,8 @@ def _sitting_with(
         predictor_backend="fake",
         scribble_backend="fake",
     )
-    return TestClient(
-        create_app(
-            settings, session_manager=SessionManager(settings, predictor, scribble=scribble)
-        )
+    return _authed_session(
+        settings, SessionManager(settings, predictor, scribble=scribble)
     )
 
 
@@ -419,9 +425,7 @@ def test_second_geometric_predict_resends_leftovers_and_mask_prior(
         predictor_backend="fake",
         scribble_backend="fake",
     )
-    client = TestClient(
-        create_app(settings, session_manager=SessionManager(settings, recorder))
-    )
+    client = _authed_session(settings, SessionManager(settings, recorder))
     _open(client)
     first = client.post(
         "/api/session/predict",
@@ -474,9 +478,7 @@ def test_leftover_pin_delete_repredicts_remaining_last_pin_plus_prior(
         predictor_backend="fake",
         scribble_backend="fake",
     )
-    client = TestClient(
-        create_app(settings, session_manager=SessionManager(settings, recorder))
-    )
+    client = _authed_session(settings, SessionManager(settings, recorder))
     _open(client)
     first = client.post(
         "/api/session/predict",
@@ -1391,7 +1393,7 @@ def test_completed_propagate_merges_and_protected_disk_slots_survive(
     tmp_path: Path,
 ) -> None:
     settings = _settings_for(tmp_path, ("CLIPA",), frames=4)
-    client = TestClient(create_app(settings))
+    client = authed_client(settings)
     _open(client)
     seeded = client.post("/api/session/predict", json=_POINT)
     assert seeded.status_code == 200, seeded.text
