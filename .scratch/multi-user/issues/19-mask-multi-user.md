@@ -4,7 +4,7 @@
 
 **Blocked by:** 11.
 
-Status: RUNNING
+Status: MERGING
 
 - [ ] compose seam (fake backend): two users each open Sessions without conflict; the same user switching Clips keeps the old Session and resumes on return
 - [ ] compose seam: after LRU eviction, the old Session responds as closed; caps are config-driven
