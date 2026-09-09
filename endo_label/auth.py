@@ -38,6 +38,13 @@ def _me(account: Account) -> dict:
     }
 
 
+def require_admin(request: Request) -> Account:
+    account: Account = request.state.account
+    if not account.admin:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return account
+
+
 def install_auth(app) -> None:
     @app.middleware("http")
     async def require_account(request: Request, call_next):

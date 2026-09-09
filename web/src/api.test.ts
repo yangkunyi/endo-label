@@ -25,6 +25,17 @@ import {
   tripletFramePath,
   tripletRowPath,
   tripletSpanPath,
+  registryArchivePath,
+  registryCandidatePath,
+  registryCandidatesPath,
+  registryDisablePath,
+  registryEnablePath,
+  registryLabel,
+  registryPath,
+  registryPromotePath,
+  registryRenamePath,
+  registryRestorePath,
+  registryVisiblePath,
   vocabDeletePath,
   vocabListPath,
   vocabRenamePath,
@@ -42,6 +53,37 @@ test("session and annotation paths match compose HTTP", () => {
   expect(jobPath("job-9")).toBe("/api/jobs/job-9");
   expect(annotationSummaryPath("CLIPA")).toBe("/api/clips/CLIPA/annotations");
   expect(annotationFramePath("CLIPA", 0)).toBe("/api/clips/CLIPA/annotations/frames/0");
+});
+
+test("registry paths match compose HTTP", () => {
+  expect(registryPath()).toBe("/api/registry");
+  expect(registryVisiblePath(3)).toBe("/api/registry/visible?project_id=3");
+  expect(registryRenamePath(1)).toBe("/api/registry/1/rename");
+  expect(registryArchivePath(1)).toBe("/api/registry/1/archive");
+  expect(registryRestorePath(1)).toBe("/api/registry/1/restore");
+  expect(registryEnablePath(1)).toBe("/api/registry/1/enable");
+  expect(registryDisablePath(1)).toBe("/api/registry/1/disable");
+  expect(registryCandidatesPath()).toBe("/api/registry/candidates");
+  expect(registryCandidatePath(8)).toBe("/api/registry/candidates/8");
+  expect(registryPromotePath(8)).toBe("/api/registry/candidates/8/promote");
+  expect(
+    registryLabel({
+      kind: "phase",
+      name: "Prep",
+      instrument: "",
+      verb: "",
+      target: "",
+    }),
+  ).toBe("Prep");
+  expect(
+    registryLabel({
+      kind: "triplet",
+      name: "",
+      instrument: "grasper",
+      verb: "retract",
+      target: "gallbladder",
+    }),
+  ).toBe("grasper / retract / gallbladder");
 });
 
 test("clip desk path is /clips/:clipId", () => {
