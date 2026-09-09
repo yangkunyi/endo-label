@@ -6,6 +6,7 @@
 
 Status: BLOCKED
 
-- [ ] e2e: annotator picker shows only enabled words; creating a candidate lands in the queue; vocab editing controls invisible
-- [ ] e2e: reviewer/admin see the vocab editing controls and can operate them
+Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
+
+- [ ] compose seam: picker set is this Project's enabled words plus its candidates; candidate create lands in the promotion queue
 - [ ] compose seam: permission matrix for candidate creation and vocab editing (role × action)

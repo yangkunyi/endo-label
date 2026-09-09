@@ -6,6 +6,8 @@
 
 Status: BLOCKED
 
+Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
+
 - [ ] compose seam: after a rename, the old id reads back with the new name at every endpoint, with no label-file rewrites
 - [ ] compose seam: after archiving, historical labels are kept and the picker set no longer offers the word; hard delete of a referenced name refused, zero-reference allowed
 - [ ] spot assertions: no bare-string words remain in label files

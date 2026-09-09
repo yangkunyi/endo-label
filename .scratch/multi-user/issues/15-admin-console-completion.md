@@ -6,6 +6,7 @@
 
 Status: BLOCKED
 
+Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
+
 - [ ] compose seam: create/disable/role-edit API behavior (non-admin 403)
 - [ ] compose seam: delivered flag and timestamp; project / tag filtered list queries correct
-- [ ] e2e: admin creates an account → new user logs in and changes password → logs out; setting the delivered marker shows it on the row

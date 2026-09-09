@@ -78,7 +78,7 @@ Turn it into a multi-user system: each person gets an Account (created by the ad
 - Existing react-router and **SWR stay — no library swap** (App.tsx already uses both; ticket 08 said TanStack Query, the equivalent is implemented with SWR). Items/board/lists are cached queries invalidated on mutation; label painting updates optimistically and rolls back on 409; workflow events arrive over SSE/WebSocket.
 - Capability payload: `/me` plus per-item capabilities from the server; a single desk component renders buttons from capabilities (submit/recall/pass/reject/vocab editing) — no per-role copies of the desk.
 - Admin console: users, assignment board (state columns, reviewer assignment, auto-assign, delivered marker in place), project list, vocab management screen (registry browse / enable matrix / promotion queue). Clip/media registration via CLI/config, UI deferred.
-- ClipDesk is decomposed panel by panel (player/timeline/editor cards/mask/vocab library), each step gated by a full Playwright e2e run; pixel-identical.
+- ClipDesk is decomposed panel by panel (player/timeline/editor cards/mask/vocab library), each step gated by compose / vitest / tsc; pixel-identical. Playwright for the remaining drain is ticket 22 after product leaves 15/20/21.
 
 **API surface** (contract level): `/api/auth/*` (login/logout/change password), `/api/me` (identity + capabilities), `/api/items` (assignment list/transitions/reject note/delivered), `/api/projects`, `/api/registry` (registry CRUD/enablement/candidates/promote/archive), existing `/api/phase|class|triplet|vocab|mask` endpoints gain auth and ownership checks, version field added to existing save endpoints.
 
@@ -86,7 +86,7 @@ Turn it into a multi-user system: each person gets an Account (created by the ad
 
 - Good tests assert external behavior only: against the composed FastAPI app (HTTP black box) and the real UI (Playwright) — never against internals. Two seams, both existing prior art, no new seams:
   - **Backend primary seam**: the `tests/test_compose.py` pattern — `TestClient(create_app(Settings(..., predictor_backend="fake")))` with temp directories. The fake predictor backend was designed for CI; all GPU logic (queuing/lock/timeout paths) is verified through it at the API level. Concurrency and 409 scenarios are expressed with two interleaved clients (A writes with a version, B writes in between, A's retry must 409; racing the same transition works the same way). Disabled accounts logging out immediately, role 403s, ownership 404/403 all live here.
-  - **Frontend seam**: the `web/e2e/desk.spec.ts` pattern — login, My Tasks, submit/recall, pass/reject, board operations, capability rendering (annotators see no vocab editing) through the real UI; also the gate for each ClipDesk decomposition step.
+  - **Frontend seam**: the `web/e2e/desk.spec.ts` pattern — login, My Tasks, submit/recall, pass/reject, board operations, capability rendering (annotators see no vocab editing) through the real UI. Remaining-drain Playwright is ticket 22 only, so parallel Worktrees do not bind `7881`/`5174`/`7893`.
 - Existing unit tests (frontend api/deskStore, backend pure functions) stay as auxiliaries; acceptance happens on the two seams.
 
 ## Out of Scope
@@ -103,4 +103,4 @@ Turn it into a multi-user system: each person gets an Account (created by the ad
 
 - If requirements change, update the corresponding ticket Answer in `.scratch/multi-user/` first, then this spec; where spec and tickets disagree, ticket Answers are the decision record and this spec is the execution surface.
 - "Import batch" is an informal notion, not an entity (Project owns vocabulary and ownership); same media in multiple Projects = multiple Clips is part of the model.
-- Suggested build order: coordination DB + auth → assignment/state machine → registry and id migration → frontend shell and admin console → mask multi-user → ClipDesk decomposition (can proceed in parallel with the earlier work, gated by e2e).
+- Suggested build order: coordination DB + auth → assignment/state machine → registry and id migration → frontend shell and admin console → mask multi-user → ClipDesk decomposition → ticket 22 Playwright closeout.

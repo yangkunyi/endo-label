@@ -6,6 +6,7 @@
 
 Status: BLOCKED
 
+Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
+
 - [ ] compose seam: each transition class publishes its event, payload carrying the item identity and new state
-- [ ] e2e: two browser contexts — A rejects, B's task list updates without a refresh
-- [ ] state survives a dropped connection (on reconnect, a full invalidation-refetch as the fallback)
+- [ ] compose seam: a dropped subscriber reconnects with a full invalidation-refetch fallback

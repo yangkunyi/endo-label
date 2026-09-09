@@ -12,7 +12,8 @@ No branch at submit; Done = reviewed-and-passed (reviewed_by/at required), the o
 
 Status: BLOCKED
 
+Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
+
 - [ ] compose seam: each legal transition asserts the resulting state and fields (note, reviewed_by, reviewed_at); illegal ones (e.g. Labeling → Done directly) are refused
 - [ ] compose seam: two clients race the same transition — one wins, one loses, the stored state stays consistent
 - [ ] compose seam: reviewer = annotator refused; auto-balance distribution matches holding counts
-- [ ] e2e: a full round on the board — assign → submit → assign reviewer → pass / reject

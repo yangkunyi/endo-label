@@ -6,7 +6,8 @@
 
 Status: BLOCKED
 
+Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
+
 - [ ] compose seam: pass ends in Done with reviewed_by/at stored; reject ends in Labeling with the note stored and the assignee writable again
 - [ ] compose seam: after Done the annotator's writes are refused; reviewer ≠ annotator is enforced at the entry point
-- [ ] e2e: reviewer opens a submitted item, edits one label in place, passes it; the annotator's item flips to Done
-- [ ] e2e: reject path — reviewer leaves a note, the annotator flow (13's banner) shows it
+- [ ] compose seam: reviewer label writes during Reviewing take the same save path as the annotator

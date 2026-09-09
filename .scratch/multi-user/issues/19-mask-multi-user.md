@@ -6,8 +6,9 @@
 
 Status: BLOCKED
 
+Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
+
 - [ ] compose seam (fake backend): two users each open Sessions without conflict; the same user switching Clips keeps the old Session and resumes on return
 - [ ] compose seam: after LRU eviction, the old Session responds as closed; caps are config-driven
 - [ ] compose seam: concurrent Predicts serialize through the inference lock; the 30-second timeout path returns the agreed error under slow fake inference
 - [ ] compose seam: mask writes by a non-assignee are refused
-- [ ] e2e: Session auto-open/resume/"inferring" hint smoke test (fake instant inference)

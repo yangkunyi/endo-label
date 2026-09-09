@@ -6,7 +6,8 @@
 
 Status: BLOCKED
 
+Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
+
 - [ ] compose seam: registry CRUD; non-admin writes 403; archive/restore reversible; promoting a candidate turns it into a global id
 - [ ] compose seam: the enable matrix decides each Project's visible set
 - [ ] existing vocab endpoints and `test_compose` fully green (zero-breakage proof)
-- [ ] e2e: all three /admin/vocab areas operable end to end

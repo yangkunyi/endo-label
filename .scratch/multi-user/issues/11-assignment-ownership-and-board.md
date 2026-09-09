@@ -6,6 +6,7 @@
 
 Status: BLOCKED
 
+Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
+
 - [ ] compose seam: after assignment the assignee writes labels successfully; any other user gets 403; after reassignment the old assignee gets 403, the new one succeeds, and existing labels survive; unassignment leaves no one able to write and labels intact
 - [ ] compose seam: two interleaved clients — A holds a version, B writes in between, A's retry must 409; retrying with the fresh version succeeds
-- [ ] e2e: admin assigns on the board → annotator's desk becomes writable; board row states match the lists

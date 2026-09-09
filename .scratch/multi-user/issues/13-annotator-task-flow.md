@@ -6,7 +6,7 @@
 
 Status: BLOCKED
 
-- [ ] e2e: an annotator sees only their own items; another account's items are invisible either way
-- [ ] e2e: label → submit (list state flips to Submitted) → recall (back to Labeling), end to end
-- [ ] e2e: after a reject the banner shows the note; a 409 scenario (stale version via two open tabs) prompts and recovers
+Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
+
 - [ ] compose seam: /me capability matrix asserted parametrically (role × state → each action true/false)
+- [ ] compose seam: annotator list is own items only; submit Labeling → Submitted; recall Submitted → Labeling; reject stores the note for the assignee; 409 on stale version then succeeds with the fresh version
