@@ -4,7 +4,7 @@
 
 **Blocked by:** 09.
 
-Status: FAILED
+Status: READY
 
 - [ ] compose seam: creating a project and registering media reflects correctly in /api/projects and the Clip directory
 - [ ] compose seam: registering the same media into two Projects yields two Clip ids, each independently openable
