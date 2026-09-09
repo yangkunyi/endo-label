@@ -4,9 +4,9 @@
 
 **Blocked by:** 09.
 
-Status: RUNNING
+Status: MERGED
 
-- [ ] compose seam: creating a project and registering media reflects correctly in /api/projects and the Clip directory
-- [ ] compose seam: registering the same media into two Projects yields two Clip ids, each independently openable
-- [ ] compose seam: unregistered media does not appear in the directory (registration semantics replace the allowlist)
+- [x] compose seam: creating a project and registering media reflects correctly in /api/projects and the Clip directory
+- [x] compose seam: registering the same media into two Projects yields two Clip ids, each independently openable
+- [x] compose seam: unregistered media does not appear in the directory (registration semantics replace the allowlist)
 - [ ] e2e: registered Clips open and label normally in the existing desk
