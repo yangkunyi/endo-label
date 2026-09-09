@@ -4,7 +4,7 @@
 
 **Blocked by:** 09, 11.
 
-Status: RUNNING
+Status: MERGING
 
 - [ ] compose seam: create/disable/role-edit API behavior (non-admin 403)
 - [ ] compose seam: delivered flag and timestamp; project / tag filtered list queries correct
