@@ -4,7 +4,7 @@
 
 **Blocked by:** 16.
 
-Status: BLOCKED
+Status: READY
 
 - [ ] compose seam: after a rename, the old id reads back with the new name at every endpoint, with no label-file rewrites
 - [ ] compose seam: after archiving, historical labels are kept and the picker set no longer offers the word; hard delete of a referenced name refused, zero-reference allowed
