@@ -44,10 +44,18 @@ class ClipEntry:
 
 
 @dataclass(frozen=True)
+class ProjectSpec:
+    name: str
+    hospital: str
+    clips: tuple[ClipEntry, ...] = ()
+
+
+@dataclass(frozen=True)
 class Settings:
     frames_root: Path
     clip_allowlist: tuple[str, ...]
     clips: tuple[ClipEntry, ...] = ()
+    projects: tuple[ProjectSpec, ...] = ()
     annotations_root: Path = field(default_factory=_default_annotations_root)
     labels_root: Path = field(default_factory=_default_labels_root)
     auto_save_on_propagate: bool = True
@@ -109,6 +117,29 @@ def _parse_clips(value: object, path: Path, base: Path) -> tuple[ClipEntry, ...]
     return tuple(entries)
 
 
+def _parse_projects(value: object, path: Path, base: Path) -> tuple[ProjectSpec, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ConfigError(f"{path}: projects must be a list")
+    specs: list[ProjectSpec] = []
+    seen_ids: set[str] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            raise ConfigError(f"{path}: each projects entry must be a mapping")
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        hospital = str(item.get("hospital") or "").strip()
+        clips = _parse_clips(item.get("clips"), path, base)
+        for clip in clips:
+            if clip.id in seen_ids:
+                raise ConfigError(f"{path}: duplicate Clip id {clip.id}")
+            seen_ids.add(clip.id)
+        specs.append(ProjectSpec(name=name, hospital=hospital, clips=clips))
+    return tuple(specs)
+
+
 def _parse_backend(
     value: object, path: Path, key: str, allowed: tuple[str, ...], default: str
 ) -> str:
@@ -154,12 +185,19 @@ def load_settings(config_path: Path | str | None = None) -> Settings:
         raise ConfigError(f"invalid YAML in {path}: expected a mapping")
 
     base = path.parent
+    projects = _parse_projects(data.get("projects"), path, base)
     clips = _parse_clips(data.get("clips"), path, base)
+    nested_clips = tuple(clip for spec in projects for clip in spec.clips)
+    catalog_clips = nested_clips or clips
     frames_raw = data.get("frames_root")
     if frames_raw is None or not str(frames_raw).strip():
-        if not clips:
+        if not catalog_clips:
             raise ConfigError(f"{path}: frames_root is required")
-        frames_root = clips[0].path if clips[0].kind == "jpeg" else clips[0].path.parent
+        frames_root = (
+            catalog_clips[0].path
+            if catalog_clips[0].kind == "jpeg"
+            else catalog_clips[0].path.parent
+        )
     else:
         frames_root = _resolve_path(str(frames_raw).strip(), base)
 
@@ -181,7 +219,11 @@ def load_settings(config_path: Path | str | None = None) -> Settings:
     else:
         video_cache_root = _resolve_path(str(cache_raw).strip(), base)
 
-    allowlist = tuple(entry.id for entry in clips) if clips else _clip_allowlist(data.get("clip_allowlist"), path)
+    allowlist = (
+        tuple(entry.id for entry in catalog_clips)
+        if catalog_clips
+        else _clip_allowlist(data.get("clip_allowlist"), path)
+    )
 
     coord_raw = data.get("coordination_db")
     if coord_raw is None or not str(coord_raw).strip():
@@ -196,6 +238,7 @@ def load_settings(config_path: Path | str | None = None) -> Settings:
         frames_root=frames_root,
         clip_allowlist=allowlist,
         clips=clips,
+        projects=projects,
         annotations_root=annotations_root,
         labels_root=labels_root,
         video_cache_root=video_cache_root,

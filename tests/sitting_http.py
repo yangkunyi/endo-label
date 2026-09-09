@@ -7,8 +7,15 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from endo_label.app import create_app
-from endo_label.config import Settings
-from endo_label.coordination import AccountExists, create_account, db_path, hash_password
+from endo_label.config import ClipEntry, Settings
+from endo_label.coordination import (
+    AccountExists,
+    create_account,
+    db_path,
+    get_or_create_project,
+    hash_password,
+    register_clip,
+)
 
 ADMIN_USERNAME = "admin"
 ADMIN_PASSWORD = "secret"
@@ -35,6 +42,30 @@ def seed_admin(settings: Settings) -> None:
         return
 
 
+def ensure_registered(settings: Settings) -> None:
+    """Register Settings.clips / clip_allowlist so existing compose tests keep a directory."""
+    if settings.projects:
+        return
+    entries = settings.clips
+    if not entries:
+        entries = tuple(
+            ClipEntry(id=clip_id, kind="jpeg", path=settings.frames_root / clip_id)
+            for clip_id in settings.clip_allowlist
+        )
+    if not entries:
+        return
+    path = db_path(settings)
+    project = get_or_create_project(path, "Test", hospital="Test hospital")
+    for entry in entries:
+        register_clip(
+            path,
+            project_id=project.id,
+            clip_id=entry.id,
+            kind=entry.kind,
+            media_path=entry.path,
+        )
+
+
 def login(
     client: TestClient,
     username: str = ADMIN_USERNAME,
@@ -46,6 +77,7 @@ def login(
 
 def authed_client(settings: Settings, *, web_dist: Path | None = None) -> TestClient:
     seed_admin(settings)
+    ensure_registered(settings)
     client = TestClient(create_app(settings, web_dist=web_dist))
     login(client)
     return client

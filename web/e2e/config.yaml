@@ -1,13 +1,16 @@
-clips:
-  - id: CLIP_E2E
-    kind: jpeg
-    path: fixtures/frames/CLIP_E2E
-  - id: CLIP_E2E_B
-    kind: jpeg
-    path: fixtures/frames/CLIP_E2E_B
-  - id: CLIP_VID
-    kind: video
-    path: fixtures/tiny.mp4
+projects:
+  - name: E2E
+    hospital: Test
+    clips:
+      - id: CLIP_E2E
+        kind: jpeg
+        path: fixtures/frames/CLIP_E2E
+      - id: CLIP_E2E_B
+        kind: jpeg
+        path: fixtures/frames/CLIP_E2E_B
+      - id: CLIP_VID
+        kind: video
+        path: fixtures/tiny.mp4
 labels_root: .work/labels
 annotations_root: .work/mask
 coordination_db: .work/coordination.sqlite

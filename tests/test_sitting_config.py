@@ -99,12 +99,26 @@ def _write_yaml(
     lines = [
         f"frames_root: {frames_root}",
         f"labels_root: {labels_root}",
-        "clip_allowlist:",
     ]
     if allowlist:
-        lines.extend(f"  - {clip_id}" for clip_id in allowlist)
+        lines.extend(
+            [
+                "projects:",
+                "  - name: Test",
+                "    hospital: Test hospital",
+                "    clips:",
+            ]
+        )
+        for clip_id in allowlist:
+            lines.extend(
+                [
+                    f"      - id: {clip_id}",
+                    "        kind: jpeg",
+                    f"        path: {frames_root / clip_id}",
+                ]
+            )
     else:
-        lines[2] = "clip_allowlist: []"
+        lines.append("clip_allowlist: []")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
 

@@ -1,4 +1,4 @@
-"""SQLite coordination store: Accounts and login sessions (WAL)."""
+"""SQLite coordination store: Accounts, Projects, and Clip registration (WAL)."""
 
 from __future__ import annotations
 
@@ -21,6 +21,18 @@ class AccountExists(Exception):
     """Username already taken."""
 
 
+class ProjectExists(Exception):
+    """Project name already taken."""
+
+
+class ProjectNotFound(Exception):
+    """No Project with that name or id."""
+
+
+class ClipExists(Exception):
+    """Clip id already registered."""
+
+
 @dataclass(frozen=True)
 class Account:
     id: int
@@ -29,6 +41,21 @@ class Account:
     reviewer: bool
     annotator: bool
     disabled: bool
+
+
+@dataclass(frozen=True)
+class Project:
+    id: int
+    name: str
+    hospital: str
+
+
+@dataclass(frozen=True)
+class RegisteredClip:
+    id: str
+    project_id: int
+    kind: str
+    path: Path
 
 def db_path(settings: Settings) -> Path:
     if settings.coordination_db is not None:
@@ -65,6 +92,17 @@ def _init_schema(con: sqlite3.Connection) -> None:
             id TEXT PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            hospital TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS clips (
+            id TEXT PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES projects(id),
+            kind TEXT NOT NULL,
+            path TEXT NOT NULL
         );
         """
     )
@@ -216,3 +254,157 @@ def account_for_session(path: Path, token: str) -> Account | None:
         return _account_from_row(row)
     finally:
         con.close()
+
+
+def _project_from_row(row: sqlite3.Row) -> Project:
+    return Project(id=row["id"], name=row["name"], hospital=row["hospital"])
+
+
+def _clip_from_row(row: sqlite3.Row) -> RegisteredClip:
+    return RegisteredClip(
+        id=row["id"],
+        project_id=row["project_id"],
+        kind=row["kind"],
+        path=Path(row["path"]),
+    )
+
+
+def create_project(path: Path, name: str, hospital: str = "") -> Project:
+    name = name.strip()
+    if not name:
+        raise ValueError("name is required")
+    hospital = hospital.strip()
+    con = connect(path)
+    try:
+        try:
+            cur = con.execute(
+                "INSERT INTO projects (name, hospital) VALUES (?, ?)",
+                (name, hospital),
+            )
+            con.commit()
+        except sqlite3.IntegrityError as exc:
+            raise ProjectExists(name) from exc
+        return Project(id=int(cur.lastrowid), name=name, hospital=hospital)
+    finally:
+        con.close()
+
+
+def get_project_by_name(path: Path, name: str) -> Project:
+    con = connect(path)
+    try:
+        row = con.execute(
+            "SELECT id, name, hospital FROM projects WHERE name=?",
+            (name.strip(),),
+        ).fetchone()
+        if row is None:
+            raise ProjectNotFound(name)
+        return _project_from_row(row)
+    finally:
+        con.close()
+
+
+def get_or_create_project(path: Path, name: str, hospital: str = "") -> Project:
+    try:
+        return create_project(path, name, hospital)
+    except ProjectExists:
+        return get_project_by_name(path, name)
+
+
+def list_projects(path: Path) -> list[Project]:
+    con = connect(path)
+    try:
+        rows = con.execute("SELECT id, name, hospital FROM projects ORDER BY id").fetchall()
+        return [_project_from_row(row) for row in rows]
+    finally:
+        con.close()
+
+
+def list_registered_clips(path: Path) -> list[RegisteredClip]:
+    con = connect(path)
+    try:
+        rows = con.execute(
+            "SELECT id, project_id, kind, path FROM clips ORDER BY rowid"
+        ).fetchall()
+        return [_clip_from_row(row) for row in rows]
+    finally:
+        con.close()
+
+
+def projects_payload(path: Path) -> list[dict]:
+    projects = list_projects(path)
+    clips_by_project: dict[int, list[dict]] = {}
+    for clip in list_registered_clips(path):
+        clips_by_project.setdefault(clip.project_id, []).append(
+            {"id": clip.id, "kind": clip.kind}
+        )
+    return [
+        {
+            "id": project.id,
+            "name": project.name,
+            "hospital": project.hospital,
+            "clips": clips_by_project.get(project.id, []),
+        }
+        for project in projects
+    ]
+
+
+def _valid_clip_id(clip_id: str) -> str:
+    clip_id = clip_id.strip()
+    if clip_id in ("", ".", "..") or "/" in clip_id or "\\" in clip_id:
+        raise ValueError(f"bad clip id: {clip_id}")
+    return clip_id
+
+
+def register_clip(
+    path: Path,
+    *,
+    project_id: int,
+    clip_id: str,
+    kind: str,
+    media_path: Path,
+) -> RegisteredClip:
+    clip_id = _valid_clip_id(clip_id)
+    kind = kind.strip()
+    if not kind:
+        raise ValueError("kind is required")
+    stored = str(Path(media_path).expanduser().resolve())
+    con = connect(path)
+    try:
+        project = con.execute("SELECT id FROM projects WHERE id=?", (project_id,)).fetchone()
+        if project is None:
+            raise ProjectNotFound(project_id)
+        existing = con.execute("SELECT * FROM clips WHERE id=?", (clip_id,)).fetchone()
+        if existing is not None:
+            if (
+                existing["project_id"] == project_id
+                and existing["kind"] == kind
+                and existing["path"] == stored
+            ):
+                return _clip_from_row(existing)
+            raise ClipExists(clip_id)
+        con.execute(
+            "INSERT INTO clips (id, project_id, kind, path) VALUES (?, ?, ?, ?)",
+            (clip_id, project_id, kind, stored),
+        )
+        con.commit()
+        return RegisteredClip(
+            id=clip_id, project_id=project_id, kind=kind, path=Path(stored)
+        )
+    finally:
+        con.close()
+
+
+def apply_config_registrations(settings: Settings) -> None:
+    if not settings.projects:
+        return
+    path = db_path(settings)
+    for spec in settings.projects:
+        project = get_or_create_project(path, spec.name, spec.hospital)
+        for clip in spec.clips:
+            register_clip(
+                path,
+                project_id=project.id,
+                clip_id=clip.id,
+                kind=clip.kind,
+                media_path=clip.path,
+            )
