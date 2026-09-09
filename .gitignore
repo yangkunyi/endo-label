@@ -12,3 +12,4 @@ data/
 node_modules/
 .archon/workflows/matt/ticket-dag/
 worktrees/
+.scratch/orchestrator/runs/
