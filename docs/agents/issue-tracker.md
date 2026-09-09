@@ -29,3 +29,14 @@ Used by `/wayfinder`. The **map** is a file with one **child** file per ticket.
 - **Frontier**: scan `.scratch/<effort>/issues/` for files that are open, unblocked, and unclaimed; first by number wins.
 - **Claim**: set `Status: claimed` and save before any work.
 - **Resolve**: append the answer under an `## Answer` heading, set `Status: resolved`, then append a context pointer (gist + link) to the map's Decisions-so-far in `map.md`.
+
+## Implementation tickets (Archon)
+
+`/to-tickets` writes these files. Global Archon `matt-implement-tickets` drains them
+(all features unless `--input feature=` is passed).
+
+- Skip `Type: research` / `prototype` / `grilling` (those belong to `/wayfinder`).
+- Ready means `Status: ready-for-agent` and every `Blocked by` id is done.
+- `Blocked by` is the only start gate and does not cross features. A ticket starts
+  when its own blockers have merged, not when a whole wave finishes.
+- Archon rewrites `Status:` to `claimed`, then `resolved` or `failed`.

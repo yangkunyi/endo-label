@@ -4,6 +4,16 @@
 
 Issues live as local markdown under `.scratch/<feature>/`. See `docs/agents/issue-tracker.md`.
 
+### Archon ticket drain
+
+After `/to-tickets`:
+
+```bash
+archon workflow run matt-implement-tickets
+```
+
+Do not use `/implement-tickets`. See `docs/agents/archon-matt.md`.
+
 ### Triage labels
 
 Default five roles: needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix. See `docs/agents/triage-labels.md`.
