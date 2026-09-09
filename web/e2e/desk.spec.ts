@@ -503,9 +503,9 @@ test("mute, volume, and fullscreen drive the native video element and Fullscreen
 
 test("transport walkthrough on jpeg and video Clips: Space, rate list, mute/volume, fullscreen, time display, Ruler-only seek", async ({ page }) => {
   test.setTimeout(60_000);
-  for (const [path, durationText] of [
-    ["/clips/CLIP_E2E", "0:00 / 0:00"],
-    ["/clips/CLIP_VID", "0:00 / 0:04"],
+  for (const [path, durationText, lastFrame] of [
+    ["/clips/CLIP_E2E", "0:00 / 0:00", "Frame 1 of 2"],
+    ["/clips/CLIP_VID", "0:00 / 0:04", "Frame 99 of 100"],
   ] as const) {
     await page.goto(path);
     const video = page.locator("video");
@@ -527,13 +527,24 @@ test("transport walkthrough on jpeg and video Clips: Space, rate list, mute/volu
     await page.getByRole("menu", { name: "Playback rate" }).getByRole("menuitemradio", { name: "0.25×" }).click();
     await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => el.playbackRate)).toBe(0.25);
 
-    // Space toggles playback
+    // leave the rate button so Space toggles playback instead of activating it
+    await page.evaluate(() => {
+      const v = document.querySelector("video");
+      if (v instanceof HTMLVideoElement) {
+        v.currentTime = 0;
+      }
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    });
     await page.keyboard.press("Space");
-    await expect.poll(async () => video.evaluate((el: HTMLVideoElement) => !el.paused)).toBe(true);
+    // jpeg is ~0.08 s; 0.25× still ends quickly, so accept playing, ended, or time advanced
+    await expect.poll(async () =>
+      video.evaluate((el: HTMLVideoElement) => !el.paused || el.ended || el.currentTime > 0),
+    ).toBe(true);
     if (path === "/clips/CLIP_VID") {
       await expect(transport.getByRole("button", { name: "Pause", exact: true })).toBeVisible();
     }
-    // the 0.08 s jpeg may have ended (paused again) before the pause click lands
     const stillPlaying = await video.evaluate((el: HTMLVideoElement) => !el.paused);
     if (stillPlaying) {
       await transport.getByRole("button", { name: "Pause", exact: true }).click();
@@ -568,9 +579,7 @@ test("transport walkthrough on jpeg and video Clips: Space, rate list, mute/volu
     const rulerBox = await ruler.boundingBox();
     expect(rulerBox).not.toBeNull();
     await ruler.click({ position: { x: rulerBox!.width - 2, y: rulerBox!.height / 2 } });
-    await expect(
-      page.getByLabel("Player controls").getByText(path === "/clips/CLIP_E2E" ? "Frame 1 of 2" : "Frame 99 of 100"),
-    ).toBeVisible();
+    await expect(page.getByLabel("Player controls").getByText(lastFrame)).toBeVisible();
   }
 });
 
@@ -1591,7 +1600,7 @@ test("span keys and Backspace/Delete are ignored while typing in an input or com
   await expect.poll(async () => await clipFrames(page, "triplet")).toEqual({});
 });
 
-test("new controls use English copy: Brush, Show lane, Hide lane", async ({ page }) => {
+test("new controls use English copy: Brush, Show lane, Hide lane, Transport", async ({ page }) => {
   await clearClipLabels(page);
   await page.goto("/clips/CLIP_E2E");
   await focusTask(page, "class");
@@ -1604,6 +1613,12 @@ test("new controls use English copy: Brush, Show lane, Hide lane", async ({ page
   await expect(page.locator("[data-paint-chip]")).toHaveCount(0);
   await expect(page.getByText("Arm class span")).toHaveCount(0);
   await expect(page.getByText("Write to span")).toHaveCount(0);
+  const transport = page.getByRole("toolbar", { name: "Transport" });
+  await expect(transport.getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  await expect(transport.getByRole("button", { name: "Playback rate" })).toBeVisible();
+  await expect(transport.getByRole("button", { name: "Mute" })).toBeVisible();
+  await expect(transport.getByRole("slider", { name: "Volume" })).toBeVisible();
+  await expect(transport.getByRole("button", { name: "Fullscreen" })).toBeVisible();
 });
 
 test("e2e closeout: span paint preserves Vocab, Now read-only, Library trash works after span", async ({ page }) => {
