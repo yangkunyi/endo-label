@@ -43,6 +43,42 @@ export type Vocab = {
   triples: VocabTriple[];
 };
 
+export type RegistryKind = "phase" | "class" | "triplet";
+
+export type RegistryItem = {
+  id: number;
+  kind: RegistryKind;
+  name: string;
+  instrument: string;
+  verb: string;
+  target: string;
+  archived: boolean;
+};
+
+export type RegistryCandidate = {
+  id: number;
+  project_id: number;
+  kind: RegistryKind;
+  name: string;
+  instrument: string;
+  verb: string;
+  target: string;
+};
+
+export type RegistryProject = {
+  id: number;
+  name: string;
+  enabled_ids: number[];
+  candidates: RegistryCandidate[];
+};
+
+export type RegistryBrowse = {
+  items: RegistryItem[];
+  projects: RegistryProject[];
+};
+
+export type RegistryVisible = { items: RegistryItem[] };
+
 export type MaskProvenance = { mask_handoff?: boolean };
 
 export type MaskRle = {
@@ -190,6 +226,59 @@ export function tripletRowPath(
 
 export function vocabPath(): string {
   return "/api/vocab";
+}
+
+export function registryPath(): string {
+  return "/api/registry";
+}
+
+export function registryVisiblePath(projectId: number): string {
+  return `/api/registry/visible?project_id=${projectId}`;
+}
+
+export function registryRenamePath(vocabId: number): string {
+  return `/api/registry/${vocabId}/rename`;
+}
+
+export function registryArchivePath(vocabId: number): string {
+  return `/api/registry/${vocabId}/archive`;
+}
+
+export function registryRestorePath(vocabId: number): string {
+  return `/api/registry/${vocabId}/restore`;
+}
+
+export function registryEnablePath(vocabId: number): string {
+  return `/api/registry/${vocabId}/enable`;
+}
+
+export function registryDisablePath(vocabId: number): string {
+  return `/api/registry/${vocabId}/disable`;
+}
+
+export function registryCandidatesPath(): string {
+  return "/api/registry/candidates";
+}
+
+export function registryCandidatePath(candidateId: number): string {
+  return `/api/registry/candidates/${candidateId}`;
+}
+
+export function registryPromotePath(candidateId: number): string {
+  return `/api/registry/candidates/${candidateId}/promote`;
+}
+
+export function registryLabel(item: {
+  kind: string;
+  name: string;
+  instrument: string;
+  verb: string;
+  target: string;
+}): string {
+  if (item.kind === "triplet") {
+    return `${item.instrument} / ${item.verb} / ${item.target}`;
+  }
+  return item.name;
 }
 
 export function sessionPath(frameIndex?: number): string {

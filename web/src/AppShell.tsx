@@ -1,4 +1,4 @@
-import { Navigate, Outlet, useNavigate } from "react-router-dom";
+import { Link, Navigate, Outlet, useNavigate } from "react-router-dom";
 import useSWR, { mutate } from "swr";
 import { getJson, sendJson, type Me } from "./api";
 import { Button } from "./components/ui/button";
@@ -21,11 +21,17 @@ export function AppShell() {
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
-      <header className="flex shrink-0 items-center justify-end gap-3 border-b border-border px-3 py-2">
-        <span className="text-sm">{data.username}</span>
-        <Button type="button" variant="ghost" size="sm" onClick={logout}>
-          Log out
-        </Button>
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-3 py-2">
+        <nav className="flex items-center gap-3 text-sm">
+          <Link to="/">Desk</Link>
+          {data.roles.admin ? <Link to="/admin/vocab">Vocab</Link> : null}
+        </nav>
+        <div className="flex items-center gap-3">
+          <span className="text-sm">{data.username}</span>
+          <Button type="button" variant="ghost" size="sm" onClick={logout}>
+            Log out
+          </Button>
+        </div>
       </header>
       <div className="min-h-0 flex-1 overflow-hidden">
         <Outlet />

@@ -1,4 +1,4 @@
-"""SQLite coordination store: Accounts, Projects, and Clip registration (WAL)."""
+"""SQLite coordination store: Accounts, Projects, Clip registration, Vocab registry (WAL)."""
 
 from __future__ import annotations
 
@@ -104,6 +104,35 @@ def _init_schema(con: sqlite3.Connection) -> None:
             kind TEXT NOT NULL,
             path TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS vocab_registry (
+            id INTEGER PRIMARY KEY,
+            kind TEXT NOT NULL CHECK (kind IN ('phase', 'class', 'triplet')),
+            name TEXT NOT NULL DEFAULT '',
+            instrument TEXT NOT NULL DEFAULT '',
+            verb TEXT NOT NULL DEFAULT '',
+            target TEXT NOT NULL DEFAULT '',
+            archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1))
+        );
+        CREATE TABLE IF NOT EXISTS project_vocab_enabled (
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            vocab_id INTEGER NOT NULL REFERENCES vocab_registry(id) ON DELETE CASCADE,
+            PRIMARY KEY (project_id, vocab_id)
+        );
+        CREATE TABLE IF NOT EXISTS project_vocab_candidates (
+            id INTEGER PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL CHECK (kind IN ('phase', 'class', 'triplet')),
+            name TEXT NOT NULL DEFAULT '',
+            instrument TEXT NOT NULL DEFAULT '',
+            verb TEXT NOT NULL DEFAULT '',
+            target TEXT NOT NULL DEFAULT ''
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS vocab_registry_active_name
+            ON vocab_registry(kind, name)
+            WHERE archived = 0 AND kind IN ('phase', 'class');
+        CREATE UNIQUE INDEX IF NOT EXISTS vocab_registry_active_triplet
+            ON vocab_registry(kind, instrument, verb, target)
+            WHERE archived = 0 AND kind = 'triplet';
         """
     )
     con.commit()

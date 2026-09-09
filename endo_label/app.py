@@ -15,6 +15,7 @@ from endo_label.mask.http import create_app as create_mask_app
 from endo_label.mask.session import SessionManager
 from endo_label.phase.router import make_router as phase_router
 from endo_label.projects_router import router as projects_router
+from endo_label.registry_router import router as registry_router
 from endo_label.triplet.router import make_router as triplet_router
 from endo_label.vocab_router import make_router as vocab_router
 
@@ -63,6 +64,7 @@ def create_app(
     install_auth(app)
     app.include_router(auth_router)
     app.include_router(projects_router)
+    app.include_router(registry_router)
     app.include_router(phase_router(cfg))
     app.include_router(class_router(cfg))
     app.include_router(triplet_router(cfg))
