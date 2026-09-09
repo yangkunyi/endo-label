@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from endo_label.app import create_app
 from endo_label.config import Settings, load_settings
-from tests.sitting_http import authed_client, login, seed_admin
+from tests.sitting_http import authed_client, login
 
 _VOCAB_LISTS = ("phases", "class_tags", "triples")
 
@@ -728,9 +728,7 @@ def test_class_span_is_durable_across_app_instances(tmp_path: Path) -> None:
         labels_root=tmp_path / "labels",
         predictor_backend="fake",
     )
-    seed_admin(settings)
-    first = TestClient(create_app(settings))
-    login(first)
+    first = authed_client(settings)
     _add_names(first, class_tags="blurred")
     painted = first.post(
         "/api/class/CLIPA/span",
@@ -888,9 +886,7 @@ def test_triplet_span_is_durable_across_app_instances(tmp_path: Path) -> None:
         labels_root=tmp_path / "labels",
         predictor_backend="fake",
     )
-    seed_admin(settings)
-    first = TestClient(create_app(settings))
-    login(first)
+    first = authed_client(settings)
     _add_triples(first, _GRASPER_RETRACT_GB)
     painted = first.post(
         "/api/triplet/CLIPA/span",
@@ -1006,9 +1002,7 @@ def test_class_survives_new_app_instance(tmp_path: Path) -> None:
         labels_root=tmp_path / "labels",
         predictor_backend="fake",
     )
-    seed_admin(settings)
-    first = TestClient(create_app(settings))
-    login(first)
+    first = authed_client(settings)
     _add_names(first, class_tags=["grasper", "blurred"])
     put = first.put("/api/class/CLIPA/frames/0", json={"tags": ["grasper", "blurred"]})
     assert put.status_code == 200
@@ -1354,9 +1348,7 @@ def test_triplet_survives_new_app_instance(tmp_path: Path) -> None:
         labels_root=tmp_path / "labels",
         predictor_backend="fake",
     )
-    seed_admin(settings)
-    first = TestClient(create_app(settings))
-    login(first)
+    first = authed_client(settings)
     _add_triples(first, _GRASPER_RETRACT_GB)
     added = first.post(
         "/api/triplet/CLIPA/frames/0",
@@ -1394,9 +1386,7 @@ def test_phase_survives_new_app_instance(tmp_path: Path) -> None:
         labels_root=tmp_path / "labels",
         predictor_backend="fake",
     )
-    seed_admin(settings)
-    first = TestClient(create_app(settings))
-    login(first)
+    first = authed_client(settings)
     _add_names(first, phases="Preparation")
     painted = first.post(
         "/api/phase/CLIPA/span",
@@ -1984,9 +1974,7 @@ def test_vocab_triple_migrate_once_keeps_plus_row(tmp_path: Path) -> None:
         labels_root=labels,
         predictor_backend="fake",
     )
-    seed_admin(second_settings)
-    second = TestClient(create_app(second_settings))
-    login(second)
+    second = authed_client(second_settings)
     body = second.get("/api/vocab").json()
     assert body["triples"] == [
         {"instrument": "grasper", "verb": "retract", "target": "gallbladder"},

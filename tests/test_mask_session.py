@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from endo_label.app import create_app
 from endo_label.config import Settings
-from tests.sitting_http import authed_client, login, seed_admin
+from tests.sitting_http import authed_client, ensure_registered, login, seed_admin
 from endo_label.mask import annotations
 from endo_label.mask.mask_codec import decode_rle, encode_rle
 from endo_label.mask.predictor import FakePredictor
@@ -56,6 +56,7 @@ def _sitting(
 
 def _authed_session(settings: Settings, session_manager: SessionManager) -> TestClient:
     seed_admin(settings)
+    ensure_registered(settings)
     client = TestClient(create_app(settings, session_manager=session_manager))
     login(client)
     return client

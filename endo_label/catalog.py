@@ -1,4 +1,4 @@
-"""Read-only Clip catalog over a Frame Pool allowlist."""
+"""Read-only Clip catalog over registered Clips in the coordination DB."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from endo_label.config import ClipEntry, Settings
+from endo_label.coordination import db_path, list_registered_clips
 
 _JPEG_SUFFIXES = {".jpg", ".jpeg", ".JPG", ".JPEG"}
 JPEG_CLOCK_FPS = 25
@@ -37,11 +38,9 @@ class TranscodeError(CatalogError):
 
 
 def clip_entries(settings: Settings) -> tuple[ClipEntry, ...]:
-    if settings.clips:
-        return settings.clips
     return tuple(
-        ClipEntry(id=clip_id, kind="jpeg", path=settings.frames_root / clip_id)
-        for clip_id in settings.clip_allowlist
+        ClipEntry(id=row.id, kind=row.kind, path=row.path)
+        for row in list_registered_clips(db_path(settings))
     )
 
 
@@ -57,13 +56,6 @@ def _clip_dir(settings: Settings, clip_id: str) -> Path:
     if entry.kind != "jpeg":
         raise ClipNotFound(clip_id)
     path = entry.path.resolve()
-    if not settings.clips:
-        if clip_id in ("", ".", "..") or "/" in clip_id or "\\" in clip_id:
-            raise ClipNotFound(clip_id)
-        try:
-            path.relative_to(settings.frames_root.resolve())
-        except ValueError as exc:
-            raise ClipNotFound(clip_id) from exc
     if not path.is_dir():
         raise ClipNotFound(clip_id)
     return path
