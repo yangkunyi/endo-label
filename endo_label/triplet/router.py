@@ -4,10 +4,16 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from endo_label import catalog
+from endo_label.auth import (
+    require_label_assignee,
+    require_label_write,
+    with_clip_version,
+    with_new_version,
+)
 from endo_label.config import Settings
 from endo_label import labels_store
 
@@ -16,6 +22,7 @@ class TripletBody(BaseModel):
     instrument: str = Field(..., min_length=1)
     verb: str = Field(..., min_length=1)
     target: str = Field(..., min_length=1)
+    version: int | None = None
 
 
 class TripletSpanBody(BaseModel):
@@ -25,6 +32,7 @@ class TripletSpanBody(BaseModel):
     from_frame: int = Field(..., ge=0, alias="from")
     to_frame: int = Field(..., ge=0, alias="to")
     op: Literal["add", "remove"]
+    version: int | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -52,17 +60,23 @@ def make_router(settings: Settings) -> APIRouter:
             )
 
     @router.get("/api/triplet/{clip_id}")
-    def get_clip_triplet(clip_id: str) -> dict:
+    def get_clip_triplet(clip_id: str, request: Request) -> dict:
         _meta(clip_id)
-        return labels_store.load_clip(settings, "triplet", clip_id)
+        return with_clip_version(
+            request, clip_id, labels_store.load_clip(settings, "triplet", clip_id)
+        )
 
     @router.post("/api/triplet/{clip_id}/frames/{frame_index}")
-    def add_triplet(clip_id: str, frame_index: int, body: TripletBody) -> dict:
+    def add_triplet(
+        clip_id: str, frame_index: int, body: TripletBody, request: Request
+    ) -> dict:
         meta = _meta(clip_id)
         n = int(meta["frame_count"])
         if frame_index < 0 or frame_index >= n:
             raise HTTPException(status_code=404, detail=f"Frame index out of range: {frame_index}")
+        require_label_assignee(request, clip_id, "triplet")
         _require_vocab_triple(body.instrument, body.verb, body.target)
+        require_label_write(request, clip_id, "triplet", body.version)
         doc = labels_store.load_clip(settings, "triplet", clip_id)
         key = str(frame_index)
         rows = list(doc["frames"].get(key) or [])
@@ -94,11 +108,14 @@ def make_router(settings: Settings) -> APIRouter:
         return row
 
     @router.put("/api/triplet/{clip_id}/frames/{frame_index}/{triplet_id}")
-    def put_triplet(clip_id: str, frame_index: int, triplet_id: int, body: TripletBody) -> dict:
+    def put_triplet(
+        clip_id: str, frame_index: int, triplet_id: int, body: TripletBody, request: Request
+    ) -> dict:
         meta = _meta(clip_id)
         n = int(meta["frame_count"])
         if frame_index < 0 or frame_index >= n:
             raise HTTPException(status_code=404, detail=f"Frame index out of range: {frame_index}")
+        require_label_assignee(request, clip_id, "triplet")
         _require_vocab_triple(body.instrument, body.verb, body.target)
         doc = labels_store.load_clip(settings, "triplet", clip_id)
         key = str(frame_index)
@@ -113,12 +130,13 @@ def make_router(settings: Settings) -> APIRouter:
                 break
         if not found:
             raise HTTPException(status_code=404, detail=f"triplet not found: {triplet_id}")
+        new_version = require_label_write(request, clip_id, "triplet", body.version)
         doc["frames"][key] = rows
         labels_store.save_clip(settings, "triplet", clip_id, doc)
-        return doc
+        return with_new_version(doc, new_version)
 
     @router.post("/api/triplet/{clip_id}/span")
-    def paint_span(clip_id: str, body: TripletSpanBody) -> dict:
+    def paint_span(clip_id: str, body: TripletSpanBody, request: Request) -> dict:
         meta = _meta(clip_id)
         n = int(meta["frame_count"])
         a, b = body.from_frame, body.to_frame
@@ -126,7 +144,9 @@ def make_router(settings: Settings) -> APIRouter:
             a, b = b, a
         if a < 0 or b >= n:
             raise HTTPException(status_code=400, detail="span out of range")
+        require_label_assignee(request, clip_id, "triplet")
         _require_vocab_triple(body.instrument, body.verb, body.target)
+        new_version = require_label_write(request, clip_id, "triplet", body.version)
 
         doc = labels_store.load_clip(settings, "triplet", clip_id)
         for i in range(a, b + 1):
@@ -163,22 +183,26 @@ def make_router(settings: Settings) -> APIRouter:
                 doc["frames"].pop(key, None)
 
         labels_store.save_clip(settings, "triplet", clip_id, doc)
-        return doc
+        return with_new_version(doc, new_version)
 
     @router.delete("/api/triplet/{clip_id}/frames/{frame_index}/{triplet_id}")
-    def delete_triplet(clip_id: str, frame_index: int, triplet_id: int) -> dict:
+    def delete_triplet(
+        clip_id: str, frame_index: int, triplet_id: int, request: Request, version: int | None = None
+    ) -> dict:
         _meta(clip_id)
+        require_label_assignee(request, clip_id, "triplet")
         doc = labels_store.load_clip(settings, "triplet", clip_id)
         key = str(frame_index)
         rows = list(doc["frames"].get(key) or [])
         kept = [r for r in rows if int(r.get("id", -1)) != triplet_id]
         if len(kept) == len(rows):
             raise HTTPException(status_code=404, detail=f"triplet not found: {triplet_id}")
+        new_version = require_label_write(request, clip_id, "triplet", version)
         if kept:
             doc["frames"][key] = kept
         else:
             doc["frames"].pop(key, None)
         labels_store.save_clip(settings, "triplet", clip_id, doc)
-        return doc
+        return with_new_version(doc, new_version)
 
     return router

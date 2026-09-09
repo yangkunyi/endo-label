@@ -10,6 +10,7 @@ from endo_label.app import create_app
 from endo_label.config import ClipEntry, Settings
 from endo_label.coordination import (
     AccountExists,
+    connect,
     create_account,
     db_path,
     get_or_create_project,
@@ -75,9 +76,30 @@ def login(
     assert response.status_code == 200, response.text
 
 
+def occupy_registered(settings: Settings, username: str = ADMIN_USERNAME) -> None:
+    """Test helper: every Assignment becomes Labeling for this Account."""
+    con = connect(db_path(settings))
+    try:
+        row = con.execute(
+            "SELECT id FROM users WHERE username=? COLLATE NOCASE",
+            (username,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(username)
+        con.execute(
+            "UPDATE assignments SET state='Labeling', assignee_id=?",
+            (row["id"],),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
 def authed_client(settings: Settings, *, web_dist: Path | None = None) -> TestClient:
     seed_admin(settings)
     ensure_registered(settings)
-    client = TestClient(create_app(settings, web_dist=web_dist))
+    app = create_app(settings, web_dist=web_dist)
+    occupy_registered(settings)
+    client = TestClient(app)
     login(client)
     return client
