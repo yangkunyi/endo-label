@@ -11,3 +11,4 @@ data/
 .runtime/
 node_modules/
 .archon/workflows/matt/ticket-dag/
+worktrees/
