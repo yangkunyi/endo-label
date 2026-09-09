@@ -104,6 +104,7 @@ def test_non_admin_registry_writes_are_forbidden(tmp_path: Path) -> None:
         ),
         client.post("/api/registry/candidates/1", json={"name": "Calot dissection"}),
         client.post("/api/registry/candidates/1/promote"),
+        client.delete("/api/registry/1"),
     ]
     assert all(row.status_code == 403 for row in writes), [row.status_code for row in writes]
 

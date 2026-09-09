@@ -6,10 +6,18 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from endo_label.config import Settings
-from endo_label import labels_store
+from endo_label.coordination import db_path
+from endo_label.registry import (
+    RegistryConflict,
+    RegistryItemNotFound,
+    create_item,
+    desk_vocab,
+    find_active,
+    rename_item,
+    set_archived,
+)
 
-_LISTS = ("phases", "class_tags")
-_RENAMEABLE = frozenset(labels_store.RENAME_LISTS)
+_LISTS = {"phases": "phase", "class_tags": "class"}
 
 
 class VocabAddBody(BaseModel):
@@ -39,6 +47,12 @@ class VocabTripleRenameBody(BaseModel):
 def make_router(settings: Settings) -> APIRouter:
     router = APIRouter(tags=["vocab"])
 
+    def _path():
+        return db_path(settings)
+
+    def _vocab() -> dict:
+        return desk_vocab(_path())
+
     def _stripped_triple(body: VocabTripleBody) -> tuple[str, str, str]:
         instrument = body.instrument.strip()
         verb = body.verb.strip()
@@ -47,105 +61,129 @@ def make_router(settings: Settings) -> APIRouter:
             raise HTTPException(status_code=400, detail="empty name")
         return instrument, verb, target
 
+    def _already_present(exc: RegistryConflict) -> HTTPException:
+        return HTTPException(status_code=409, detail=f"already present: {exc}")
+
     @router.get("/api/vocab")
     def get_vocab() -> dict:
-        return labels_store.load_vocab(settings)
+        return _vocab()
 
     @router.post("/api/vocab/triples")
     def add_triple(body: VocabTripleBody) -> dict:
         instrument, verb, target = _stripped_triple(body)
-        vocab = labels_store.load_vocab(settings)
-        if labels_store.vocab_has_triple(vocab, instrument, verb, target):
-            raise HTTPException(
-                status_code=409,
-                detail=f"already present: {instrument} / {verb} / {target}",
+        try:
+            create_item(
+                _path(),
+                "triplet",
+                instrument=instrument,
+                verb=verb,
+                target=target,
             )
-        triples = list(vocab.get("triples") or [])
-        triples.append({"instrument": instrument, "verb": verb, "target": target})
-        vocab["triples"] = triples
-        labels_store.save_vocab(settings, vocab)
-        return vocab
+        except RegistryConflict as exc:
+            raise _already_present(exc) from None
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from None
+        return _vocab()
 
     @router.delete("/api/vocab/triples")
     def delete_triple(instrument: str, verb: str, target: str) -> dict:
         instrument, verb, target = instrument.strip(), verb.strip(), target.strip()
         if not instrument or not verb or not target:
             raise HTTPException(status_code=400, detail="empty name")
-        vocab = labels_store.load_vocab(settings)
-        if not labels_store.vocab_has_triple(vocab, instrument, verb, target):
+        try:
+            item = find_active(
+                _path(),
+                "triplet",
+                instrument=instrument,
+                verb=verb,
+                target=target,
+            )
+        except (ValueError, RegistryItemNotFound):
             raise HTTPException(
                 status_code=400,
                 detail=f"unknown triple: {instrument} / {verb} / {target}",
-            )
-        return labels_store.delete_vocab_triple(settings, instrument, verb, target)
+            ) from None
+        set_archived(_path(), item.id, True)
+        return _vocab()
 
     @router.post("/api/vocab/triples/rename")
     def rename_triple(body: VocabTripleRenameBody) -> dict:
         from_inst, from_verb, from_targ = _stripped_triple(body.from_triple)
         to_inst, to_verb, to_targ = _stripped_triple(body.to_triple)
-        vocab = labels_store.load_vocab(settings)
-        if not labels_store.vocab_has_triple(vocab, from_inst, from_verb, from_targ):
+        try:
+            item = find_active(
+                _path(),
+                "triplet",
+                instrument=from_inst,
+                verb=from_verb,
+                target=from_targ,
+            )
+        except (ValueError, RegistryItemNotFound):
             raise HTTPException(
                 status_code=400,
                 detail=f"unknown triple: {from_inst} / {from_verb} / {from_targ}",
-            )
+            ) from None
         try:
-            return labels_store.rename_vocab_triple(
-                settings,
-                from_inst,
-                from_verb,
-                from_targ,
-                to_inst,
-                to_verb,
-                to_targ,
+            rename_item(
+                _path(),
+                item.id,
+                instrument=to_inst,
+                verb=to_verb,
+                target=to_targ,
             )
-        except labels_store.TripletFrameCollision as err:
-            raise HTTPException(status_code=409, detail=str(err)) from None
+        except RegistryConflict as exc:
+            raise _already_present(exc) from None
         except ValueError as err:
-            raise HTTPException(status_code=409, detail=str(err)) from None
+            raise HTTPException(status_code=400, detail=str(err)) from None
+        return _vocab()
 
     @router.post("/api/vocab/{list_name}")
     def add_name(list_name: str, body: VocabAddBody) -> dict:
-        if list_name not in _LISTS:
+        kind = _LISTS.get(list_name)
+        if kind is None:
             raise HTTPException(status_code=404, detail=f"unknown list: {list_name}")
-        vocab = labels_store.load_vocab(settings)
         name = body.name.strip()
         if not name:
             raise HTTPException(status_code=400, detail="empty name")
-        bucket = list(vocab.get(list_name) or [])
-        if name in bucket:
-            raise HTTPException(status_code=409, detail=f"already present: {name}")
-        bucket.append(name)
-        vocab[list_name] = bucket
-        labels_store.save_vocab(settings, vocab)
-        return vocab
+        try:
+            create_item(_path(), kind, name=name)
+        except RegistryConflict as exc:
+            raise _already_present(exc) from None
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from None
+        return _vocab()
 
     @router.post("/api/vocab/{list_name}/rename")
     def rename_name(list_name: str, body: VocabRenameBody) -> dict:
-        if list_name not in _LISTS:
+        kind = _LISTS.get(list_name)
+        if kind is None:
             raise HTTPException(status_code=404, detail=f"unknown list: {list_name}")
-        if list_name not in _RENAMEABLE:
-            raise HTTPException(status_code=400, detail=f"rename not supported: {list_name}")
         old = body.from_name.strip()
         new = body.to_name.strip()
         if not new:
             raise HTTPException(status_code=400, detail="empty name")
-        vocab = labels_store.load_vocab(settings)
-        bucket = list(vocab.get(list_name) or [])
-        if old not in bucket:
-            raise HTTPException(status_code=400, detail=f"unknown name: {old}")
-        if new in bucket:
-            raise HTTPException(status_code=409, detail=f"already present: {new}")
-        return labels_store.rename_vocab_name(settings, list_name, old, new)
+        try:
+            item = find_active(_path(), kind, name=old)
+        except (ValueError, RegistryItemNotFound):
+            raise HTTPException(status_code=400, detail=f"unknown name: {old}") from None
+        try:
+            rename_item(_path(), item.id, name=new)
+        except RegistryConflict as exc:
+            raise _already_present(exc) from None
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from None
+        return _vocab()
 
     @router.delete("/api/vocab/{list_name}/{name}")
     def delete_name(list_name: str, name: str) -> dict:
-        if list_name not in _LISTS:
+        kind = _LISTS.get(list_name)
+        if kind is None:
             raise HTTPException(status_code=404, detail=f"unknown list: {list_name}")
-        vocab = labels_store.load_vocab(settings)
-        bucket = list(vocab.get(list_name) or [])
-        if name not in bucket:
-            raise HTTPException(status_code=400, detail=f"unknown name: {name}")
-        return labels_store.delete_vocab_name(settings, list_name, name)
+        try:
+            item = find_active(_path(), kind, name=name)
+        except (ValueError, RegistryItemNotFound):
+            raise HTTPException(status_code=400, detail=f"unknown name: {name}") from None
+        set_archived(_path(), item.id, True)
+        return _vocab()
 
     return router
