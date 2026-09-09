@@ -4,7 +4,7 @@
 
 **Blocked by:** 12, 13.
 
-Status: MERGED
+Status: BLOCKED
 
 - [ ] compose seam: pass ends in Done with reviewed_by/at stored; reject ends in Labeling with the note stored and the assignee writable again
 - [ ] compose seam: after Done the annotator's writes are refused; reviewer ≠ annotator is enforced at the entry point

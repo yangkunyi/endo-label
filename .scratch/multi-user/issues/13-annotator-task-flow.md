@@ -4,7 +4,7 @@
 
 **Blocked by:** 12.
 
-Status: MERGED
+Status: BLOCKED
 
 - [ ] e2e: an annotator sees only their own items; another account's items are invisible either way
 - [ ] e2e: label → submit (list state flips to Submitted) → recall (back to Labeling), end to end

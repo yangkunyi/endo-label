@@ -4,7 +4,7 @@
 
 **Blocked by:** 14, 17, 18, 19.
 
-Status: MERGED
+Status: BLOCKED
 
 - [ ] one sub-step per panel, each with a green e2e record (every step individually revertible)
 - [ ] ClipDesk reduced to a composition shell, no longer holding panel-internal state
