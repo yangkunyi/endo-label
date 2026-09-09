@@ -8,11 +8,8 @@ dependencies = [
   "uvicorn",
   "pyyaml",
   "pwdlib[argon2]",
-]
-
-[project.optional-dependencies]
-dev = ["pytest", "httpx"]
-scribble = [
+  "pytest",
+  "httpx",
   "hydra-core==1.3.2",
   "omegaconf==2.3.0",
   "opencv-python==4.11.0.86",
