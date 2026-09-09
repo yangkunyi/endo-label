@@ -4,7 +4,7 @@
 
 **Blocked by:** 14.
 
-Status: READY
+Status: RUNNING
 
 - [ ] compose seam: each transition class publishes its event, payload carrying the item identity and new state
 - [ ] e2e: two browser contexts — A rejects, B's task list updates without a refresh
