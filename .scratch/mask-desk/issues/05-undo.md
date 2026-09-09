@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Click a point, see a Track, Annotation is on disk; 03 — Leftover points stay; click a pin to delete
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Undo after Predict restores the previous silhouette and pins on this Frame
 - [x] Undo after leftover-point delete restores that pin and mask

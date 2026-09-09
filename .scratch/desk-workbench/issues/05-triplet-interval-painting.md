@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Span gesture and phase painting
 
-**Status:** resolved
+Status: MERGED
 
 - [x] The triplet backend accepts an inclusive, order-insensitive span with instrument, verb, target, and add/remove operation
 - [x] Triplet span writes are one durable document update per request and reject out-of-range Frames or unknown vocab names without partial changes

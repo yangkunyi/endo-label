@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Both Clip kinds play in one shadcn Video Player
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Timeline sits full-width directly under the player, outside the editor panel
 - [x] Playhead shows and seeks the current Frame; drag is frame-snapped; click seeks to interval start

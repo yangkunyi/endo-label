@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Dual Editor Cards and soft Library selection, 02 — Triplet hairline grid, in-cell edit, and Now capsule.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Playwright tests verify Now and Library Editor Cards with micro-headers and count badges on Phase, Class, and Triplet
 - [x] Playwright tests verify calm empty state messages (`No labels on frame N`) on unannotated frames

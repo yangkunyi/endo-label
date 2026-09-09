@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Library row selected means on this Frame; click toggles this Frame only
 - [x] Now stays read-only; Plus does not write this Frame

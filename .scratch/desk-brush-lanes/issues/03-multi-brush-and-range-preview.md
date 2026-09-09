@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Brush replaces the paint chip; Library name stays this-Frame.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Class Brush can hold several tags; one Apply turns each of them on across the range and leaves other flags untouched
 - [x] Triplet Brush can hold several exact triples; one Apply adds each of them across the range

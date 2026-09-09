@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Clip list and Frame scrub
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Paint span writes that phase on every Frame from `from` through `to` (swap if `from > to`; one Frame if equal)
 - [x] Overlapping later span overwrites those Frames only

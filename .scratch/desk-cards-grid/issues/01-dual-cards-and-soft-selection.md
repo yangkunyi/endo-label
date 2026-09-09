@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Now and Library render as two distinct bounded Editor Cards with subtle surface background and fine border (`rounded-lg p-3`)
 - [x] Card headers display uppercase titles and item count badge pills (`NOW · N`, `LIBRARY · N`)

@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Single-page HeroUI workbench
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Clip rail width, editor rail width, and bottom-bar height can each be changed by pointer drag
 - [x] The three editor cards can be reordered by drag, with class, triplet, phase as the default order

@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Span gesture and phase painting; 04 — Class interval painting; 05 — Triplet interval painting
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Space toggles playback and is ignored in input, textarea, and select controls
 - [x] Playback offers fps values 1, 10, and 25, plus a skip-every-N control, with usable defaults and optional local persistence

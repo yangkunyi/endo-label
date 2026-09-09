@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Single-page HeroUI workbench
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Phase no longer requires numeric from/to fields; the keyboard gesture paints the selected phase over an inclusive, order-insensitive range
 - [x] A closing key with no marked start writes exactly the current Frame; a one-Frame range also succeeds

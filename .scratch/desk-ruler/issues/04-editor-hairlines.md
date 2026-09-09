@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Hairline between Now and Library
 - [x] Hairline between Library and List

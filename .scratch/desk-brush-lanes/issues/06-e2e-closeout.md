@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Lane well is a reserved strip; picture height does not follow Lanes. 02 — Brush replaces the paint chip; Library name stays this-Frame. 03 — Several identities in one Apply; Ruler and ghost preview. 04 — Lane bars seek under the pointer, paint on empty drag, Shift-select, trim, Backspace. 05 — Library eye shows or hides a Lane; unused start hidden.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Lane well: empty Clip still has the strip; picture height is unchanged after a Lane appears
 - [x] Brush: arm does not change this-Frame JSON; `i`/`o` write the Brush; old paint-chip locators gone; tests that armed a chip via this-Frame now arm Brush

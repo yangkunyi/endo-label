@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Library name click still toggles this Frame only; it does not put that identity in the Brush and does not skip a Frame write when the labeler intended this-Frame
 - [x] Brush control arms or disarms without writing a Frame; `aria-pressed` reflects membership

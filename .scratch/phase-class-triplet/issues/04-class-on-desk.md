@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Paint phase on the desk
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Toggle a class name on and off for the current Frame; several names can be on at once
 - [x] Same name at most once on a Frame; all off → unlabeled for class

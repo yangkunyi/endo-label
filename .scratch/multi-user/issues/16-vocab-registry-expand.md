@@ -4,7 +4,7 @@
 
 **Blocked by:** 10.
 
-**Status:** ready-for-agent
+Status: BLOCKED
 
 - [ ] compose seam: registry CRUD; non-admin writes 403; archive/restore reversible; promoting a candidate turns it into a global id
 - [ ] compose seam: the enable matrix decides each Project's visible set

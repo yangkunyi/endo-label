@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Rate control opens a list rather than cycling on click
 - [x] The list includes `0.25`, `0.5`, `1`, `1.5`, and `2`

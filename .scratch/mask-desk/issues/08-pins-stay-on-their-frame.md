@@ -6,7 +6,7 @@
 
 **Category:** bug
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Pin placed on Frame N does not render after scrubbing to any other Frame
 - [x] Propagated Frames show no leftover pins (story 36)

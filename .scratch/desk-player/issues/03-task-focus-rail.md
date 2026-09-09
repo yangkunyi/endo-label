@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — JPEG player chrome
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Only one editor body is visible; tabs switch phase / class / triplet
 - [x] Now matches the playhead Frame for the focused kind

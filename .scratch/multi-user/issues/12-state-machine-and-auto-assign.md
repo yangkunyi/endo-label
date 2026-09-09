@@ -10,7 +10,7 @@ No branch at submit; Done = reviewed-and-passed (reviewed_by/at required), the o
 
 **Blocked by:** 11.
 
-**Status:** ready-for-agent
+Status: BLOCKED
 
 - [ ] compose seam: each legal transition asserts the resulting state and fields (note, reviewed_by, reviewed_at); illegal ones (e.g. Labeling → Done directly) are refused
 - [ ] compose seam: two clients race the same transition — one wins, one loses, the stored state stays consistent

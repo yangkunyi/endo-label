@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Task-focus rail: Now, Library, summary
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Band shows only the focused kind; phase/class/triplet each fold consecutive equals
 - [x] Clicking an interval seeks the player to that start; unlabeled gaps are visible

@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] media-chrome is gone from dependencies; no `media-*` element renders in the desk
 - [x] Transport row sits under the Ruler, always visible; player column order picture / Ruler / transport / Lane well; the picture never jumps when the row appears

@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] `python -m endo_label` binds `127.0.0.1:7882` unless `--port` is passed
 - [x] `npm run dev` is Vite `5175` proxying `/api` to `7882`

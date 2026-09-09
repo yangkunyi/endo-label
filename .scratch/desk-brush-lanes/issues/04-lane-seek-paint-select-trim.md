@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Lane well is a reserved strip; picture height does not follow Lanes.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Click a colored bar (no Shift, no drag) seeks to the Frame under the pointer and clears bar selection
 - [x] Click empty Lane with no drag seeks; drag empty Lane paints that identity on min–max Frames inclusive

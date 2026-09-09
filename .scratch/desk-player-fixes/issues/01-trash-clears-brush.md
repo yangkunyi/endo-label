@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Trash on a Vocab name that is in the Brush removes exactly that identity from the focused kind's Brush; the footer chip disappears without reload
 - [x] Class, phase, and exact-triple trash each clear only their own kind's membership

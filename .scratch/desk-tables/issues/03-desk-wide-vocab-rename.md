@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — HeroUI tables write this Frame
 
-**Status:** resolved
+Status: MERGED
 
 - [x] One rename request per list (`phases` or `class_tags`) with `{from, to}` rewrites that list and every Clip document of that kind, or fails with no Clip left partially renamed
 - [x] Blank `to` and a `to` that already exists on that list are rejected; the old name remains on the list and on every Frame

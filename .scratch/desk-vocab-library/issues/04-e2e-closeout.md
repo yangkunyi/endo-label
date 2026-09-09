@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Library is this-Frame toggle, Vocab trash, and rename; List is gone; 02 — Triplet Vocab is the table of exact triples; 03 — Double-click a Vocab triple cell rewrites desk-wide; collision refuses
 
-**Status:** resolved
+Status: MERGED
 
 - [x] List / three-column-vocab / cycling-delete assertions are gone or updated
 - [x] Span paint still works and does not delete a Vocab name

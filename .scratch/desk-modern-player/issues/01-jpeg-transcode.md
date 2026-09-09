@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Opening a JPEG Clip produces a playable mp4 cache file; label JSON still uses frame indexes
 - [x] Re-open uses the cache when the source folder mtime is unchanged

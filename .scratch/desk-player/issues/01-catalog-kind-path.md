@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] YAML Clips declare `kind` and `path`; unknown kind or unreadable path does not take down the whole sitting
 - [x] `GET` clip list includes `id`, `kind`, `frame_count`, `fps` (jpeg clock fps is 25 this pass)

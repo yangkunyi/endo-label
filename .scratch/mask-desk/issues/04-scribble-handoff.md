@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Click a point, see a Track, Annotation is on disk
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Click vs drag split; right-click/drag does not open the browser menu
 - [x] Width slider 1–40 default 8; each pending stroke keeps the width it was drawn with

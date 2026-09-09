@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Vocab stores exact triples; the three column lists are gone after migrate
 - [x] Frame triplet rows from before migrate are kept and fill the table

@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Two different phase or class names get different colors that match across Library, Now, and the band
 - [x] Labeled intervals show the name on/above the bar; unlabeled gaps have no name

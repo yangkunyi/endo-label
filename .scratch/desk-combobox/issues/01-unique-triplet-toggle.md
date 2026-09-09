@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Second POST of the same instrument/verb/target on this Frame removes that row (or every matching leftover row) and does not append
 - [x] A different triple on the same Frame still adds a second row

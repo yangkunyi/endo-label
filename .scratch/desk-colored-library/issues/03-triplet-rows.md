@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Read-only Now; Library is the this-Frame toggle; 02 — Colored named intervals on the focused-kind band
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Triplet Library and Now are three columns; one row is one exact triple
 - [x] Library row click toggles that unique triple on this Frame; Now does not write

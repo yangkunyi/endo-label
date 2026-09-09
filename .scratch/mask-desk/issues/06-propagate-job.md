@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Click a point, see a Track, Annotation is on disk
 
-**Status:** resolved
+Status: MERGED
 
 - [x] No seed mask on this Frame → Propagate disabled / 400
 - [x] Short forward Job fills neighbor Frames; seed Frame stays `manual`/`refined`

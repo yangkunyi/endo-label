@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] `/clips/:clipId` fills the window under a thin top bar: Clips link, Clip id, `Frame {i}` and `of {N}` when the Clip has Frames
 - [x] Left filmstrip: one thumb per Frame, index, phase name or empty; current Frame highlighted; click scrubs (no label write, no Session)

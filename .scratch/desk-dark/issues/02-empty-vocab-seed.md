@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Fresh vocab (no file, or missing list keys) returns empty lists for all five names; old seed strings are not injected
 - [x] Plus on phase/class and typing a new triplet word still add a name to the matching list and can write this Frame

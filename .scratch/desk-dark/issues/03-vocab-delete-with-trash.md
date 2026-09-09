@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Dark compact sitting; 02 — Empty vocab seed
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Phase and class rows show trash next to x; x still clears or turns off this Frame only and does not change the desk list
 - [x] Trashing a phase or class-tag name is one request: the name leaves that list and every Clip document of that kind is rewritten, or the whole request fails with no partial Clip

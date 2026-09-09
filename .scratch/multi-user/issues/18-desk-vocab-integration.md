@@ -4,7 +4,7 @@
 
 **Blocked by:** 13, 17.
 
-**Status:** ready-for-agent
+Status: BLOCKED
 
 - [ ] e2e: annotator picker shows only enabled words; creating a candidate lands in the queue; vocab editing controls invisible
 - [ ] e2e: reviewer/admin see the vocab editing controls and can operate them

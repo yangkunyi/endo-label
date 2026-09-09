@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] An open Clip with Frames always shows the Lane well under the Ruler, including when zero Lanes are visible
 - [x] Player picture height is the same before and after a Lane appears

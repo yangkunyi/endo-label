@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Now for phase, class, and triplet has no ×, delete, or click-to-write
 - [x] Library click still writes this playhead Frame (phase overwrite or clear, class toggle, triplet unique toggle)

@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Lane well is a reserved strip; picture height does not follow Lanes. 04 — Lane bars seek under the pointer, paint on empty drag, Shift-select, trim, Backspace.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Eye is a separate control from name, Brush, and trash; English `Show lane` / `Hide lane`
 - [x] Present-on-Clip identities start visible; unused start hidden; `+` a new Vocab name does not dump an empty Lane

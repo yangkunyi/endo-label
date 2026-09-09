@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Trash clears the Brush. 02 — Hand-built transport replaces media-chrome.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Trash a Brushed identity in the browser: footer chip disappears, surviving kinds' chips and colors stay
 - [x] Transport walkthrough on JPEG and video: play/pause, rate list applies, mute/volume, fullscreen, time display; Ruler is the only seek

@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Click a point, see a Track, Annotation is on disk
 
-**Status:** resolved
+Status: MERGED
 
 - [x] GET Session for this Frame returns leftover points after Predict; Annotation GET has none
 - [x] Second Geometric Predict on the same Track-on-Frame resends leftovers + this request + Mask Prior

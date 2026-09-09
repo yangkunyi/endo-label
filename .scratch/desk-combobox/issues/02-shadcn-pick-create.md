@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Triplet this-Frame unique toggle (HTTP)
 
-**Status:** resolved
+Status: MERGED
 
 - [x] `@heroui/*` (and HeroUI theme/plugin) are gone from the desk; no HeroUI component remains in the sitting
 - [x] Sitting is always dark; no light switch; Clip rail, JPEG contain, slider, play, fps, skip-N, and rail drag work; editor order is class, triplet, phase and is not drag-reorderable

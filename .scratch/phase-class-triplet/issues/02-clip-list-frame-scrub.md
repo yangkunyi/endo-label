@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Sitting starts from YAML
 
-**Status:** resolved
+Status: MERGED
 
 - [x] `/` lists allowlisted Clips and Frame counts from the catalog
 - [x] Non-allowlisted / missing Clip fails clearly

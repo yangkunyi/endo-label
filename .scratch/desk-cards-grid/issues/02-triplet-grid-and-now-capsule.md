@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Dual Editor Cards and soft Library selection.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Triplet Library table and column headers feature vertical hairline dividers separating instrument, verb, and target columns
 - [x] Double-clicking any cell in a Triplet row replaces only that cell with an inline `<Input>` without column jitter or layout shift

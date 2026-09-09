@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Catalog: kind + path
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Opening a jpeg Clip shows a player, not a frame slider as the primary transport
 - [x] Play/pause, seek, clock, rate, and small Frame index work; Space play/pauses outside inputs; no loop

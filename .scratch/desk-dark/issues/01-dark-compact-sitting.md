@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] The sitting is dark from the root; rails, header, footer, tables, selects, buttons, and the slider do not use `stone-*`; there is no light switch
 - [x] A new sitting (or a new layout key) opens the editor rail at 280px, clamp 220–420; Clip rail, play, fps, skip-N, and drag-reorder stay

@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Canvas, surface ladder, and hairline tokens applied desk-wide
 - [x] Radius 6/8/12 on buttons, cards, and the player

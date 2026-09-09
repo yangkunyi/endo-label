@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — This worktree uses its own ports
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Picture overlay maps through the displayed image rect to relative `[0,1]`; playback pauses while marking
 - [x] Left click → Predict → overlay silhouette + Track row; default Track Label `track-N`

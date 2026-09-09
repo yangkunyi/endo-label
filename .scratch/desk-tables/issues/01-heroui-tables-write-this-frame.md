@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Class, triplet, and phase editors are HeroUI Tables; they stay open (no fold state); they can be dragged to reorder; copy says phase, class, triplet, instrument, verb, target — never Arm, armed, operation on/off, subject–verb–object, or Annotation
 - [x] The sitting uses HeroUI Table, Select, Button, and Slider for these controls; it does not restyle them with `stone-*`; lucide plus/x mark add and remove

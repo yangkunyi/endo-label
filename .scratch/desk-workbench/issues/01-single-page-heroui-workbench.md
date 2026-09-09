@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] `/` and `/clips/:clipId` mount the same workbench shell, with a clear empty state before a Clip is selected
 - [x] The left rail lists only allowlisted Clips with Frame counts, supports scrolling, and contains no Frame thumbnail strip or coverage percentage

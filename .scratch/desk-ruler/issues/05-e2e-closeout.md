@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Rate menu with slow speeds; 02 — Now fills with the label color; 03 — Ruler under the picture; timeline spans Clips+Player; Playhead drags on the Ruler; 04 — Hairlines between Now, Library, and List
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Old cycling-rate and chrome-progress assertions are gone or updated
 - [x] Span paint still works with the Ruler and spanning timeline

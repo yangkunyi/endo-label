@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Class, phase, and triplet Now fill with that identity's color
 - [x] Empty Now is muted text with no colored fill

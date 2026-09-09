@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Catalog: kind + path; 02 — JPEG player chrome
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Video Clip uses `<video>`; jpeg Clip still uses the JPEG sequence path
 - [x] Missing fps → 25; frame_count comes from duration × fps; mapping is reversible enough to seek

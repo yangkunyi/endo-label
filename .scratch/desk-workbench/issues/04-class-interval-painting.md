@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Span gesture and phase painting
 
-**Status:** resolved
+Status: MERGED
 
 - [x] The class backend accepts an inclusive, order-insensitive span with a tag and on/off operation
 - [x] Class span writes are one durable document update per request and reject out-of-range Frames or unknown class names without partial changes

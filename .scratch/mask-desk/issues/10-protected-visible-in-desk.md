@@ -17,7 +17,7 @@ Protected = `manual` ∪ `refined` (`endo_label/mask/annotations.py:26`). Each m
 
 **Category:** enhancement
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Track rail shows the current Frame's state per Track: empty / manual / refined / propagated (badge or colour tag; copy matches CONTEXT.md Source wording)
 - [x] Protected is visible as such (manual / refined read as Protected; e.g. lock marker or legend) — not as a separate hidden concept

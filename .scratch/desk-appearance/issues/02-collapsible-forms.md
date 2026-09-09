@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Full-viewport bench
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Chevron on class, triplet, and phase; any subset of forms can be open at once
 - [x] Class chips stay on the class header and toggle with no expand; no second chip row in the body

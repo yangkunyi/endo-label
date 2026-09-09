@@ -6,7 +6,7 @@
 
 **Category:** enhancement
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Rail (or equivalent) shows an indeterminate "Propagating…" state while `jobRunning`, with elapsed time; no fake per-frame percentage
 - [x] Existing completion / failure toasts unchanged

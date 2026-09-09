@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Sitting with repo-root config file uses that Frame Pool, allowlist, and label roots
 - [x] `--config` path overrides the default file

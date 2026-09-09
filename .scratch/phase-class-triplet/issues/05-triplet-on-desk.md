@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — Toggle class on the desk
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Add a row on the current Frame; several rows allowed; identical triples allowed
 - [x] Row has an id unique among current rows on that Frame; no Track field

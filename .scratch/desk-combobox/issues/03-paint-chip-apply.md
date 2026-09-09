@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — shadcn Pick+Create desk; HeroUI gone
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Chip shows Task type + payload from the last this-Frame Pick+Create; a later pick replaces the chip and does not clear Mark from
 - [x] Mark from + scrub + Apply writes the chip across the inclusive range via existing span HTTP; Remove posts the inverse for that chip

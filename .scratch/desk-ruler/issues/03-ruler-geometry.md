@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Embedded progress bar is gone; other player transport stays
 - [x] Ruler is flush under the picture; lanes are below it

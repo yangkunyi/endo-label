@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Click a point, see a Track, Annotation is on disk; 03 — Leftover points stay; click a pin to delete; 04 — Drag is Scribble; Mask Handoff to SAM; 05 — Undo this Frame’s last committed mask edit; 06 — Propagate Job from this Frame; Protected stay
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Point on picture → silhouette + Track row; click picture does not play; Space does
 - [x] Leftover pin visible; click pin deletes; Active Track from the rail only

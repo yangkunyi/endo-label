@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 — Triplet rows on the desk
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Built desk is served at `/`; `/api` still the compose HTTP
 - [x] Refresh (or open) `/clips/:clipId` returns the desk, not a 404

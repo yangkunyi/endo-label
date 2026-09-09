@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Triplet Vocab is the table of exact triples
 
-**Status:** resolved
+Status: MERGED
 
 - [x] Double-click a cell rewrites that Vocab triple on every Clip
 - [x] A rename that would duplicate an exact triple on a Frame is refused

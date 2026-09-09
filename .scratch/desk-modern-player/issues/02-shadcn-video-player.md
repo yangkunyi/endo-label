@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — JPEG Clip lazily transcodes to mp4 with cache
 
-**Status:** resolved
+Status: MERGED
 
 - [x] JPEG and video Clips both play through the same Video Player transport
 - [x] No custom rate selector or self-built clock left in the desk

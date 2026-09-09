@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** resolved
+Status: MERGED
 
 - [x] compose seam: any /api endpoint without a session returns 401; correct login yields a working cookie; wrong password 401; disabled accounts are refused at login and their existing session gets 401 on the very next request
 - [x] compose seam: role flags read/write correctly per user (data prep for the coarse gates)
