@@ -25,6 +25,7 @@ export function AppShell() {
         <nav className="flex items-center gap-3 text-sm">
           <Link to="/">Desk</Link>
           {data.roles.admin ? <Link to="/admin/vocab">Vocab</Link> : null}
+          {data.roles.admin ? <Link to="/admin/assignments">Assignments</Link> : null}
         </nav>
         <div className="flex items-center gap-3">
           <span className="text-sm">{data.username}</span>

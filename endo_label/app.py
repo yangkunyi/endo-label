@@ -11,6 +11,7 @@ from endo_label.auth import install_auth, router as auth_router
 from endo_label.config import Settings, load_settings
 from endo_label.coordination import apply_config_registrations
 from endo_label.frame_class.router import make_router as class_router
+from endo_label.items_router import router as items_router
 from endo_label.mask.http import create_app as create_mask_app
 from endo_label.mask.session import SessionManager
 from endo_label.phase.router import make_router as phase_router
@@ -65,6 +66,7 @@ def create_app(
     app.include_router(auth_router)
     app.include_router(projects_router)
     app.include_router(registry_router)
+    app.include_router(items_router)
     app.include_router(phase_router(cfg))
     app.include_router(class_router(cfg))
     app.include_router(triplet_router(cfg))
