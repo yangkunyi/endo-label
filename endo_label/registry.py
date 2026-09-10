@@ -181,6 +181,74 @@ def list_items(path: Path) -> list[RegistryItem]:
         con.close()
 
 
+def find_active(
+    path: Path,
+    kind: str,
+    *,
+    name: str = "",
+    instrument: str = "",
+    verb: str = "",
+    target: str = "",
+) -> RegistryItem:
+    kind, name, instrument, verb, target = normalize_identity(
+        kind, name=name, instrument=instrument, verb=verb, target=target
+    )
+    con = connect(path)
+    try:
+        if kind == "triplet":
+            row = con.execute(
+                "SELECT * FROM vocab_registry WHERE archived=0 AND kind='triplet' "
+                "AND instrument=? AND verb=? AND target=?",
+                (instrument, verb, target),
+            ).fetchone()
+        else:
+            row = con.execute(
+                "SELECT * FROM vocab_registry WHERE archived=0 AND kind=? AND name=?",
+                (kind, name),
+            ).fetchone()
+        if row is None:
+            raise RegistryItemNotFound(_conflict_label(kind, name, instrument, verb, target))
+        return _item_from_row(row)
+    finally:
+        con.close()
+
+
+def names_for(path: Path, kind: str) -> dict[int, str]:
+    return {item.id: item.name for item in list_items(path) if item.kind == kind}
+
+
+def triple_cells(path: Path) -> dict[int, tuple[str, str, str]]:
+    return {
+        item.id: (item.instrument, item.verb, item.target)
+        for item in list_items(path)
+        if item.kind == "triplet"
+    }
+
+
+def desk_vocab(path: Path) -> dict:
+    items = [item for item in list_items(path) if not item.archived]
+    return {
+        "phases": [item.name for item in items if item.kind == "phase"],
+        "class_tags": [item.name for item in items if item.kind == "class"],
+        "triples": [
+            {"instrument": item.instrument, "verb": item.verb, "target": item.target}
+            for item in items
+            if item.kind == "triplet"
+        ],
+    }
+
+
+def delete_item(path: Path, vocab_id: int) -> None:
+    con = connect(path)
+    try:
+        cur = con.execute("DELETE FROM vocab_registry WHERE id=?", (vocab_id,))
+        con.commit()
+        if cur.rowcount != 1:
+            raise RegistryItemNotFound(vocab_id)
+    finally:
+        con.close()
+
+
 def rename_item(
     path: Path,
     vocab_id: int,

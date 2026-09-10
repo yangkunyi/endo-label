@@ -13,7 +13,9 @@ from endo_label.auth import (
     with_new_version,
 )
 from endo_label.config import Settings
+from endo_label.coordination import db_path
 from endo_label import labels_store
+from endo_label.registry import RegistryItemNotFound, find_active, names_for
 
 
 class PhaseSpanBody(BaseModel):
@@ -33,21 +35,30 @@ class PhaseFrameBody(BaseModel):
 def make_router(settings: Settings) -> APIRouter:
     router = APIRouter(tags=["phase"])
 
+    def _path():
+        return db_path(settings)
+
     def _meta(clip_id: str) -> dict:
         try:
             return catalog.clip_meta(settings, clip_id)
         except catalog.ClipNotFound:
             raise HTTPException(status_code=404, detail=f"Clip not found: {clip_id}") from None
 
-    def _require_phase_name(name: str) -> None:
-        phases = labels_store.load_vocab(settings).get("phases") or []
-        if name not in phases:
-            raise HTTPException(status_code=400, detail=f"unknown phase: {name}")
+    def _view(doc: dict) -> dict:
+        return labels_store.http_phase(doc, names_for(_path(), "phase"))
+
+    def _require_phase_name(name: str) -> int:
+        try:
+            return find_active(_path(), "phase", name=name).id
+        except (ValueError, RegistryItemNotFound):
+            raise HTTPException(status_code=400, detail=f"unknown phase: {name}") from None
 
     @router.get("/api/phase/{clip_id}")
     def get_clip_phase(clip_id: str, request: Request) -> dict:
         _meta(clip_id)
-        return with_clip_version(request, clip_id, labels_store.load_clip(settings, "phase", clip_id))
+        return with_clip_version(
+            request, clip_id, _view(labels_store.load_clip(settings, "phase", clip_id))
+        )
 
     @router.put("/api/phase/{clip_id}/frames/{frame_index}")
     def put_frame_phase(
@@ -58,17 +69,16 @@ def make_router(settings: Settings) -> APIRouter:
         if frame_index < 0 or frame_index >= n:
             raise HTTPException(status_code=404, detail=f"Frame index out of range: {frame_index}")
         require_label_assignee(request, clip_id, "phase")
-        if body.phase is not None:
-            _require_phase_name(body.phase)
+        vocab_id = None if body.phase is None else _require_phase_name(body.phase)
         new_version = require_label_write(request, clip_id, "phase", body.version)
         doc = labels_store.load_clip(settings, "phase", clip_id)
         key = str(frame_index)
-        if body.phase is None:
+        if vocab_id is None:
             doc["frames"].pop(key, None)
         else:
-            doc["frames"][key] = body.phase
+            doc["frames"][key] = vocab_id
         labels_store.save_clip(settings, "phase", clip_id, doc)
-        return with_new_version(doc, new_version)
+        return with_new_version(_view(doc), new_version)
 
     @router.post("/api/phase/{clip_id}/span")
     def paint_span(clip_id: str, body: PhaseSpanBody, request: Request) -> dict:
@@ -80,17 +90,16 @@ def make_router(settings: Settings) -> APIRouter:
         if a < 0 or b >= n:
             raise HTTPException(status_code=400, detail="span out of range")
         require_label_assignee(request, clip_id, "phase")
-        if body.phase is not None:
-            _require_phase_name(body.phase)
+        vocab_id = None if body.phase is None else _require_phase_name(body.phase)
         new_version = require_label_write(request, clip_id, "phase", body.version)
         doc = labels_store.load_clip(settings, "phase", clip_id)
         for i in range(a, b + 1):
             key = str(i)
-            if body.phase is None:
+            if vocab_id is None:
                 doc["frames"].pop(key, None)
             else:
-                doc["frames"][key] = body.phase
+                doc["frames"][key] = vocab_id
         labels_store.save_clip(settings, "phase", clip_id, doc)
-        return with_new_version(doc, new_version)
+        return with_new_version(_view(doc), new_version)
 
     return router

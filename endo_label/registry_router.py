@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from endo_label.auth import require_admin
 from endo_label.coordination import Account, ProjectNotFound, db_path
+from endo_label import labels_store
 from endo_label.registry import (
     CandidateNotFound,
     RegistryConflict,
@@ -14,7 +15,9 @@ from endo_label.registry import (
     browse_payload,
     create_candidate,
     create_item,
+    delete_item,
     edit_candidate,
+    get_item,
     promote_candidate,
     rename_item,
     set_archived,
@@ -144,6 +147,25 @@ def post_promote(
     except (CandidateNotFound, RegistryConflict) as exc:
         raise _http(exc) from None
     return item.as_dict()
+
+
+@router.delete("/api/registry/{vocab_id}")
+def delete_registry_item(
+    vocab_id: int,
+    request: Request,
+    _: Account = Depends(require_admin),
+) -> dict:
+    try:
+        get_item(_path(request), vocab_id)
+    except RegistryItemNotFound as exc:
+        raise _http(exc) from None
+    if vocab_id in labels_store.referenced_vocab_ids(request.app.state.settings):
+        raise HTTPException(status_code=409, detail="referenced")
+    try:
+        delete_item(_path(request), vocab_id)
+    except RegistryItemNotFound as exc:
+        raise _http(exc) from None
+    return {"ok": True}
 
 
 @router.post("/api/registry/{vocab_id}/rename")
