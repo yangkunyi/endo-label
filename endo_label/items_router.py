@@ -29,6 +29,7 @@ from endo_label.coordination import (
     unassign_item,
     undeliver_item,
 )
+from endo_label.events import publish_transition
 
 router = APIRouter(tags=["items"])
 
@@ -75,6 +76,7 @@ def _body_items(body: AutoAssignBody) -> list[tuple[str, str]] | None:
 
 
 def _mutate(fn):
+    """Map a coordination failure to its HTTP status; return the item on success."""
     try:
         return fn()
     except (AssignmentNotFound, UnknownAccount):
@@ -85,6 +87,13 @@ def _mutate(fn):
         raise HTTPException(status_code=403, detail="Forbidden") from None
     except NoteRequired:
         raise HTTPException(status_code=400, detail="A reject note is required") from None
+
+
+def _transition(request: Request, action: str, fn) -> dict:
+    """Run one assignment transition, then publish it to every event subscriber."""
+    payload = _mutate(fn)
+    publish_transition(request.app, action, payload)
+    return payload
 
 
 @router.get("/api/items", dependencies=_admin_only)
@@ -104,7 +113,7 @@ def list_my_items(request: Request) -> dict:
 
 @router.post("/api/items/auto-assign", dependencies=_admin_only)
 def auto_assign(body: AutoAssignBody, request: Request) -> dict:
-    return _mutate(
+    payload = _mutate(
         lambda: auto_assign_items(
             _path(request),
             usernames=body.assignees,
@@ -114,98 +123,128 @@ def auto_assign(body: AutoAssignBody, request: Request) -> dict:
             project=body.project,
         )
     )
+    for row in payload["assigned"]:
+        # Balanced auto-assign only ever moves an item Unassigned -> Labeling.
+        publish_transition(request.app, "auto_assign", {**row, "state": "Labeling"})
+    return payload
 
 
 @router.post("/api/items/{clip_id}/{task_type}/assign", dependencies=_admin_only)
 def assign(clip_id: str, task_type: str, body: AssignBody, request: Request) -> dict:
-    return _mutate(lambda: assign_item(_path(request), clip_id, task_type, body.assignee))
+    return _transition(
+        request,
+        "assign",
+        lambda: assign_item(_path(request), clip_id, task_type, body.assignee),
+    )
 
 
 @router.post("/api/items/{clip_id}/{task_type}/reassign", dependencies=_admin_only)
 def reassign(clip_id: str, task_type: str, body: AssignBody, request: Request) -> dict:
-    return _mutate(lambda: reassign_item(_path(request), clip_id, task_type, body.assignee))
+    return _transition(
+        request,
+        "reassign",
+        lambda: reassign_item(_path(request), clip_id, task_type, body.assignee),
+    )
 
 
 @router.post("/api/items/{clip_id}/{task_type}/unassign", dependencies=_admin_only)
 def unassign(clip_id: str, task_type: str, request: Request) -> dict:
-    return _mutate(lambda: unassign_item(_path(request), clip_id, task_type))
+    return _transition(
+        request, "unassign", lambda: unassign_item(_path(request), clip_id, task_type)
+    )
 
 
 @router.post("/api/items/{clip_id}/{task_type}/submit")
 def submit(clip_id: str, task_type: str, request: Request) -> dict:
-    return _mutate(
+    return _transition(
+        request,
+        "submit",
         lambda: submit_item(
             _path(request), clip_id, task_type, account_id=_account_id(request)
-        )
+        ),
     )
 
 
 @router.post("/api/items/{clip_id}/{task_type}/recall")
 def recall(clip_id: str, task_type: str, request: Request) -> dict:
-    return _mutate(
+    return _transition(
+        request,
+        "recall",
         lambda: recall_item(
             _path(request), clip_id, task_type, account_id=_account_id(request)
-        )
+        ),
     )
 
 
 @router.post("/api/items/{clip_id}/{task_type}/reviewer", dependencies=_admin_only)
 def reviewer(clip_id: str, task_type: str, body: ReviewerBody, request: Request) -> dict:
-    return _mutate(
+    return _transition(
+        request,
+        "assign_reviewer",
         lambda: assign_reviewer(
             _path(request),
             clip_id,
             task_type,
             body.reviewer,
             account_id=_account_id(request),
-        )
+        ),
     )
 
 
 @router.post("/api/items/{clip_id}/{task_type}/pass")
 def review_pass(clip_id: str, task_type: str, request: Request) -> dict:
-    return _mutate(
+    return _transition(
+        request,
+        "pass",
         lambda: pass_item(
             _path(request), clip_id, task_type, account_id=_account_id(request)
-        )
+        ),
     )
 
 
 @router.post("/api/items/{clip_id}/{task_type}/reject")
 def review_reject(clip_id: str, task_type: str, body: RejectBody, request: Request) -> dict:
-    return _mutate(
+    return _transition(
+        request,
+        "reject",
         lambda: reject_item(
             _path(request),
             clip_id,
             task_type,
             body.note,
             account_id=_account_id(request),
-        )
+        ),
     )
 
 
 @router.post("/api/items/{clip_id}/{task_type}/deliver")
 def deliver(clip_id: str, task_type: str, request: Request) -> dict:
-    return _mutate(
+    return _transition(
+        request,
+        "deliver",
         lambda: deliver_item(
             _path(request), clip_id, task_type, account_id=_account_id(request)
-        )
+        ),
     )
 
 
 @router.delete("/api/items/{clip_id}/{task_type}/deliver")
 def undeliver(clip_id: str, task_type: str, request: Request) -> dict:
-    return _mutate(
+    return _transition(
+        request,
+        "undeliver",
         lambda: undeliver_item(
             _path(request), clip_id, task_type, account_id=_account_id(request)
-        )
+        ),
     )
 
 
 @router.post("/api/items/{clip_id}/{task_type}/re-review")
 def re_review(clip_id: str, task_type: str, request: Request) -> dict:
-    return _mutate(
+    return _transition(
+        request,
+        "re_review",
         lambda: rereview_item(
             _path(request), clip_id, task_type, account_id=_account_id(request)
-        )
+        ),
     )
