@@ -48,8 +48,7 @@ export function PlaybackProvider({
     scrub(index);
     const el = videoRef.current;
     if (el) {
-      const fps = clip && clip.fps > 0 ? clip.fps : 25;
-      el.currentTime = index / fps;
+      el.currentTime = index / fpsOf(clip);
     }
   }, [clip, scrub]);
 
@@ -81,6 +80,7 @@ export function PlaybackProvider({
       void playerSectionRef.current?.requestFullscreen().catch(() => undefined);
     }
   }, []);
+
   const fps = fpsOf(clip);
   const frameCount = clip?.frame_count ?? 0;
 

@@ -9,16 +9,10 @@ import {
   type ClassDoc,
   type PhaseDoc,
   type TripletDoc,
+  isVersionConflict,
 } from "../api";
 import type { BrushIdentity, EditorKind } from "../deskStore";
-import { isVersionConflict } from "../api";
 import type { DeskNotice } from "./notice";
-
-/** The Frame range a Mark from would cover: from the marked Frame to this one. */
-export function rangeEnds(fromIndex: number | null, currentIndex: number): { from: number; to: number } {
-  const start = fromIndex == null ? currentIndex : fromIndex;
-  return { from: Math.min(start, currentIndex), to: Math.max(start, currentIndex) };
-}
 
 /** One selected Timeline bar: a Lane identity plus the Frame range it covers. */
 export type LaneBar = { laneKey: string; start: number; end: number };

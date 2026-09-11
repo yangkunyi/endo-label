@@ -2,7 +2,12 @@ import { useMemo } from "react";
 import type { TripletRow, Vocab } from "../api";
 import { brushOfKind, laneIsVisible, laneVisibilityKey, useDeskStore, type BrushIdentity, type EditorKind } from "../deskStore";
 import { foldClass, foldPhase, foldTriplet, type TimelineLane } from "../timeline";
-import { rangeEnds } from "./writer";
+
+/** The Frame range a Mark from would cover: from the marked Frame to this one. */
+function rangeEnds(fromIndex: number | null, currentIndex: number): { from: number; to: number } {
+  const start = fromIndex == null ? currentIndex : fromIndex;
+  return { from: Math.min(start, currentIndex), to: Math.max(start, currentIndex) };
+}
 
 export function brushLabel(identity: BrushIdentity): string {
   if (identity.kind === "class") {
@@ -21,7 +26,7 @@ export function brushColorKey(identity: BrushIdentity): string {
   return identity.name;
 }
 
-export function vocabOrderKeys(kind: EditorKind, vocab: Vocab | undefined): string[] {
+function vocabOrderKeys(kind: EditorKind, vocab: Vocab | undefined): string[] {
   if (!vocab) {
     return [];
   }
@@ -34,7 +39,7 @@ export function vocabOrderKeys(kind: EditorKind, vocab: Vocab | undefined): stri
   return vocab.triples.map((row) => `${row.instrument} / ${row.verb} / ${row.target}`);
 }
 
-export function orderBrushByVocab(identities: BrushIdentity[], order: string[]): BrushIdentity[] {
+function orderBrushByVocab(identities: BrushIdentity[], order: string[]): BrushIdentity[] {
   if (identities.length <= 1 || order.length === 0) {
     return identities;
   }

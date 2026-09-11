@@ -11,8 +11,7 @@ import {
 } from "../api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { useDeskStore } from "../deskStore";
-import type { BrushIdentity, EditorKind } from "../deskStore";
+import { useDeskStore, type BrushIdentity, type EditorKind } from "../deskStore";
 import { libraryRowSemanticStyle } from "../editorCards";
 import { cn } from "../lib/utils";
 import { labelColor } from "../timeline";

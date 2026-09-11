@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ClipMeta, TripletRow, Vocab } from "../api";
 import { useDeskStore, type EditorKind } from "../deskStore";
-import { brushColorKey } from "./lanes";
-import { useBrushRange, useDeskLanes } from "./lanes";
+import { brushColorKey, useBrushRange, useDeskLanes } from "./lanes";
 import { TransportRow } from "./PlayerPanel";
 import { TimelineBand } from "./TimelineBand";
 import { isEditableTarget } from "./keyboard";
@@ -52,7 +51,7 @@ export function TimelinePanel({
     setBarSelection([]);
   }
 
-  const writeLaneSpan = writer.writeLaneSpan;
+  const { writeLaneSpan } = writer;
   const paintLane = useCallback(
     (laneKey: string, from: number, to: number) => {
       void writeLaneSpan(laneKey, from, to, false);
