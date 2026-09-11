@@ -19,6 +19,7 @@ from endo_label.coordination import (
     db_path,
     deliver_item,
     items_payload,
+    my_items,
     pass_item,
     recall_item,
     reassign_item,
@@ -93,6 +94,12 @@ def list_items(
     tag: str | None = None,
 ) -> dict:
     return {"items": items_payload(_path(request), project=project, tag=tag)}
+
+
+@router.get("/api/me/items")
+def list_my_items(request: Request) -> dict:
+    """The caller's own items: assignee work plus items they review."""
+    return {"items": my_items(_path(request), request.state.account)}
 
 
 @router.post("/api/items/auto-assign", dependencies=_admin_only)

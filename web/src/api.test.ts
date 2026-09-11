@@ -1,5 +1,13 @@
 import { expect, test } from "vitest";
 import {
+  HttpError,
+  STALE_SAVE_NOTICE,
+  isVersionConflict,
+  itemActionPath,
+  mePath,
+  myItemsPath,
+  saveErrorMessage,
+  withVersion,
   annotationFramePath,
   annotationSummaryPath,
   classClipPath,
@@ -250,4 +258,48 @@ test("labeled Frame triplet lists rows on that Frame", () => {
       target: "gallbladder",
     },
   ]);
+});
+
+test("/api/me and /api/me/items are the identity and own-task URLs", () => {
+  expect(mePath()).toBe("/api/me");
+  expect(mePath("CLIPA", "phase")).toBe("/api/me?clip_id=CLIPA&task_type=phase");
+  expect(mePath("CASE 1", "class")).toBe(
+    "/api/me?clip_id=CASE+1&task_type=class",
+  );
+  expect(myItemsPath()).toBe("/api/me/items");
+});
+
+test("item action path is the state-machine URL", () => {
+  expect(itemActionPath("CLIPA", "phase", "submit")).toBe(
+    "/api/items/CLIPA/phase/submit",
+  );
+  expect(itemActionPath("CLIPA", "triplet", "recall")).toBe(
+    "/api/items/CLIPA/triplet/recall",
+  );
+});
+
+test("a version is sent with a save only when one is held", () => {
+  expect(withVersion({ phase: "Preparation" }, 4)).toEqual({
+    phase: "Preparation",
+    version: 4,
+  });
+  expect(withVersion({ phase: "Preparation" }, undefined)).toEqual({
+    phase: "Preparation",
+  });
+});
+
+test("only a 409 reads as a stale version conflict", () => {
+  expect(isVersionConflict(new HttpError(409, "Version conflict"))).toBe(true);
+  expect(isVersionConflict(new HttpError(403, "Forbidden"))).toBe(false);
+  expect(isVersionConflict(new Error("Version conflict"))).toBe(false);
+  expect(isVersionConflict(null)).toBe(false);
+});
+
+test("a stale save is answered with the refresh-and-retry notice", () => {
+  expect(saveErrorMessage(new HttpError(409, "Version conflict"))).toBe(
+    STALE_SAVE_NOTICE,
+  );
+  expect(saveErrorMessage(new HttpError(403, "Forbidden"))).toBe("Forbidden");
+  expect(saveErrorMessage(new Error("Write failed"))).toBe("Write failed");
+  expect(saveErrorMessage("nope")).toBe("Write failed");
 });

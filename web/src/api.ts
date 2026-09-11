@@ -1,7 +1,87 @@
+/** Surfaces the Account may use: My Tasks, the review queue, the admin console. */
+export type MeCapabilities = { admin: boolean; review: boolean; annotate: boolean };
+
+export type TaskState = "Unassigned" | "Labeling" | "Submitted" | "Reviewing" | "Done";
+
+/** One (Clip, Task type) item the server derives this Account's buttons from. */
+export type MyItem = {
+  clip_id: string;
+  task_type: string;
+  state: TaskState | string;
+  assignee: string | null;
+  reviewer: string | null;
+  note: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  delivered_at: string | null;
+  version: number;
+  capabilities: Record<string, boolean>;
+};
+
 export type Me = {
   username: string;
   roles: { admin: boolean; reviewer: boolean; annotator: boolean };
+  capabilities: MeCapabilities;
+  item?: MyItem;
 };
+
+export type MyItemsResponse = { items: MyItem[] };
+
+export type ItemAction = "submit" | "recall";
+
+/** The HTTP status carries the meaning a save path needs; the message is for people. */
+export class HttpError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "HttpError";
+    this.status = status;
+  }
+}
+
+/** A 409 on a save is a stale Clip version: refetch, then let the user retry. */
+export const STALE_SAVE_NOTICE =
+  "Someone else saved this Clip first. Refreshed — retry your edit.";
+
+export function isVersionConflict(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 409;
+}
+
+export function saveErrorMessage(error: unknown): string {
+  if (isVersionConflict(error)) {
+    return STALE_SAVE_NOTICE;
+  }
+  return error instanceof Error ? error.message : "Write failed";
+}
+
+/** A save body carries the held version, so a stale write is a 409, not a silent clobber. */
+export function withVersion<T extends object>(
+  body: T,
+  version: number | undefined,
+): T & { version?: number } {
+  return version === undefined ? body : { ...body, version };
+}
+
+export function mePath(clipId?: string, taskType?: string): string {
+  if (clipId === undefined || taskType === undefined) {
+    return "/api/me";
+  }
+  const query = new URLSearchParams({ clip_id: clipId, task_type: taskType });
+  return `/api/me?${query.toString()}`;
+}
+
+export function myItemsPath(): string {
+  return "/api/me/items";
+}
+
+export function itemActionPath(
+  clipId: string,
+  taskType: string,
+  action: ItemAction,
+): string {
+  return `/api/items/${encodeURIComponent(clipId)}/${encodeURIComponent(taskType)}/${action}`;
+}
 
 export type ClipRow = { id: string; kind: "jpeg" | "video"; frame_count: number; fps: number };
 
@@ -15,9 +95,15 @@ export type ClipMeta = {
   frames: { index: number; stem: string }[];
 };
 
-export type PhaseDoc = { clip_id: string; frames: Record<string, string> };
+// Every Clip doc carries the Clip version it was read at: a save echoes it back,
+// and a mismatch is a 409.
+export type PhaseDoc = { clip_id: string; frames: Record<string, string>; version?: number };
 
-export type ClassDoc = { clip_id: string; frames: Record<string, string[]> };
+export type ClassDoc = {
+  clip_id: string;
+  frames: Record<string, string[]>;
+  version?: number;
+};
 
 export type TripletRow = {
   id: number;
@@ -29,6 +115,7 @@ export type TripletRow = {
 export type TripletDoc = {
   clip_id: string;
   frames: Record<string, TripletRow[]>;
+  version?: number;
 };
 
 export type VocabTriple = {
@@ -525,7 +612,7 @@ export async function sendJson<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(await readError(response));
+    throw new HttpError(response.status, await readError(response));
   }
   return response.json() as Promise<T>;
 }

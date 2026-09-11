@@ -62,6 +62,7 @@ def test_login_sets_session_cookie_and_unlocks_api(tmp_path: Path) -> None:
     assert ok.json() == {
         "username": "alice",
         "roles": {"admin": True, "reviewer": False, "annotator": False},
+        "capabilities": {"admin": True, "review": False, "annotate": False},
     }
     cookie = _cookie_header(ok).lower()
     assert f"{SESSION_COOKIE}=" in cookie
@@ -130,6 +131,7 @@ def test_role_flags_round_trip_per_user(tmp_path: Path) -> None:
     assert client.get("/api/me").json() == {
         "username": "rev",
         "roles": {"admin": False, "reviewer": True, "annotator": True},
+        "capabilities": {"admin": False, "review": True, "annotate": True},
     }
 
 

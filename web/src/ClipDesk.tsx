@@ -16,7 +16,12 @@ import {
   getJson,
   getJsonAllow404,
   healthPath,
+  isVersionConflict,
+  itemActionPath,
   jobPath,
+  mePath,
+  saveErrorMessage,
+  withVersion,
   phaseClipPath,
   phaseFramePath,
   phaseSpanPath,
@@ -45,6 +50,9 @@ import {
   type ClipMeta,
   type FrameAnnotations,
   type HealthResponse,
+  type ItemAction,
+  type Me,
+  type MyItem,
   type PhaseDoc,
   type PredictResult,
   type PropagateDirection,
@@ -58,6 +66,7 @@ import {
   type VocabTriple,
 } from "./api";
 import { Button } from "./components/ui/button";
+import { stateBadge, taskActions, rejectNote } from "./taskList";
 import { Input } from "./components/ui/input";
 import { VideoPlayer, PlayerTransport } from "./components/ui/video-player";
 import { MaskOverlay } from "./MaskOverlay";
@@ -251,30 +260,37 @@ async function postIdentitySpan(
   from: number,
   to: number,
   remove: boolean,
+  version: number | undefined,
 ): Promise<PhaseDoc | ClassDoc | TripletDoc> {
   if (identity.kind === "phase") {
-    return sendJson<PhaseDoc>(phaseSpanPath(clipId), "POST", {
-      phase: remove ? null : identity.name,
-      from,
-      to,
-    });
+    return sendJson<PhaseDoc>(
+      phaseSpanPath(clipId),
+      "POST",
+      withVersion({ phase: remove ? null : identity.name, from, to }, version),
+    );
   }
   if (identity.kind === "class") {
-    return sendJson<ClassDoc>(classSpanPath(clipId), "POST", {
-      tag: identity.name,
-      from,
-      to,
-      on: !remove,
-    });
+    return sendJson<ClassDoc>(
+      classSpanPath(clipId),
+      "POST",
+      withVersion({ tag: identity.name, from, to, on: !remove }, version),
+    );
   }
-  return sendJson<TripletDoc>(tripletSpanPath(clipId), "POST", {
-    instrument: identity.instrument,
-    verb: identity.verb,
-    target: identity.target,
-    from,
-    to,
-    op: remove ? "remove" : "add",
-  });
+  return sendJson<TripletDoc>(
+    tripletSpanPath(clipId),
+    "POST",
+    withVersion(
+      {
+        instrument: identity.instrument,
+        verb: identity.verb,
+        target: identity.target,
+        from,
+        to,
+        op: remove ? "remove" : "add",
+      },
+      version,
+    ),
+  );
 }
 
 async function ensureVocabName(
@@ -343,6 +359,68 @@ function ResizeHandle({
       onPointerUp={stopResize}
       onPointerCancel={stopResize}
     />
+  );
+}
+
+/** Submit / recall for the focused (Clip, Task type), from the /api/me capabilities. */
+function ItemActions({ clipId, taskType }: { clipId: string; taskType: EditorKind }) {
+  const { data, mutate } = useSWR(mePath(clipId, taskType), getJson<Me>);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const item: MyItem | undefined = data?.item;
+  const buttons = item ? taskActions(item) : [];
+  const note = item ? rejectNote(item) : null;
+  const badge = item ? stateBadge(item.state) : null;
+
+  async function run(action: ItemAction) {
+    setError(null);
+    setBusy(true);
+    try {
+      await sendJson(itemActionPath(clipId, taskType, action), "POST");
+    } catch (err) {
+      setError(saveErrorMessage(err));
+    } finally {
+      // The transition moved the item: the capability payload is stale now.
+      await mutate();
+      setBusy(false);
+    }
+  }
+
+  if (!item || (!badge && buttons.length === 0)) {
+    return null;
+  }
+
+  return (
+    <>
+      {badge ? (
+        <span
+          data-state={item.state}
+          className={cn("rounded-md px-2 py-0.5 text-xs font-medium", badge.className)}
+        >
+          {badge.label}
+        </span>
+      ) : null}
+      {buttons.map((button) => (
+        <Button
+          key={button.action}
+          type="button"
+          size="sm"
+          disabled={busy}
+          onClick={() => void run(button.action)}
+        >
+          {button.label}
+        </Button>
+      ))}
+      {note ? (
+        <p
+          data-reject-note=""
+          className="basis-full rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-200"
+        >
+          Reviewer note: {note}
+        </p>
+      ) : null}
+      {error ? <p role="alert">{error}</p> : null}
+    </>
   );
 }
 
@@ -898,16 +976,30 @@ export function ClipDesk() {
       if (!clipId) {
         return;
       }
-      const doc = await postIdentitySpan(clipId, identity, from, to, remove);
-      if (identity.kind === "phase") {
-        await mutatePhase(doc as PhaseDoc, { revalidate: false });
-      } else if (identity.kind === "class") {
-        await mutateClass(doc as ClassDoc, { revalidate: false });
-      } else {
-        await mutateTriplet(doc as TripletDoc, { revalidate: false });
+      const version =
+        identity.kind === "phase"
+          ? phaseDoc?.version
+          : identity.kind === "class"
+            ? classDoc?.version
+            : tripletDoc?.version;
+      try {
+        const doc = await postIdentitySpan(clipId, identity, from, to, remove, version);
+        if (identity.kind === "phase") {
+          await mutatePhase(doc as PhaseDoc, { revalidate: false });
+        } else if (identity.kind === "class") {
+          await mutateClass(doc as ClassDoc, { revalidate: false });
+        } else {
+          await mutateTriplet(doc as TripletDoc, { revalidate: false });
+        }
+      } catch (err) {
+        if (isVersionConflict(err)) {
+          // Stale Clip version: refetch the held labels before the user retries.
+          await Promise.all([mutatePhase(), mutateClass(), mutateTriplet()]);
+        }
+        throw err;
       }
     },
-    [clipId, mutateClass, mutatePhase, mutateTriplet],
+    [clipId, classDoc?.version, mutateClass, mutatePhase, mutateTriplet, phaseDoc?.version, tripletDoc?.version],
   );
 
   const applyRange = useCallback(async (remove: boolean) => {
@@ -1115,10 +1207,11 @@ export function ClipDesk() {
 
   return (
     <main className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-2">
+      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-3 py-2">
         <span className="text-sm font-semibold tracking-wide">endo_label</span>
         <span className="text-muted-foreground" aria-hidden="true">/</span>
         <h1 className="text-sm font-semibold">{data?.id ?? "Workbench"}</h1>
+        {data ? <ItemActions clipId={data.id} taskType={taskFocus} /> : null}
       </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -1308,6 +1401,7 @@ export function ClipDesk() {
                   frameCount={data.frame_count}
                   classFrames={classDoc?.frames ?? {}}
                   classTags={vocab?.class_tags ?? []}
+                  version={classDoc?.version}
                   mutateClass={mutateClass}
                   mutateVocab={mutateVocab}
                   laneVisible={laneVisibleFor}
@@ -1320,6 +1414,7 @@ export function ClipDesk() {
                   frameCount={data.frame_count}
                   tripletFrames={tripletDoc?.frames ?? {}}
                   triples={vocab?.triples ?? []}
+                  version={tripletDoc?.version}
                   mutateTriplet={mutateTriplet}
                   mutateVocab={mutateVocab}
                   laneVisible={laneVisibleFor}
@@ -1332,6 +1427,7 @@ export function ClipDesk() {
                   frameCount={data.frame_count}
                   phaseFrames={phaseDoc?.frames ?? {}}
                   phases={vocab?.phases ?? []}
+                  version={phaseDoc?.version}
                   mutatePhase={mutatePhase}
                   mutateVocab={mutateVocab}
                   laneVisible={laneVisibleFor}
@@ -2393,6 +2489,7 @@ function ClassEditor({
   frameCount,
   classFrames,
   classTags,
+  version,
   mutateClass,
   mutateVocab,
   laneVisible,
@@ -2403,6 +2500,7 @@ function ClassEditor({
   frameCount: number;
   classFrames: Record<string, string[]>;
   classTags: string[];
+  version: number | undefined;
   mutateClass: KeyedMutator<ClassDoc>;
   mutateVocab: KeyedMutator<Vocab>;
   laneVisible: (name: string) => boolean;
@@ -2416,10 +2514,18 @@ function ClassEditor({
   async function writeTags(tags: string[]) {
     setError(null);
     try {
-      const doc = await sendJson<ClassDoc>(classFramePath(clipId, frameIndex), "PUT", { tags });
+      const doc = await sendJson<ClassDoc>(
+        classFramePath(clipId, frameIndex),
+        "PUT",
+        withVersion({ tags }, version),
+      );
       await mutateClass(doc, { revalidate: false });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Write failed");
+      if (isVersionConflict(err)) {
+        // Stale Clip version: refetch before the retry.
+        await mutateClass();
+      }
+      setError(saveErrorMessage(err));
     }
   }
 
@@ -2476,6 +2582,7 @@ function PhaseEditor({
   frameCount,
   phaseFrames,
   phases,
+  version,
   mutatePhase,
   mutateVocab,
   laneVisible,
@@ -2486,6 +2593,7 @@ function PhaseEditor({
   frameCount: number;
   phaseFrames: Record<string, string>;
   phases: string[];
+  version: number | undefined;
   mutatePhase: KeyedMutator<PhaseDoc>;
   mutateVocab: KeyedMutator<Vocab>;
   laneVisible: (name: string) => boolean;
@@ -2499,10 +2607,18 @@ function PhaseEditor({
   async function writePhase(phase: string | null) {
     setError(null);
     try {
-      const doc = await sendJson<PhaseDoc>(phaseFramePath(clipId, frameIndex), "PUT", { phase });
+      const doc = await sendJson<PhaseDoc>(
+        phaseFramePath(clipId, frameIndex),
+        "PUT",
+        withVersion({ phase }, version),
+      );
       await mutatePhase(doc, { revalidate: false });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Write failed");
+      if (isVersionConflict(err)) {
+        // Stale Clip version: refetch before the retry.
+        await mutatePhase();
+      }
+      setError(saveErrorMessage(err));
     }
   }
 
@@ -2571,6 +2687,7 @@ function TripletEditor({
   frameCount,
   tripletFrames,
   triples,
+  version,
   mutateTriplet,
   mutateVocab,
   laneVisible,
@@ -2581,6 +2698,7 @@ function TripletEditor({
   frameCount: number;
   tripletFrames: Record<string, TripletRow[]>;
   triples: VocabTriple[];
+  version: number | undefined;
   mutateTriplet: KeyedMutator<TripletDoc>;
   mutateVocab: KeyedMutator<Vocab>;
   laneVisible: (key: string) => boolean;
@@ -2620,10 +2738,18 @@ function TripletEditor({
     }
     setError(null);
     try {
-      await sendJson<Record<string, unknown>>(tripletFramePath(clipId, frameIndex), "POST", row);
+      await sendJson<Record<string, unknown>>(
+        tripletFramePath(clipId, frameIndex),
+        "POST",
+        withVersion(row, version),
+      );
       await mutateTriplet();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Write failed");
+      if (isVersionConflict(err)) {
+        // Stale Clip version: refetch before the retry.
+        await mutateTriplet();
+      }
+      setError(saveErrorMessage(err));
     }
   }
 

@@ -10,6 +10,7 @@ from pathlib import Path
 
 from pwdlib import PasswordHash
 
+from endo_label import capabilities
 from endo_label.config import Settings
 
 BUSY_TIMEOUT_MS = 5000
@@ -699,6 +700,8 @@ SELECT
   assignee.username AS assignee,
   reviewer.username AS reviewer,
   a.note,
+  a.assignee_id,
+  a.reviewer_id,
   reviewed.username AS reviewed_by,
   a.reviewed_at,
   a.delivered_at,
@@ -783,6 +786,48 @@ def items_payload(
         con.close()
 
 
+def _item_payload_for(con: sqlite3.Connection, row: sqlite3.Row, account: Account) -> dict:
+    payload = _item_dict(row, _clip_tags(con, str(row["clip_id"])))
+    payload["capabilities"] = capabilities.item_capabilities(
+        state=row["state"],
+        assignee_id=row["assignee_id"],
+        reviewer_id=row["reviewer_id"],
+        account_id=account.id,
+        admin=account.admin,
+        reviewer=account.reviewer,
+    )
+    return payload
+
+
+def item_payload(path: Path, account: Account, clip_id: str, task_type: str) -> dict | None:
+    """One item with this Account's capabilities; None when no Assignment exists."""
+    con = connect(path)
+    try:
+        row = con.execute(
+            _ITEM_SELECT + " WHERE a.clip_id=? AND a.task_type=?",
+            (clip_id, task_type),
+        ).fetchone()
+        if row is None:
+            return None
+        return _item_payload_for(con, row, account)
+    finally:
+        con.close()
+
+
+def my_items(path: Path, account: Account) -> list[dict]:
+    """Items this Account holds — as the annotator (assignee) or as the reviewer."""
+    con = connect(path)
+    try:
+        rows = con.execute(
+            _ITEM_SELECT + " WHERE a.assignee_id=? OR a.reviewer_id=?"
+            " ORDER BY a.clip_id, a.task_type",
+            (account.id, account.id),
+        ).fetchall()
+        return [_item_payload_for(con, row, account) for row in rows]
+    finally:
+        con.close()
+
+
 def _with_assignment(path: Path, clip_id: str, task_type: str, fn):
     if task_type not in TASK_TYPES:
         raise AssignmentNotFound(task_type)
@@ -861,12 +906,19 @@ def _actor_flags(con: sqlite3.Connection, account_id: int) -> tuple[bool, bool]:
     return bool(row["admin"]), bool(row["reviewer"])
 
 
-def _actor_is_assignee(row: sqlite3.Row, account_id: int) -> bool:
-    return row["assignee_id"] is not None and int(row["assignee_id"]) == account_id
-
-
-def _actor_is_assigned_reviewer(row: sqlite3.Row, account_id: int) -> bool:
-    return row["reviewer_id"] is not None and int(row["reviewer_id"]) == account_id
+def _actor_capabilities(
+    con: sqlite3.Connection, row: sqlite3.Row, account_id: int
+) -> dict[str, bool]:
+    """The one place a transition's permission comes from — HTTP and /api/me."""
+    admin, reviewer = _actor_flags(con, account_id)
+    return capabilities.item_capabilities(
+        state=row["state"],
+        assignee_id=row["assignee_id"],
+        reviewer_id=row["reviewer_id"],
+        account_id=account_id,
+        admin=admin,
+        reviewer=reviewer,
+    )
 
 
 def _now_iso() -> str:
@@ -879,8 +931,7 @@ def submit_item(path: Path, clip_id: str, task_type: str, *, account_id: int) ->
     def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
         if row["state"] != "Labeling":
             raise AssignmentConflict(row["state"])
-        admin, _reviewer = _actor_flags(con, account_id)
-        if not (_actor_is_assignee(row, account_id) or admin):
+        if not _actor_capabilities(con, row, account_id)["submit"]:
             raise TransitionForbidden()
         con.execute(
             "UPDATE assignments SET state='Submitted', note=NULL "
@@ -898,8 +949,7 @@ def recall_item(path: Path, clip_id: str, task_type: str, *, account_id: int) ->
     def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
         if row["state"] != "Submitted":
             raise AssignmentConflict(row["state"])
-        admin, _reviewer = _actor_flags(con, account_id)
-        if not (_actor_is_assignee(row, account_id) or admin):
+        if not _actor_capabilities(con, row, account_id)["recall"]:
             raise TransitionForbidden()
         con.execute(
             "UPDATE assignments SET state='Labeling', note=NULL, reviewer_id=NULL "
@@ -917,10 +967,11 @@ def assign_reviewer(
     """Submitted -> Reviewing. Admin assigns a reviewer other than the annotator."""
 
     def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
-        admin, _reviewer = _actor_flags(con, account_id)
-        if not admin:
-            raise TransitionForbidden()
-        if row["state"] != "Submitted":
+        if not _actor_capabilities(con, row, account_id)["assign_reviewer"]:
+            # Non-admins never had this call; wrong state is a conflict for admins.
+            admin, _reviewer = _actor_flags(con, account_id)
+            if not admin:
+                raise TransitionForbidden()
             raise AssignmentConflict(row["state"])
         reviewer_id = _account_id(con, username)
         if row["assignee_id"] is not None and int(row["assignee_id"]) == reviewer_id:
@@ -941,8 +992,7 @@ def pass_item(path: Path, clip_id: str, task_type: str, *, account_id: int) -> d
     def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
         if row["state"] != "Reviewing":
             raise AssignmentConflict(row["state"])
-        admin, _reviewer = _actor_flags(con, account_id)
-        if not (_actor_is_assigned_reviewer(row, account_id) or admin):
+        if not _actor_capabilities(con, row, account_id)["pass"]:
             raise TransitionForbidden()
         con.execute(
             "UPDATE assignments SET state='Done', reviewed_by=?, reviewed_at=?, note=NULL "
@@ -967,12 +1017,7 @@ def reject_item(
         state = row["state"]
         if state not in ("Reviewing", "Done"):
             raise AssignmentConflict(state)
-        admin, reviewer = _actor_flags(con, account_id)
-        if state == "Reviewing":
-            allowed = admin or _actor_is_assigned_reviewer(row, account_id)
-        else:
-            allowed = admin or reviewer
-        if not allowed:
+        if not _actor_capabilities(con, row, account_id)["reject"]:
             raise TransitionForbidden()
         con.execute(
             "UPDATE assignments SET state='Labeling', note=?, reviewer_id=NULL, "
@@ -990,8 +1035,7 @@ def rereview_item(path: Path, clip_id: str, task_type: str, *, account_id: int) 
     def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
         if row["state"] != "Done":
             raise AssignmentConflict(row["state"])
-        admin, reviewer = _actor_flags(con, account_id)
-        if not (admin or reviewer):
+        if not _actor_capabilities(con, row, account_id)["re_review"]:
             raise TransitionForbidden()
         con.execute(
             "UPDATE assignments SET state='Submitted', reviewer_id=NULL, note=NULL, "
@@ -1138,11 +1182,15 @@ def _write_allowed(row: sqlite3.Row | None, account_id: int) -> bool:
     """Labeling: the assignee writes. Submitted/Done: nobody. Reviewing: the reviewer."""
     if row is None:
         return False
-    if row["state"] == "Labeling":
-        return row["assignee_id"] is not None and int(row["assignee_id"]) == account_id
-    if row["state"] == "Reviewing":
-        return row["reviewer_id"] is not None and int(row["reviewer_id"]) == account_id
-    return False
+    admin, reviewer = False, False  # edit_labels never depends on a role flag
+    return capabilities.item_capabilities(
+        state=row["state"],
+        assignee_id=row["assignee_id"],
+        reviewer_id=row["reviewer_id"],
+        account_id=account_id,
+        admin=admin,
+        reviewer=reviewer,
+    )["edit_labels"]
 
 
 def assert_label_writer(
