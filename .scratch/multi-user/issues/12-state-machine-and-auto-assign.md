@@ -10,7 +10,7 @@ No branch at submit; Done = reviewed-and-passed (reviewed_by/at required), the o
 
 **Blocked by:** 11.
 
-Status: RUNNING
+Status: MERGING
 
 Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
 
