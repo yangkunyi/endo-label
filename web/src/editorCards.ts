@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { labelColor } from "./timeline";
 
 export function nowEmptyText(kind: "phase" | "class" | "triplet", frameIndex: number): string {
   switch (kind) {
@@ -32,4 +33,9 @@ export function libraryRowSemanticStyle(color: string, on: boolean): CSSProperti
     };
   }
   return UNSELECTED_STYLE;
+}
+
+/** The filled Now-chip style for a label identity. */
+export function nowFillStyle(identity: string): CSSProperties {
+  return { backgroundColor: labelColor(identity), color: "var(--color-background)" };
 }
