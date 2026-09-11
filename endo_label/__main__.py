@@ -144,6 +144,12 @@ def _register_clip(argv: list[str]) -> None:
     parser.add_argument("--kind", required=True, choices=("jpeg", "video"))
     parser.add_argument("--path", required=True, type=Path, help="Source media path")
     parser.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        help="Clip tag for cross-cutting filtering (repeatable)",
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=None,
@@ -164,6 +170,7 @@ def _register_clip(argv: list[str]) -> None:
             clip_id=args.clip_id,
             kind=args.kind,
             media_path=args.path,
+            tags=args.tag,
         )
     except (ClipExists, ValueError) as exc:
         print(str(exc), file=sys.stderr)

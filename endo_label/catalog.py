@@ -37,10 +37,15 @@ class TranscodeError(CatalogError):
     """JPEG Clip could not be transcoded to mp4."""
 
 
-def clip_entries(settings: Settings) -> tuple[ClipEntry, ...]:
+def clip_entries(
+    settings: Settings,
+    *,
+    project: str | None = None,
+    tag: str | None = None,
+) -> tuple[ClipEntry, ...]:
     return tuple(
         ClipEntry(id=row.id, kind=row.kind, path=row.path)
-        for row in list_registered_clips(db_path(settings))
+        for row in list_registered_clips(db_path(settings), project=project, tag=tag)
     )
 
 
@@ -353,9 +358,14 @@ def _clip_row(entry: ClipEntry, settings: Settings) -> dict | None:
     return None
 
 
-def list_clips(settings: Settings) -> list[dict]:
+def list_clips(
+    settings: Settings,
+    *,
+    project: str | None = None,
+    tag: str | None = None,
+) -> list[dict]:
     clips: list[dict] = []
-    for entry in clip_entries(settings):
+    for entry in clip_entries(settings, project=project, tag=tag):
         row = _clip_row(entry, settings)
         if row is not None:
             clips.append(row)

@@ -41,6 +41,7 @@ class ClipEntry:
     id: str
     kind: str
     path: Path
+    tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -113,8 +114,25 @@ def _parse_clips(value: object, path: Path, base: Path) -> tuple[ClipEntry, ...]
         raw_path = item.get("path")
         if not clip_id or not kind or raw_path is None or not str(raw_path).strip():
             continue
-        entries.append(ClipEntry(id=clip_id, kind=kind, path=_resolve_path(str(raw_path).strip(), base)))
+        entries.append(
+            ClipEntry(
+                id=clip_id,
+                kind=kind,
+                path=_resolve_path(str(raw_path).strip(), base),
+                tags=_parse_tags(item.get("tags"), path),
+            )
+        )
     return tuple(entries)
+
+
+def _parse_tags(value: object, path: Path) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return tuple(tag.strip() for tag in value.split(",") if tag.strip())
+    if isinstance(value, list):
+        return tuple(str(tag).strip() for tag in value if str(tag).strip())
+    raise ConfigError(f"{path}: Clip tags must be a list of strings")
 
 
 def _parse_projects(value: object, path: Path, base: Path) -> tuple[ProjectSpec, ...]:
