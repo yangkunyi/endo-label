@@ -1,11 +1,11 @@
 import { Link, Navigate, Outlet, useNavigate } from "react-router-dom";
 import useSWR, { mutate } from "swr";
-import { getJson, sendJson, type Me } from "./api";
+import { getJson, mePath, sendJson, type Me } from "./api";
 import { Button } from "./components/ui/button";
 
 export function AppShell() {
   const navigate = useNavigate();
-  const { data, error } = useSWR("/api/me", getJson<Me>);
+  const { data, error } = useSWR(mePath(), getJson<Me>);
   if (!data && !error) {
     return <p className="p-6">Loading…</p>;
   }
@@ -24,6 +24,7 @@ export function AppShell() {
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-3 py-2">
         <nav className="flex items-center gap-3 text-sm">
           <Link to="/">Desk</Link>
+          {data.capabilities?.annotate ? <Link to="/tasks">My Tasks</Link> : null}
           {data.roles.admin ? <Link to="/admin/vocab">Vocab</Link> : null}
           {data.roles.admin ? <Link to="/admin/assignments">Assignments</Link> : null}
         </nav>
