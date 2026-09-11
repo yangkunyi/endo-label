@@ -17,7 +17,6 @@ import {
   getJsonAllow404,
   healthPath,
   isVersionConflict,
-  itemActionPath,
   jobPath,
   mePath,
   saveErrorMessage,
@@ -50,7 +49,6 @@ import {
   type ClipMeta,
   type FrameAnnotations,
   type HealthResponse,
-  type ItemAction,
   type Me,
   type MyItem,
   type PhaseDoc,
@@ -66,6 +64,7 @@ import {
   type VocabTriple,
 } from "./api";
 import { Button } from "./components/ui/button";
+import { ItemActions as ItemActionsPanel } from "./ItemActions";
 import { stateBadge, taskActions, rejectNote } from "./taskList";
 import { Input } from "./components/ui/input";
 import { VideoPlayer, PlayerTransport } from "./components/ui/video-player";
@@ -362,31 +361,18 @@ function ResizeHandle({
   );
 }
 
-/** Submit / recall for the focused (Clip, Task type), from the /api/me capabilities. */
+/** The focused (Clip, Task type)'s transitions, from the /api/me capability payload.
+
+Submit / recall are the annotator's; pass / reject / reopen are the reviewer's —
+the same server-derived buttons the task list shows, rendered on the desk.
+*/
 function ItemActions({ clipId, taskType }: { clipId: string; taskType: EditorKind }) {
   const { data, mutate } = useSWR(mePath(clipId, taskType), getJson<Me>);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const item: MyItem | undefined = data?.item;
-  const buttons = item ? taskActions(item) : [];
   const note = item ? rejectNote(item) : null;
   const badge = item ? stateBadge(item.state) : null;
 
-  async function run(action: ItemAction) {
-    setError(null);
-    setBusy(true);
-    try {
-      await sendJson(itemActionPath(clipId, taskType, action), "POST");
-    } catch (err) {
-      setError(saveErrorMessage(err));
-    } finally {
-      // The transition moved the item: the capability payload is stale now.
-      await mutate();
-      setBusy(false);
-    }
-  }
-
-  if (!item || (!badge && buttons.length === 0)) {
+  if (!item || (!badge && taskActions(item).length === 0)) {
     return null;
   }
 
@@ -400,17 +386,12 @@ function ItemActions({ clipId, taskType }: { clipId: string; taskType: EditorKin
           {badge.label}
         </span>
       ) : null}
-      {buttons.map((button) => (
-        <Button
-          key={button.action}
-          type="button"
-          size="sm"
-          disabled={busy}
-          onClick={() => void run(button.action)}
-        >
-          {button.label}
-        </Button>
-      ))}
+      <ItemActionsPanel
+        clipId={clipId}
+        taskType={taskType}
+        item={item}
+        onCompleted={mutate}
+      />
       {note ? (
         <p
           data-reject-note=""
@@ -419,7 +400,6 @@ function ItemActions({ clipId, taskType }: { clipId: string; taskType: EditorKin
           Reviewer note: {note}
         </p>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
     </>
   );
 }

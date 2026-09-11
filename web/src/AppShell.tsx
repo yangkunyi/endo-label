@@ -26,7 +26,9 @@ export function AppShell() {
           <Link to="/">Desk</Link>
           {data.roles.admin ? <Link to="/admin/users">Users</Link> : null}
           {data.roles.admin ? <Link to="/admin/projects">Projects</Link> : null}
-          {data.capabilities?.annotate ? <Link to="/tasks">My Tasks</Link> : null}
+          {data.capabilities?.annotate || data.capabilities?.review ? (
+            <Link to="/tasks">My Tasks</Link>
+          ) : null}
           {data.roles.admin ? <Link to="/admin/vocab">Vocab</Link> : null}
           {data.roles.admin ? <Link to="/admin/assignments">Assignments</Link> : null}
         </nav>
