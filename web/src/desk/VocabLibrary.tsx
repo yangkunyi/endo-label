@@ -1,15 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { Brush, Check, Eye, EyeOff, Trash2 } from "lucide-react";
-import type { KeyedMutator } from "swr";
+import { type KeyedMutator } from "swr";
 import {
   sendJson,
   vocabCandidatePath,
   vocabDeletePath,
-  vocabListPath,
   vocabRenamePath,
   type ScopedVocab,
   type Vocab,
-  type VocabPickerItem,
 } from "../api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -18,56 +16,7 @@ import type { BrushIdentity, EditorKind } from "../deskStore";
 import { libraryRowSemanticStyle } from "../editorCards";
 import { cn } from "../lib/utils";
 import { labelColor } from "../timeline";
-
-/** What the desk may offer for the focused Clip's Project word list. */
-export type VocabControls = {
-  canRegistryWrite: boolean;
-  canEditVocab: boolean;
-  canCreateCandidate: boolean;
-  projectId: number | null;
-  items: VocabPickerItem[];
-};
-
-/** The visible registry item behind an already-labeled name, if the Project enables it. */
-export function pickerItemFor(
-  items: VocabPickerItem[],
-  kind: EditorKind,
-  target: { name?: string; instrument?: string; verb?: string; target?: string },
-): VocabPickerItem | undefined {
-  return items.find((row) => {
-    if (row.candidate || row.kind !== kind) {
-      return false;
-    }
-    if (kind === "triplet") {
-      return (
-        row.instrument === target.instrument &&
-        row.verb === target.verb &&
-        row.target === target.target
-      );
-    }
-    return row.name === target.name;
-  });
-}
-
-export async function ensureVocabName(
-  listName: string,
-  raw: string,
-  names: string[],
-  mutateVocab: KeyedMutator<ScopedVocab>,
-): Promise<string | null> {
-  const name = raw.trim();
-  if (!name) {
-    return null;
-  }
-  if (names.includes(name)) {
-    return name;
-  }
-  await sendJson<unknown>(vocabListPath(listName), "POST", { name });
-  // The registry write answers the legacy desk-wide set; the desk shows the
-  // Clip's Project set, so revalidate the scoped key instead of injecting it.
-  await mutateVocab();
-  return name;
-}
+import { ensureVocabName, type VocabControls } from "./vocabControls";
 
 export function LibraryList({
   names,

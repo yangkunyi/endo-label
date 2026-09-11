@@ -135,6 +135,32 @@ export function useBrushRange({
   return { markedFrom, rangeFrom, rangeTo, focusedBrush, hasBrush, previewRange };
 }
 
+/** The eye toggles of the focused kind, and which of its Lanes exist on the Clip. */
+export function useLaneVisibility({
+  focus,
+  phaseFrames,
+  classFrames,
+  tripletFrames,
+}: {
+  focus: EditorKind;
+  phaseFrames: Record<string, string>;
+  classFrames: Record<string, string[]>;
+  tripletFrames: Record<string, TripletRow[]>;
+}) {
+  const laneVisibility = useDeskStore((s) => s.laneVisibility);
+  const setLaneVisible = useDeskStore((s) => s.setLaneVisible);
+  const lanePresentKeys = presentLaneKeys(focus, phaseFrames, classFrames, tripletFrames);
+  const laneVisibleFor = (identity: string) => {
+    const key = laneVisibilityKey(focus, identity);
+    return laneIsVisible(laneVisibility, key, lanePresentKeys.has(key));
+  };
+  const toggleLaneFor = (identity: string) => {
+    const key = laneVisibilityKey(focus, identity);
+    setLaneVisible(key, !laneIsVisible(laneVisibility, key, lanePresentKeys.has(key)));
+  };
+  return { lanePresentKeys, laneVisibleFor, toggleLaneFor };
+}
+
 /** Visible Lanes of the focused kind, with the eye toggles that drive them. */
 export function useDeskLanes({
   focus,
@@ -152,16 +178,12 @@ export function useDeskLanes({
   vocab: Vocab | undefined;
 }) {
   const laneVisibility = useDeskStore((s) => s.laneVisibility);
-  const setLaneVisible = useDeskStore((s) => s.setLaneVisible);
-  const lanePresentKeys = presentLaneKeys(focus, phaseFrames, classFrames, tripletFrames);
-  const laneVisibleFor = (identity: string) => {
-    const key = laneVisibilityKey(focus, identity);
-    return laneIsVisible(laneVisibility, key, lanePresentKeys.has(key));
-  };
-  const toggleLaneFor = (identity: string) => {
-    const key = laneVisibilityKey(focus, identity);
-    setLaneVisible(key, !laneIsVisible(laneVisibility, key, lanePresentKeys.has(key)));
-  };
+  const { lanePresentKeys, laneVisibleFor, toggleLaneFor } = useLaneVisibility({
+    focus,
+    phaseFrames,
+    classFrames,
+    tripletFrames,
+  });
   const lanes = useMemo(
     () =>
       frameCount
@@ -169,9 +191,8 @@ export function useDeskLanes({
         : [],
     [classFrames, focus, frameCount, lanePresentKeys, laneVisibility, phaseFrames, tripletFrames, vocab],
   );
-  return { lanes, lanePresentKeys, laneVisibleFor, toggleLaneFor };
+  return { lanes, laneVisibleFor, toggleLaneFor };
 }
-
 
 /** The desk-wide identity of a triplet row: instrument / verb / target. */
 export function tripleIdentity(row: { instrument: string; verb: string; target: string }): string {

@@ -49,9 +49,9 @@ export function FrameControls({
     if (!clip || focusedBrush.length === 0) {
       return;
     }
-    notify(null);
     try {
       await writer.runExclusive(async () => {
+        notify(null);
         for (const identity of focusedBrush) {
           await writer.commitIdentityRange(identity, rangeFrom, rangeTo, remove);
         }

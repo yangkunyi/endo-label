@@ -31,7 +31,8 @@ import { useDeskStore, type EditorKind } from "../deskStore";
 import { libraryRowSemanticStyle, nowEmptyText, nowFillStyle } from "../editorCards";
 import { cn } from "../lib/utils";
 import { labelColor } from "../timeline";
-import { AddVocabRow, LibraryList, pickerItemFor, type VocabControls } from "./VocabLibrary";
+import { AddVocabRow, LibraryList } from "./VocabLibrary";
+import { pickerItemFor, type VocabControls } from "./vocabControls";
 import { tripleIdentity } from "./lanes";
 
 export function EditorCard({
@@ -298,7 +299,7 @@ export function PhaseEditor({
   );
 }
 
-export function uniqueTripleWords(triples: VocabTriple[], slot: keyof VocabTriple): string[] {
+function uniqueTripleWords(triples: VocabTriple[], slot: keyof VocabTriple): string[] {
   return [...new Set(triples.map((row) => row[slot]).filter(Boolean))];
 }
 

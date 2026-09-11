@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Loader2, Lock } from "lucide-react";
 import { useSWRConfig, type KeyedMutator } from "swr";
 import {
@@ -39,7 +39,6 @@ import {
   leftoverPinsForActive,
   nextActiveTrack,
   splitPendingMarks,
-  type LeftoverPoint,
   type PendingMark,
   type PendingPoint,
   type PendingStroke,
@@ -47,54 +46,11 @@ import {
 import { hasMaskHandoff, isProtectedState, propagateTargetFrames, trackState } from "../trackState";
 import { formatElapsed, workerLoadingToast } from "../workerStatus";
 import { isEditableTarget } from "./keyboard";
+import { MaskSessionContext, useMaskSession, type MaskSession } from "./maskSession";
 import type { DeskNotice } from "./notice";
 
 // The Job fills one Frame per status poll, so this is the fill rate too.
 const JOB_POLL_MS = 400;
-
-/** Mask working state and controls for the focused Clip and Frame, shared by the
- * Track rail and the picture overlay so neither owns the other. */
-export type MaskSession = {
-  tracks: TrackRow[];
-  frameMasks: FrameAnnotations["masks"];
-  leftover: LeftoverPoint[];
-  pending: PendingMark[];
-  pendingCount: number;
-  scribbleWidth: number;
-  activeTrackId: number | null;
-  canUndo: boolean;
-  busy: boolean;
-  predicting: boolean;
-  canPropagate: boolean;
-  frameKept: boolean;
-  propagateJob: PropagateJobPublic | null;
-  propagateElapsed: number;
-  propagateDirection: PropagateDirection;
-  propagateMaxFrames: string;
-  onPropagateDirection: (direction: PropagateDirection) => void;
-  onPropagateMaxFrames: (value: string) => void;
-  onPropagate: () => void;
-  onScribbleWidth: (width: number) => void;
-  onPredict: () => void;
-  onUndo: () => void;
-  onSelectTrack: (trackId: number) => void;
-  onNewTrack: () => void;
-  onRenameTrack: (trackId: number, label: string) => Promise<void> | void;
-  onClearMask: () => void;
-  onClickPoint: (point: PendingPoint) => void;
-  onClickStroke: (stroke: PendingStroke) => void;
-  onDeletePin: (index: number) => void;
-};
-
-const MaskSessionContext = createContext<MaskSession | null>(null);
-
-export function useMaskSession(): MaskSession {
-  const session = useContext(MaskSessionContext);
-  if (!session) {
-    throw new Error("useMaskSession must be used inside MaskSessionProvider");
-  }
-  return session;
-}
 
 /** Owns the mask Session of the open Clip: pending marks, Tracks, Predict,
  * Propagate and Undo. Everything the mask panel and the overlay show comes from here. */
@@ -281,7 +237,7 @@ export function MaskSessionProvider({
     } catch {
       // Transient poll error: keep polling; the next tick retries.
     }
-  }, [clip, refreshMaskReads, stopJobPolling]);
+  }, [clip, notify, refreshMaskReads, stopJobPolling]);
 
   const runPredict = useCallback(async () => {
     if (!clipId || predicting.current || jobRunning || pendingRef.current.length === 0) {
@@ -340,7 +296,7 @@ export function MaskSessionProvider({
       predicting.current = false;
       setPredictBusy(false);
     }
-  }, [activeTrackId, clearPredictTimer, clipId, ensureSession, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
+  }, [activeTrackId, clearPredictTimer, clipId, ensureSession, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn, notify]);
 
   const schedulePredict = useCallback(() => {
     clearPredictTimer();
@@ -392,7 +348,7 @@ export function MaskSessionProvider({
     } finally {
       predicting.current = false;
     }
-  }, [activeTrackId, clearPredictTimer, clipId, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
+  }, [activeTrackId, clearPredictTimer, clipId, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn, notify]);
 
   const onClearMask = useCallback(async () => {
     if (activeTrackId == null || predicting.current || jobRunning) {
@@ -416,7 +372,7 @@ export function MaskSessionProvider({
     } finally {
       predicting.current = false;
     }
-  }, [activeTrackId, clearPredictTimer, clipId, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
+  }, [activeTrackId, clearPredictTimer, clipId, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn, notify]);
 
   const runUndo = useCallback(async () => {
     if (!clipId || predicting.current || jobRunning) {
@@ -448,7 +404,7 @@ export function MaskSessionProvider({
     } finally {
       predicting.current = false;
     }
-  }, [clearPredictTimer, clipId, frameIndex, jobRunning, mutateAnnotation, mutateFrameAnn]);
+  }, [clearPredictTimer, clipId, frameIndex, jobRunning, mutateAnnotation, mutateFrameAnn, notify]);
 
   const runPropagate = useCallback(async () => {
     if (!clipId || predicting.current || jobRunning) {
@@ -504,6 +460,7 @@ export function MaskSessionProvider({
     pollJob,
     propagateDirection,
     propagateMaxFrames,
+    notify,
     refreshMaskReads,
   ]);
 
@@ -519,7 +476,7 @@ export function MaskSessionProvider({
     } catch (err) {
       notify({ text: err instanceof Error ? err.message : "Track Label edit failed", error: true });
     }
-  }, [clipId, frameIndex, loadSessionFrame, mutateAnnotation]);
+  }, [clipId, frameIndex, loadSessionFrame, mutateAnnotation, notify]);
 
   useEffect(() => {
     const fromFrame = pendingFrame.current;

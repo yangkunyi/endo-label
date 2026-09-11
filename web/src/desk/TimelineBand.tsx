@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { labelColor, frameFromClientX, type TimelineLane } from "../timeline";
 import type { LaneBar } from "./writer";
-import { usePlayback } from "./PlayerPanel";
+import { usePlayback } from "./playback";
 
 /** The timeline: the Ruler, the transport row and the Lane well. Gestures are
  * pointer-driven; every span write goes back out through the panel's callbacks. */

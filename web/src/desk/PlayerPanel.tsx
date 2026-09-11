@@ -1,48 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { clipMediaPath, type ClipMeta } from "../api";
 import { PlayerTransport, VideoPlayer } from "../components/ui/video-player";
 import { useDeskStore } from "../deskStore";
 import { isEditableTarget } from "./keyboard";
 import { PlayerMaskOverlay } from "./MaskPanel";
+import { PlaybackContext, usePlayback, type Playback } from "./playback";
 
 /** The container fps, or 25 when the Clip does not carry one. */
 function fpsOf(clip: ClipMeta | undefined): number {
   return clip && clip.fps > 0 ? clip.fps : 25;
-}
-
-/** Picture playback state, shared with the timeline that renders the transport. */
-export type Playback = {
-  videoRef: RefObject<HTMLVideoElement | null>;
-  playerSectionRef: RefObject<HTMLElement | null>;
-  frameIndex: number;
-  playing: boolean;
-  transportTime: number;
-  duration: number;
-  rate: number;
-  muted: boolean;
-  volume: number;
-  togglePlayback: () => void;
-  pausePlayback: () => void;
-  seek: (index: number) => void;
-  changeRate: (value: number) => void;
-  toggleMute: () => void;
-  changeVolume: (value: number) => void;
-  toggleFullscreen: () => void;
-  onLoadedMetadata: (el: HTMLVideoElement) => void;
-  onTimeUpdate: (currentTime: number) => void;
-  onPlayChange: (playing: boolean) => void;
-  onRateChange: (rate: number) => void;
-  onVolumeChange: (muted: boolean, volume: number) => void;
-};
-
-const PlaybackContext = createContext<Playback | null>(null);
-
-export function usePlayback(): Playback {
-  const playback = useContext(PlaybackContext);
-  if (!playback) {
-    throw new Error("usePlayback must be used inside PlaybackProvider");
-  }
-  return playback;
 }
 
 /** Owns the <video> element and the transport readouts for the open Clip. */
@@ -210,8 +176,18 @@ export function PlayerPanel({
   isLoading: boolean;
 }) {
   const player = usePlayback();
+  const { videoRef, playerSectionRef } = player;
+  const {
+    frameIndex,
+    onLoadedMetadata,
+    onTimeUpdate,
+    onPlayChange,
+    onRateChange,
+    onVolumeChange,
+    pausePlayback,
+  } = player;
   return (
-    <section ref={player.playerSectionRef} aria-label="Player" className="relative flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-t-xl bg-black">
+    <section ref={playerSectionRef} aria-label="Player" className="relative flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-t-xl bg-black">
       <div className="flex min-h-0 flex-1 items-center justify-center">
         {error ? (
           <div className="p-6 text-center"><h2 className="mb-2 text-lg font-semibold">{clipId}</h2><p>{error instanceof Error ? error.message : "Clip not found"}</p></div>
@@ -220,15 +196,15 @@ export function PlayerPanel({
         ) : clip?.frame_count ? (
           <VideoPlayer
             src={clipMediaPath(clip.id)}
-            videoRef={player.videoRef}
-            frameLabel={`Frame ${player.frameIndex}`}
-            onLoadedMetadata={player.onLoadedMetadata}
-            onTimeUpdate={player.onTimeUpdate}
-            onPlayChange={player.onPlayChange}
-            onRateChange={player.onRateChange}
-            onVolumeChange={player.onVolumeChange}
+            videoRef={videoRef}
+            frameLabel={`Frame ${frameIndex}`}
+            onLoadedMetadata={onLoadedMetadata}
+            onTimeUpdate={onTimeUpdate}
+            onPlayChange={onPlayChange}
+            onRateChange={onRateChange}
+            onVolumeChange={onVolumeChange}
           >
-            <PlayerMaskOverlay videoRef={player.videoRef} onPause={player.pausePlayback} />
+            <PlayerMaskOverlay videoRef={videoRef} onPause={pausePlayback} />
           </VideoPlayer>
         ) : clip ? (
           <p>This Clip has no Frames.</p>

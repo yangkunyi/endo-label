@@ -100,9 +100,9 @@ export function TimelinePanel({
     if (barSelection.length === 0) {
       return;
     }
-    notify(null);
     try {
       await writer.runExclusive(async () => {
+        notify(null);
         for (const seg of barSelection) {
           const identity = identityFromLaneKey(focus, seg.laneKey);
           if (!identity) {
