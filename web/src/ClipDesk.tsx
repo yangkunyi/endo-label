@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { Brush, Check, Eye, EyeOff, Loader2, Lock, Trash2, X } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator, useSWRConfig } from "swr";
 import {
   annotationFramePath,
@@ -8,7 +8,6 @@ import {
   classClipPath,
   classFramePath,
   classSpanPath,
-  clipDeskPath,
   frameClassTags,
   clipMediaPath,
   framePhaseName,
@@ -46,7 +45,6 @@ import {
   vocabTriplesPath,
   type AnnotationSummary,
   type ClassDoc,
-  type ClipListResponse,
   type ClipMeta,
   type FrameAnnotations,
   type HealthResponse,
@@ -68,6 +66,7 @@ import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { VideoPlayer, PlayerTransport } from "./components/ui/video-player";
 import { MaskOverlay } from "./MaskOverlay";
+import { ClipRail } from "./desk/ClipRail";
 import { DeskItemActions } from "./desk/DeskItemActions";
 import { ResizeHandle } from "./desk/ResizeHandle";
 import { brushOfKind, laneIsVisible, laneVisibilityKey, useDeskStore, type BrushIdentity, type EditorKind } from "./deskStore";
@@ -344,11 +343,6 @@ async function ensureVocabName(
 
 export function ClipDesk() {
   const { clipId } = useParams();
-  const {
-    data: clipList,
-    error: clipListError,
-    isLoading: clipsLoading,
-  } = useSWR("/api/clips", getJson<ClipListResponse>);
   const { data, error, isLoading } = useSWR(
     clipId ? `/api/clips/${encodeURIComponent(clipId)}` : null,
     getJson<ClipMeta>,
@@ -1155,31 +1149,7 @@ export function ClipDesk() {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <div className="flex min-h-0 flex-1 overflow-hidden">
-            <nav
-              aria-label="Clips"
-              className="flex shrink-0 flex-col overflow-y-auto border-r border-border bg-card"
-              style={{ width: layout.clipRailWidth }}
-            >
-              <div className="border-b border-border px-3 py-2">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Clips</p>
-              </div>
-              <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
-                {clipsLoading ? <p className="p-2 text-sm text-muted-foreground">Loading Clips…</p> : null}
-                {clipListError ? <p className="p-2 text-sm text-destructive">Could not load Clips</p> : null}
-                {!clipsLoading && !clipListError && clipList?.clips.length === 0 ? <p className="p-2 text-sm text-muted-foreground">No Clips on the allowlist.</p> : null}
-                {clipList?.clips.map((clip) => (
-                  <Link
-                    key={clip.id}
-                    to={clipDeskPath(clip.id)}
-                    aria-current={clip.id === clipId ? "page" : undefined}
-                    className={`flex items-center justify-between rounded-lg px-3 py-2 text-left text-sm ${clip.id === clipId ? "bg-primary/15 font-semibold text-foreground" : "text-foreground hover:bg-secondary"}`}
-                  >
-                    <span className="truncate">{clip.id}</span>
-                    <span className="ml-2 shrink-0 text-xs text-muted-foreground">{clip.frame_count} Frames</span>
-                  </Link>
-                ))}
-              </div>
-            </nav>
+            <ClipRail activeClipId={clipId} width={layout.clipRailWidth} />
             <ResizeHandle
               label="Resize Clip rail"
               direction="horizontal"
