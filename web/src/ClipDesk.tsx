@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Brush, Check, Eye, EyeOff, Trash2, X } from "lucide-react";
 import { useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
@@ -7,7 +7,6 @@ import {
   annotationSummaryPath,
   classClipPath,
   classFramePath,
-  classSpanPath,
   frameClassTags,
   framePhaseName,
   frameTripletRows,
@@ -19,13 +18,11 @@ import {
   withVersion,
   phaseClipPath,
   phaseFramePath,
-  phaseSpanPath,
   registryDisablePath,
   sendJson,
   toggleClassTag,
   tripletClipPath,
   tripletFramePath,
-  tripletSpanPath,
   vocabCandidatePath,
   vocabDeletePath,
   vocabListPath,
@@ -51,15 +48,18 @@ import {
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { ClipRail } from "./desk/ClipRail";
+import { brushColorKey, brushLabel, tripleIdentity, useBrushRange, useDeskLanes } from "./desk/lanes";
 import { DeskItemActions } from "./desk/DeskItemActions";
 import { isEditableTarget } from "./desk/keyboard";
 import { MaskPanel, MaskSessionProvider } from "./desk/MaskPanel";
-import { PlaybackProvider, PlayerPanel, TransportRow, usePlayback } from "./desk/PlayerPanel";
+import { PlaybackProvider, PlayerPanel } from "./desk/PlayerPanel";
+import { TimelinePanel } from "./desk/TimelinePanel";
+import { useIdentityWriter } from "./desk/writer";
 import { ResizeHandle } from "./desk/ResizeHandle";
-import { brushOfKind, laneIsVisible, laneVisibilityKey, useDeskStore, type BrushIdentity, type EditorKind } from "./deskStore";
-import { libraryRowSemanticStyle, nowEmptyText } from "./editorCards";
+import { useDeskStore, type BrushIdentity, type EditorKind } from "./deskStore";
+import { libraryRowSemanticStyle, nowEmptyText, nowFillStyle } from "./editorCards";
 import { cn } from "./lib/utils";
-import { foldClass, foldPhase, foldTriplet, frameFromClientX, labelColor, type TimelineLane } from "./timeline";
+import { labelColor } from "./timeline";
 import {
   WORKER_LOADING_LABEL,
   workerStatusIsLoading,
@@ -92,183 +92,6 @@ function pickerItemFor(
     }
     return row.name === target.name;
   });
-}
-
-function brushLabel(identity: BrushIdentity): string {
-  if (identity.kind === "class") {
-    return `class: ${identity.name}`;
-  }
-  if (identity.kind === "phase") {
-    return `phase: ${identity.name}`;
-  }
-  return `triplet: ${identity.instrument} / ${identity.verb} / ${identity.target}`;
-}
-
-function brushColorKey(identity: BrushIdentity): string {
-  if (identity.kind === "triplet") {
-    return `${identity.instrument} / ${identity.verb} / ${identity.target}`;
-  }
-  return identity.name;
-}
-
-function vocabOrderKeys(kind: EditorKind, vocab: Vocab | undefined): string[] {
-  if (!vocab) {
-    return [];
-  }
-  if (kind === "class") {
-    return vocab.class_tags;
-  }
-  if (kind === "phase") {
-    return vocab.phases;
-  }
-  return vocab.triples.map((row) => `${row.instrument} / ${row.verb} / ${row.target}`);
-}
-
-function orderBrushByVocab(identities: BrushIdentity[], order: string[]): BrushIdentity[] {
-  if (identities.length <= 1 || order.length === 0) {
-    return identities;
-  }
-  return [...identities].sort((a, b) => {
-    const ia = order.indexOf(brushColorKey(a));
-    const ib = order.indexOf(brushColorKey(b));
-    return (ia < 0 ? order.length : ia) - (ib < 0 ? order.length : ib);
-  });
-}
-
-function nowFillStyle(identity: string) {
-  return { backgroundColor: labelColor(identity), color: "var(--color-background)" };
-}
-
-/** Lane-visibility keys of identities that have at least one Frame on this Clip. */
-function presentLaneKeys(
-  focus: EditorKind,
-  phaseFrames: Record<string, string>,
-  classFrames: Record<string, string[]>,
-  tripletFrames: Record<string, TripletRow[]>,
-): Set<string> {
-  const keys = new Set<string>();
-  if (focus === "phase") {
-    for (const name of Object.values(phaseFrames)) {
-      if (name) {
-        keys.add(laneVisibilityKey("phase", name));
-      }
-    }
-  } else if (focus === "class") {
-    for (const tags of Object.values(classFrames)) {
-      for (const tag of tags ?? []) {
-        if (tag) {
-          keys.add(laneVisibilityKey("class", tag));
-        }
-      }
-    }
-  } else {
-    for (const rows of Object.values(tripletFrames)) {
-      for (const row of rows ?? []) {
-        keys.add(laneVisibilityKey("triplet", tripleIdentity(row)));
-      }
-    }
-  }
-  return keys;
-}
-
-/** Visible Lanes of the focused kind in Vocab order, including unused-but-eye-on empty Lanes. */
-function visibleLanes(
-  focus: EditorKind,
-  frameCount: number,
-  phaseFrames: Record<string, string>,
-  classFrames: Record<string, string[]>,
-  tripletFrames: Record<string, TripletRow[]>,
-  vocab: Vocab | undefined,
-  presentKeys: Set<string>,
-  stored: Record<string, boolean>,
-): TimelineLane[] {
-  const folded =
-    focus === "phase"
-      ? foldPhase(frameCount, phaseFrames)
-      : focus === "class"
-        ? foldClass(frameCount, classFrames)
-        : foldTriplet(frameCount, tripletFrames);
-  const byKey = new Map(folded.map((lane) => [lane.key, lane]));
-  const keys: string[] = [];
-  for (const identity of vocabOrderKeys(focus, vocab)) {
-    const key = laneVisibilityKey(focus, identity);
-    if (laneIsVisible(stored, key, presentKeys.has(key))) {
-      keys.push(identity);
-    }
-  }
-  for (const lane of folded) {
-    if (!keys.includes(lane.key)) {
-      const key = laneVisibilityKey(focus, lane.key);
-      if (laneIsVisible(stored, key, true)) {
-        keys.push(lane.key);
-      }
-    }
-  }
-  return keys.map((identity) => byKey.get(identity) ?? { key: identity, segs: [] });
-}
-
-function rangeEnds(fromIndex: number | null, currentIndex: number): { from: number; to: number } {
-  const start = fromIndex == null ? currentIndex : fromIndex;
-  return { from: Math.min(start, currentIndex), to: Math.max(start, currentIndex) };
-}
-
-type LaneBar = { laneKey: string; start: number; end: number };
-
-function sameLaneBar(a: LaneBar, b: LaneBar): boolean {
-  return a.laneKey === b.laneKey && a.start === b.start && a.end === b.end;
-}
-
-function identityFromLaneKey(kind: EditorKind, key: string): BrushIdentity | null {
-  if (kind === "class") {
-    return { kind: "class", name: key };
-  }
-  if (kind === "phase") {
-    return { kind: "phase", name: key };
-  }
-  const parts = key.split(" / ");
-  if (parts.length !== 3 || parts.some((part) => !part)) {
-    return null;
-  }
-  return { kind: "triplet", instrument: parts[0], verb: parts[1], target: parts[2] };
-}
-
-async function postIdentitySpan(
-  clipId: string,
-  identity: BrushIdentity,
-  from: number,
-  to: number,
-  remove: boolean,
-  version: number | undefined,
-): Promise<PhaseDoc | ClassDoc | TripletDoc> {
-  if (identity.kind === "phase") {
-    return sendJson<PhaseDoc>(
-      phaseSpanPath(clipId),
-      "POST",
-      withVersion({ phase: remove ? null : identity.name, from, to }, version),
-    );
-  }
-  if (identity.kind === "class") {
-    return sendJson<ClassDoc>(
-      classSpanPath(clipId),
-      "POST",
-      withVersion({ tag: identity.name, from, to, on: !remove }, version),
-    );
-  }
-  return sendJson<TripletDoc>(
-    tripletSpanPath(clipId),
-    "POST",
-    withVersion(
-      {
-        instrument: identity.instrument,
-        verb: identity.verb,
-        target: identity.target,
-        from,
-        to,
-        op: remove ? "remove" : "add",
-      },
-      version,
-    ),
-  );
 }
 
 async function ensureVocabName(
@@ -322,20 +145,9 @@ export function ClipDesk() {
   const openClip = useDeskStore((s) => s.openClip);
   const layout = useDeskStore((s) => s.layout);
   const setLayout = useDeskStore((s) => s.setLayout);
-  const spanStart = useDeskStore((s) => s.spanStart);
   const setSpanStart = useDeskStore((s) => s.setSpanStart);
-  const brush = useDeskStore((s) => s.brush);
   const dropBrush = useDeskStore((s) => s.dropBrush);
-  const laneVisibility = useDeskStore((s) => s.laneVisibility);
-  const setLaneVisible = useDeskStore((s) => s.setLaneVisible);
   const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
-  const [barSelection, setBarSelection] = useState<LaneBar[]>([]);
-  const selectionScope = `${clipId ?? ""}:${taskFocus}`;
-  const [barScope, setBarScope] = useState(selectionScope);
-  if (barScope !== selectionScope) {
-    setBarScope(selectionScope);
-    setBarSelection([]);
-  }
   const vocabControls: VocabControls = {
     canRegistryWrite: vocab?.permissions?.registry_write ?? false,
     canEditVocab: vocab?.permissions?.vocab_edit ?? false,
@@ -344,7 +156,6 @@ export function ClipDesk() {
     items: vocab?.items ?? [],
   };
 
-  const spanBusy = useRef(false);
 
 
   const { data: health } = useSWR(healthPath(), getJson<HealthResponse>, {
@@ -366,187 +177,56 @@ export function ClipDesk() {
 
 
 
-  const markedFrom = spanStart && spanStart.clipId === clipId ? spanStart.frameIndex : null;
-  const { from: rangeFrom, to: rangeTo } = rangeEnds(markedFrom, frameIndex);
-  const focusedBrush = orderBrushByVocab(brushOfKind(brush, taskFocus), vocabOrderKeys(taskFocus, vocab));
-  const hasBrush = focusedBrush.length > 0;
-  const previewRange = hasBrush && markedFrom != null ? { from: rangeFrom, to: rangeTo } : null;
-
-  const lanePresentKeys = presentLaneKeys(
-    taskFocus,
-    phaseDoc?.frames ?? {},
-    classDoc?.frames ?? {},
-    tripletDoc?.frames ?? {},
-  );
-  const laneVisibleFor = (identity: string) => {
-    const key = laneVisibilityKey(taskFocus, identity);
-    return laneIsVisible(laneVisibility, key, lanePresentKeys.has(key));
-  };
-  const toggleLaneFor = (identity: string) => {
-    const key = laneVisibilityKey(taskFocus, identity);
-    setLaneVisible(key, !laneIsVisible(laneVisibility, key, lanePresentKeys.has(key)));
-  };
-  const lanes = data
-    ? visibleLanes(
-        taskFocus,
-        data.frame_count,
-        phaseDoc?.frames ?? {},
-        classDoc?.frames ?? {},
-        tripletDoc?.frames ?? {},
-        vocab,
-        lanePresentKeys,
-        laneVisibility,
-      )
-    : [];
-
-  const commitIdentityRange = useCallback(
-    async (identity: BrushIdentity, from: number, to: number, remove: boolean) => {
-      if (!clipId) {
-        return;
-      }
-      const version =
-        identity.kind === "phase"
-          ? phaseDoc?.version
-          : identity.kind === "class"
-            ? classDoc?.version
-            : tripletDoc?.version;
-      try {
-        const doc = await postIdentitySpan(clipId, identity, from, to, remove, version);
-        if (identity.kind === "phase") {
-          await mutatePhase(doc as PhaseDoc, { revalidate: false });
-        } else if (identity.kind === "class") {
-          await mutateClass(doc as ClassDoc, { revalidate: false });
-        } else {
-          await mutateTriplet(doc as TripletDoc, { revalidate: false });
-        }
-      } catch (err) {
-        if (isVersionConflict(err)) {
-          // Stale Clip version: refetch the held labels before the user retries.
-          await Promise.all([mutatePhase(), mutateClass(), mutateTriplet()]);
-        }
-        throw err;
-      }
-    },
-    [clipId, classDoc?.version, mutateClass, mutatePhase, mutateTriplet, phaseDoc?.version, tripletDoc?.version],
-  );
+  const { markedFrom, rangeFrom, rangeTo, focusedBrush, hasBrush } = useBrushRange({
+    clipId,
+    frameIndex,
+    focus: taskFocus,
+    vocab,
+  });
+  const { laneVisibleFor, toggleLaneFor } = useDeskLanes({
+    focus: taskFocus,
+    frameCount: data?.frame_count,
+    phaseFrames: phaseDoc?.frames ?? {},
+    classFrames: classDoc?.frames ?? {},
+    tripletFrames: tripletDoc?.frames ?? {},
+    vocab,
+  });
+  const writer = useIdentityWriter({
+    clipId,
+    focus: taskFocus,
+    phaseVersion: phaseDoc?.version,
+    classVersion: classDoc?.version,
+    tripletVersion: tripletDoc?.version,
+    mutatePhase,
+    mutateClass,
+    mutateTriplet,
+    notify: setToast,
+  });
 
   const applyRange = useCallback(async (remove: boolean) => {
-    const identities = orderBrushByVocab(brushOfKind(brush, taskFocus), vocabOrderKeys(taskFocus, vocab));
-    if (!clipId || !data || identities.length === 0 || spanBusy.current) {
+    if (!clipId || !data || focusedBrush.length === 0) {
       return;
     }
-    spanBusy.current = true;
     setToast(null);
     try {
-      for (const identity of identities) {
-        await commitIdentityRange(identity, rangeFrom, rangeTo, remove);
-      }
-      setSpanStart(null);
-      setToast({
-        text: `${remove ? "Removed" : "Wrote"} ${identities.map(brushLabel).join(", ")} on frames ${rangeFrom}–${rangeTo}`,
-        error: false,
+      await writer.runExclusive(async () => {
+        for (const identity of focusedBrush) {
+          await writer.commitIdentityRange(identity, rangeFrom, rangeTo, remove);
+        }
+        setSpanStart(null);
+        setToast({
+          text: `${remove ? "Removed" : "Wrote"} ${focusedBrush.map(brushLabel).join(", ")} on frames ${rangeFrom}–${rangeTo}`,
+          error: false,
+        });
       });
     } catch (err) {
       setToast({ text: err instanceof Error ? err.message : "Write failed", error: true });
-    } finally {
-      spanBusy.current = false;
     }
-  }, [brush, clipId, commitIdentityRange, data, rangeFrom, rangeTo, setSpanStart, taskFocus, vocab]);
-
-  const writeLaneSpan = useCallback(
-    async (laneKey: string, from: number, to: number, remove: boolean) => {
-      const identity = identityFromLaneKey(taskFocus, laneKey);
-      if (!clipId || !data || !identity || spanBusy.current) {
-        return false;
-      }
-      spanBusy.current = true;
-      setToast(null);
-      try {
-        await commitIdentityRange(identity, from, to, remove);
-        return true;
-      } catch (err) {
-        setToast({ text: err instanceof Error ? err.message : "Write failed", error: true });
-        return false;
-      } finally {
-        spanBusy.current = false;
-      }
-    },
-    [clipId, commitIdentityRange, data, taskFocus],
-  );
-
-  const paintLane = useCallback(
-    (laneKey: string, from: number, to: number) => {
-      void writeLaneSpan(laneKey, from, to, false);
-    },
-    [writeLaneSpan],
-  );
-
-  const trimBar = useCallback(
-    (laneKey: string, oldStart: number, oldEnd: number, newStart: number, newEnd: number) => {
-      void (async () => {
-        if (newStart === oldStart && newEnd === oldEnd) {
-          return;
-        }
-        if (newStart < oldStart) {
-          if (!(await writeLaneSpan(laneKey, newStart, oldStart - 1, false))) {
-            return;
-          }
-        } else if (newStart > oldStart) {
-          if (!(await writeLaneSpan(laneKey, oldStart, newStart - 1, true))) {
-            return;
-          }
-        }
-        if (newEnd > oldEnd) {
-          if (!(await writeLaneSpan(laneKey, oldEnd + 1, newEnd, false))) {
-            return;
-          }
-        } else if (newEnd < oldEnd) {
-          if (!(await writeLaneSpan(laneKey, newEnd + 1, oldEnd, true))) {
-            return;
-          }
-        }
-        setBarSelection((prev) =>
-          prev.map((bar) =>
-            bar.laneKey === laneKey && bar.start === oldStart && bar.end === oldEnd
-              ? { laneKey, start: newStart, end: newEnd }
-              : bar,
-          ),
-        );
-      })();
-    },
-    [writeLaneSpan],
-  );
-
-  const deleteSelectedBars = useCallback(async () => {
-    if (!clipId || !data || barSelection.length === 0 || spanBusy.current) {
-      return;
-    }
-    spanBusy.current = true;
-    setToast(null);
-    try {
-      for (const seg of barSelection) {
-        const identity = identityFromLaneKey(taskFocus, seg.laneKey);
-        if (!identity) {
-          continue;
-        }
-        await commitIdentityRange(identity, seg.start, seg.end, true);
-      }
-      setBarSelection([]);
-    } catch (err) {
-      setToast({ text: err instanceof Error ? err.message : "Write failed", error: true });
-    } finally {
-      spanBusy.current = false;
-    }
-  }, [barSelection, clipId, commitIdentityRange, data, taskFocus]);
+  }, [clipId, data, focusedBrush, rangeFrom, rangeTo, setSpanStart, writer]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (isEditableTarget(event.target)) {
-        return;
-      }
-      if ((event.key === "Backspace" || event.key === "Delete") && barSelection.length > 0) {
-        event.preventDefault();
-        void deleteSelectedBars();
         return;
       }
       if (!clipId || !data || data.frame_count <= 0 || !hasBrush) {
@@ -565,7 +245,7 @@ export function ClipDesk() {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [applyRange, barSelection.length, clipId, data, deleteSelectedBars, frameIndex, hasBrush, setSpanStart]);
+  }, [applyRange, clipId, data, frameIndex, hasBrush, setSpanStart]);
 
   useLayoutEffect(() => {
     if (data) {
@@ -605,25 +285,17 @@ export function ClipDesk() {
             <PlayerPanel clipId={clipId} clip={data} error={error} isLoading={isLoading} />
           </div>
           {data?.frame_count ? (
-            <TimelineBand
-              clipRailWidth={layout.clipRailWidth}
-              frameCount={data.frame_count}
+            <TimelinePanel
+              clipId={clipId}
+              clip={data}
               frameIndex={frameIndex}
-              lanes={lanes}
-              previewRange={previewRange}
-              brushKeys={focusedBrush.map(brushColorKey)}
-              barSelection={barSelection}
-              transport={<TransportRow />}
-              onToggleBar={(bar) =>
-                setBarSelection((prev) =>
-                  prev.some((item) => sameLaneBar(item, bar))
-                    ? prev.filter((item) => !sameLaneBar(item, bar))
-                    : [...prev, bar],
-                )
-              }
-              onClearBars={() => setBarSelection([])}
-              onPaintLane={paintLane}
-              onTrimBar={trimBar}
+              focus={taskFocus}
+              vocab={vocab}
+              phaseFrames={phaseDoc?.frames ?? {}}
+              classFrames={classDoc?.frames ?? {}}
+              tripletFrames={tripletDoc?.frames ?? {}}
+              writer={writer}
+              notify={setToast}
             />
           ) : null}
         </div>
@@ -788,392 +460,6 @@ export function ClipDesk() {
         ) : null}
       </footer>
     </main>
-  );
-}
-
-function TimelineBand({
-  clipRailWidth,
-  frameCount,
-  frameIndex,
-  lanes,
-  previewRange,
-  brushKeys,
-  barSelection,
-  transport,
-  onToggleBar,
-  onClearBars,
-  onPaintLane,
-  onTrimBar,
-}: {
-  clipRailWidth: number;
-  frameCount: number;
-  frameIndex: number;
-  lanes: TimelineLane[];
-  previewRange: { from: number; to: number } | null;
-  brushKeys: string[];
-  barSelection: LaneBar[];
-  transport: ReactNode;
-  onToggleBar: (bar: LaneBar) => void;
-  onClearBars: () => void;
-  onPaintLane: (laneKey: string, from: number, to: number) => void;
-  onTrimBar: (laneKey: string, oldStart: number, oldEnd: number, newStart: number, newEnd: number) => void;
-}) {
-  const { seek: onSeek } = usePlayback();
-  const trackRef = useRef<HTMLDivElement>(null);
-  const laneTrackRef = useRef<HTMLDivElement>(null);
-  const dragging = useRef(false);
-  const gesture = useRef<
-    | { kind: "paint"; laneKey: string; origin: number; min: number; max: number }
-    | { kind: "seek" }
-    | { kind: "trim"; laneKey: string; originStart: number; originEnd: number; edge: "start" | "end" }
-    | null
-  >(null);
-  const [paintPreview, setPaintPreview] = useState<{ laneKey: string; from: number; to: number } | null>(null);
-  const [trimPreview, setTrimPreview] = useState<{
-    laneKey: string;
-    originStart: number;
-    originEnd: number;
-    start: number;
-    end: number;
-  } | null>(null);
-
-  const frameAt = useCallback(
-    (clientX: number, track: HTMLDivElement | null) => {
-      if (!track) {
-        return 0;
-      }
-      const rect = track.getBoundingClientRect();
-      return frameFromClientX(clientX, rect.left, rect.width, frameCount);
-    },
-    [frameCount],
-  );
-
-  const seekFromClientX = useCallback(
-    (clientX: number) => {
-      onSeek(frameAt(clientX, trackRef.current));
-    },
-    [frameAt, onSeek],
-  );
-
-  const stopDrag = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    dragging.current = false;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  }, []);
-
-  function releaseCapture(event: PointerEvent<Element>) {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  }
-
-  function abortGesture(event: PointerEvent<Element>) {
-    gesture.current = null;
-    setPaintPreview(null);
-    setTrimPreview(null);
-    releaseCapture(event);
-  }
-
-  function commitGesture(event: PointerEvent<Element>) {
-    const current = gesture.current;
-    gesture.current = null;
-    releaseCapture(event);
-    if (!current) {
-      return;
-    }
-    if (current.kind === "paint") {
-      const frame = frameAt(event.clientX, laneTrackRef.current);
-      const from = Math.min(current.min, frame);
-      const to = Math.max(current.max, frame);
-      setPaintPreview(null);
-      if (from === to) {
-        onSeek(from);
-        onClearBars();
-      } else {
-        onPaintLane(current.laneKey, from, to);
-      }
-      return;
-    }
-    if (current.kind === "seek") {
-      onSeek(frameAt(event.clientX, laneTrackRef.current));
-      onClearBars();
-      return;
-    }
-    const frame = frameAt(event.clientX, laneTrackRef.current);
-    const nextStart = current.edge === "start" ? Math.min(frame, current.originEnd) : current.originStart;
-    const nextEnd = current.edge === "end" ? Math.max(frame, current.originStart) : current.originEnd;
-    setTrimPreview(null);
-    onTrimBar(current.laneKey, current.originStart, current.originEnd, nextStart, nextEnd);
-  }
-
-  function onLanePointerDown(event: PointerEvent<HTMLDivElement>, laneKey: string) {
-    if (event.button !== 0) {
-      return;
-    }
-    if (event.target instanceof Element && event.target.closest("[data-timeline-seg]")) {
-      return;
-    }
-    event.preventDefault();
-    const frame = frameAt(event.clientX, laneTrackRef.current);
-    gesture.current = { kind: "paint", laneKey, origin: frame, min: frame, max: frame };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function onLanePointerMove(event: PointerEvent<HTMLDivElement>) {
-    const current = gesture.current;
-    if (!current || current.kind !== "paint" || !event.currentTarget.hasPointerCapture(event.pointerId)) {
-      return;
-    }
-    const frame = frameAt(event.clientX, laneTrackRef.current);
-    current.min = Math.min(current.origin, current.min, frame);
-    current.max = Math.max(current.origin, current.max, frame);
-    if (current.min === current.max) {
-      setPaintPreview(null);
-    } else {
-      setPaintPreview({ laneKey: current.laneKey, from: current.min, to: current.max });
-    }
-  }
-
-  function onBarPointerDown(
-    event: PointerEvent<HTMLButtonElement>,
-    laneKey: string,
-    start: number,
-    end: number,
-  ) {
-    if (event.button !== 0) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.shiftKey) {
-      onToggleBar({ laneKey, start, end });
-      return;
-    }
-    const trimEdge =
-      event.target instanceof Element ? event.target.closest("[data-trim]")?.getAttribute("data-trim") : null;
-    if (trimEdge === "start" || trimEdge === "end") {
-      gesture.current = { kind: "trim", laneKey, originStart: start, originEnd: end, edge: trimEdge };
-      event.currentTarget.setPointerCapture(event.pointerId);
-      return;
-    }
-    gesture.current = { kind: "seek" };
-    event.currentTarget.setPointerCapture(event.pointerId);
-    onSeek(frameAt(event.clientX, laneTrackRef.current));
-  }
-
-  function onBarPointerMove(event: PointerEvent<HTMLButtonElement>) {
-    const current = gesture.current;
-    if (!current || !event.currentTarget.hasPointerCapture(event.pointerId)) {
-      return;
-    }
-    const frame = frameAt(event.clientX, laneTrackRef.current);
-    if (current.kind === "seek") {
-      onSeek(frame);
-      return;
-    }
-    if (current.kind === "trim") {
-      const start = current.edge === "start" ? Math.min(frame, current.originEnd) : current.originStart;
-      const end = current.edge === "end" ? Math.max(frame, current.originStart) : current.originEnd;
-      setTrimPreview({
-        laneKey: current.laneKey,
-        originStart: current.originStart,
-        originEnd: current.originEnd,
-        start,
-        end,
-      });
-    }
-  }
-
-  const playheadLeft = `${(frameIndex / frameCount) * 100}%`;
-
-  return (
-    <div role="region" aria-label="Timeline" data-timeline="" className="shrink-0 border-t border-border bg-card select-none">
-      <div className="flex">
-        <div className="h-3 shrink-0 border-r border-border" style={{ width: clipRailWidth }} />
-        <div className="w-1 shrink-0" />
-        <div ref={trackRef} className="relative min-w-0 flex-1" data-timeline-track="">
-          <div
-            role="slider"
-            aria-label="Ruler"
-            aria-valuemin={0}
-            aria-valuemax={Math.max(0, frameCount - 1)}
-            aria-valuenow={frameIndex}
-            aria-valuetext={`Frame ${frameIndex}`}
-            data-ruler=""
-            className="relative h-3 touch-none cursor-ew-resize"
-            onPointerDown={(event) => {
-              event.preventDefault();
-              dragging.current = true;
-              event.currentTarget.setPointerCapture(event.pointerId);
-              seekFromClientX(event.clientX);
-            }}
-            onPointerMove={(event) => {
-              if (dragging.current) {
-                seekFromClientX(event.clientX);
-              }
-            }}
-            onPointerUp={stopDrag}
-            onPointerCancel={stopDrag}
-          >
-            <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
-            {previewRange ? (
-              <span
-                data-ruler-range=""
-                aria-hidden="true"
-                className="pointer-events-none absolute top-0 bottom-0 bg-[#5e6ad2]/35"
-                style={{
-                  left: `${(previewRange.from / frameCount) * 100}%`,
-                  width: `${((previewRange.to - previewRange.from + 1) / frameCount) * 100}%`,
-                }}
-              />
-            ) : null}
-            <span data-playhead="" aria-hidden="true" className="pointer-events-none absolute top-0.5 h-2 w-2 -translate-x-1/2 rounded-full bg-[#5e6ad2]" style={{ left: playheadLeft }} />
-          </div>
-        </div>
-      </div>
-      <div className="flex">
-        <div className="h-9 shrink-0 border-r border-border" style={{ width: clipRailWidth }} />
-        <div className="w-1 shrink-0" />
-        <div className="min-w-0 flex-1">{transport}</div>
-      </div>
-      <div
-        role="region"
-        aria-label="Lane well"
-        data-lane-well=""
-        className="h-24 shrink-0 overflow-y-auto [scrollbar-color:var(--color-border)_transparent] [scrollbar-width:thin]"
-      >
-        {lanes.length > 0 ? (
-          <div className="flex">
-            <div className="flex shrink-0 flex-col border-r border-border" style={{ width: clipRailWidth }}>
-              {lanes.map((lane) => (
-                <div key={lane.key} className="flex h-6 shrink-0 items-center gap-1.5 px-2" data-lane-head title={lane.key}>
-                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: labelColor(lane.key) }} />
-                  <span className="truncate text-[11px] leading-none text-foreground">{lane.key}</span>
-                </div>
-              ))}
-            </div>
-            <div className="w-1 shrink-0" />
-            <div ref={laneTrackRef} className="relative min-w-0 flex-1">
-              {lanes.map((lane) => (
-                <div
-                  key={lane.key}
-                  className="relative h-6 touch-none"
-                  data-timeline-lane={lane.key}
-                  onPointerDown={(event) => onLanePointerDown(event, lane.key)}
-                  onPointerMove={onLanePointerMove}
-                  onPointerUp={(event) => {
-                    if (gesture.current?.kind === "paint") {
-                      commitGesture(event);
-                    }
-                  }}
-                  onPointerCancel={abortGesture}
-                >
-                  {lane.segs.map((seg) => {
-                    if (seg.label == null) {
-                      return (
-                        <span
-                          key={`${lane.key}-${seg.start}`}
-                          data-timeline-seg=""
-                          data-unlabeled="true"
-                          aria-hidden="true"
-                          className="pointer-events-none absolute bottom-1 top-1 box-border rounded border-r border-black/50 bg-white/10"
-                          style={{
-                            left: `${(seg.start / frameCount) * 100}%`,
-                            width: `${((seg.end - seg.start + 1) / frameCount) * 100}%`,
-                          }}
-                        />
-                      );
-                    }
-                    const label = seg.label;
-                    const selected = barSelection.some(
-                      (bar) => bar.laneKey === lane.key && bar.start === seg.start && bar.end === seg.end,
-                    );
-                    const preview =
-                      trimPreview &&
-                      trimPreview.laneKey === lane.key &&
-                      trimPreview.originStart === seg.start &&
-                      trimPreview.originEnd === seg.end
-                        ? trimPreview
-                        : null;
-                    const shownStart = preview ? preview.start : seg.start;
-                    const shownEnd = preview ? preview.end : seg.end;
-                    return (
-                      <button
-                        key={`${lane.key}-${seg.start}`}
-                        type="button"
-                        draggable={false}
-                        data-timeline-seg=""
-                        data-selected={selected ? "true" : undefined}
-                        data-label-color={labelColor(label)}
-                        aria-label={`${label} ${seg.start}–${seg.end}`}
-                        title={label}
-                        className={`absolute bottom-1 top-1 box-border cursor-pointer rounded border-r border-black/50 ${selected ? "z-[2] ring-2 ring-inset ring-primary" : ""}`}
-                        style={{
-                          left: `${(shownStart / frameCount) * 100}%`,
-                          width: `${((shownEnd - shownStart + 1) / frameCount) * 100}%`,
-                          backgroundColor: labelColor(label),
-                        }}
-                        onPointerDown={(event) => onBarPointerDown(event, lane.key, seg.start, seg.end)}
-                        onPointerMove={onBarPointerMove}
-                        onPointerUp={(event) => {
-                          if (gesture.current?.kind === "seek" || gesture.current?.kind === "trim") {
-                            commitGesture(event);
-                          }
-                        }}
-                        onPointerCancel={abortGesture}
-                      >
-                        {selected ? (
-                          <>
-                            <span
-                              data-trim="start"
-                              aria-label={`Trim ${label} start`}
-                              className="absolute inset-y-0 left-0 z-[1] w-2 cursor-ew-resize"
-                            />
-                            <span
-                              data-trim="end"
-                              aria-label={`Trim ${label} end`}
-                              className="absolute inset-y-0 right-0 z-[1] w-2 cursor-ew-resize"
-                            />
-                          </>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                  {previewRange && brushKeys.includes(lane.key) ? (
-                    <span
-                      data-ghost=""
-                      aria-hidden="true"
-                      className="pointer-events-none absolute bottom-1 top-1 z-[1] box-border rounded"
-                      style={{
-                        left: `${(previewRange.from / frameCount) * 100}%`,
-                        width: `${((previewRange.to - previewRange.from + 1) / frameCount) * 100}%`,
-                        backgroundColor: labelColor(lane.key),
-                        opacity: 0.4,
-                      }}
-                    />
-                  ) : null}
-                  {paintPreview && paintPreview.laneKey === lane.key ? (
-                    <span
-                      data-lane-drag=""
-                      aria-hidden="true"
-                      className="pointer-events-none absolute bottom-1 top-1 z-[1] box-border rounded"
-                      style={{
-                        left: `${(paintPreview.from / frameCount) * 100}%`,
-                        width: `${((paintPreview.to - paintPreview.from + 1) / frameCount) * 100}%`,
-                        backgroundColor: labelColor(lane.key),
-                        opacity: 0.4,
-                      }}
-                    />
-                  ) : null}
-                </div>
-              ))}
-              <div className="pointer-events-none absolute bottom-0 top-0 z-10 w-px -translate-x-1/2 bg-[#5e6ad2]" style={{ left: playheadLeft }} />
-            </div>
-          </div>
-        ) : null}
-      </div>
-    </div>
   );
 }
 
@@ -1790,9 +1076,6 @@ function PhaseEditor({
   );
 }
 
-function tripleIdentity(row: { instrument: string; verb: string; target: string }): string {
-  return `${row.instrument} / ${row.verb} / ${row.target}`;
-}
 
 function uniqueTripleWords(triples: VocabTriple[], slot: keyof VocabTriple): string[] {
   return [...new Set(triples.map((row) => row[slot]).filter(Boolean))];
