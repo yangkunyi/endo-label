@@ -18,7 +18,6 @@ import {
   healthPath,
   isVersionConflict,
   jobPath,
-  mePath,
   saveErrorMessage,
   withVersion,
   phaseClipPath,
@@ -51,8 +50,6 @@ import {
   type ClipMeta,
   type FrameAnnotations,
   type HealthResponse,
-  type Me,
-  type MyItem,
   type PhaseDoc,
   type ScopedVocab,
   type VocabPickerItem,
@@ -68,11 +65,11 @@ import {
   type VocabTriple,
 } from "./api";
 import { Button } from "./components/ui/button";
-import { ItemActions as ItemActionsPanel } from "./ItemActions";
-import { stateBadge, taskActions, rejectNote } from "./taskList";
 import { Input } from "./components/ui/input";
 import { VideoPlayer, PlayerTransport } from "./components/ui/video-player";
 import { MaskOverlay } from "./MaskOverlay";
+import { DeskItemActions } from "./desk/DeskItemActions";
+import { ResizeHandle } from "./desk/ResizeHandle";
 import { brushOfKind, laneIsVisible, laneVisibilityKey, useDeskStore, type BrushIdentity, type EditorKind } from "./deskStore";
 import {
   PREDICT_DEBOUNCE_MS,
@@ -343,100 +340,6 @@ async function ensureVocabName(
   // Clip's Project set, so revalidate the scoped key instead of injecting it.
   await mutateVocab();
   return name;
-}
-
-function ResizeHandle({
-  label,
-  direction,
-  value,
-  onResize,
-  reverse = false,
-}: {
-  label: string;
-  direction: "horizontal" | "vertical";
-  value: number;
-  onResize: (value: number) => void;
-  reverse?: boolean;
-}) {
-  const start = useRef<{ coordinate: number; value: number } | null>(null);
-
-  function onPointerDown(event: PointerEvent<HTMLDivElement>) {
-    event.preventDefault();
-    start.current = {
-      coordinate: direction === "horizontal" ? event.clientX : event.clientY,
-      value,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function onPointerMove(event: PointerEvent<HTMLDivElement>) {
-    if (!start.current) {
-      return;
-    }
-    const coordinate = direction === "horizontal" ? event.clientX : event.clientY;
-    const delta = coordinate - start.current.coordinate;
-    onResize(start.current.value + (reverse ? -delta : delta));
-  }
-
-  function stopResize() {
-    start.current = null;
-  }
-
-  return (
-    <div
-      role="separator"
-      aria-label={label}
-      aria-orientation={direction}
-      className={direction === "horizontal" ? "w-1 shrink-0 cursor-col-resize bg-border hover:bg-ring" : "h-1 shrink-0 cursor-row-resize bg-border hover:bg-ring"}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={stopResize}
-      onPointerCancel={stopResize}
-    />
-  );
-}
-
-/** The focused (Clip, Task type)'s transitions, from the /api/me capability payload.
-
-Submit / recall are the annotator's; pass / reject / reopen are the reviewer's —
-the same server-derived buttons the task list shows, rendered on the desk.
-*/
-function ItemActions({ clipId, taskType }: { clipId: string; taskType: EditorKind }) {
-  const { data, mutate } = useSWR(mePath(clipId, taskType), getJson<Me>);
-  const item: MyItem | undefined = data?.item;
-  const note = item ? rejectNote(item) : null;
-  const badge = item ? stateBadge(item.state) : null;
-
-  if (!item || (!badge && taskActions(item).length === 0)) {
-    return null;
-  }
-
-  return (
-    <>
-      {badge ? (
-        <span
-          data-state={item.state}
-          className={cn("rounded-md px-2 py-0.5 text-xs font-medium", badge.className)}
-        >
-          {badge.label}
-        </span>
-      ) : null}
-      <ItemActionsPanel
-        clipId={clipId}
-        taskType={taskType}
-        item={item}
-        onCompleted={mutate}
-      />
-      {note ? (
-        <p
-          data-reject-note=""
-          className="basis-full rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-200"
-        >
-          Reviewer note: {note}
-        </p>
-      ) : null}
-    </>
-  );
 }
 
 export function ClipDesk() {
@@ -1247,7 +1150,7 @@ export function ClipDesk() {
         <span className="text-sm font-semibold tracking-wide">endo_label</span>
         <span className="text-muted-foreground" aria-hidden="true">/</span>
         <h1 className="text-sm font-semibold">{data?.id ?? "Workbench"}</h1>
-        {data ? <ItemActions clipId={data.id} taskType={taskFocus} /> : null}
+        {data ? <DeskItemActions clipId={data.id} taskType={taskFocus} /> : null}
       </header>
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
