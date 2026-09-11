@@ -4,7 +4,7 @@
 
 **Blocked by:** 15, 20, 21.
 
-Status: READY
+Status: RUNNING
 
 - [ ] e2e: admin assigns on the board → annotator's desk becomes writable; board row states match the lists
 - [ ] e2e: a full round on the board — assign → submit → assign reviewer → pass / reject
