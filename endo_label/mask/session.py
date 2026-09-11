@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -33,7 +34,11 @@ class SessionError(Exception):
 
 
 class SessionConflict(SessionError):
-    """Another Session is already active, or concept change needs reset."""
+    """Concept change needs reset, or a Propagate Job blocks the edit."""
+
+
+class SessionBusy(SessionError):
+    """Another inference holds the global lock; try again shortly."""
 
 
 class SessionNotFound(SessionError):
@@ -213,6 +218,8 @@ class PropagateJob:
     pending_frames: list[int] = field(default_factory=list)
     # track_id -> seed pixel mask at start_frame_index
     seed_masks: dict[int, dict[str, Any]] = field(default_factory=dict)
+    # Owner Account (Sessions are keyed by (account, Clip)).
+    account_id: int = 0
 
     def to_public(self) -> dict[str, Any]:
         return {
@@ -232,7 +239,12 @@ class PropagateJob:
 
 
 class SessionManager:
-    """At most one live Session; maps Predict/Propagate to an injected Predictor."""
+    """Sessions keyed by (Account, Clip) over one shared predictor.
+
+    The predictor instance is process-global and holds per-Clip inference
+    state, so every inference call runs under one lock. Sessions survive Clip
+    switches and are dropped least-recently-used past the configured caps.
+    """
 
     def __init__(
         self,
@@ -245,45 +257,104 @@ class SessionManager:
         self._scribble: ScribbleModel = (
             scribble if scribble is not None else build_scribble(settings)
         )
-        self._session: SessionState | None = None
+        # (account_id, clip_id) -> SessionState. OrderedDict is the LRU order.
+        self._sessions: OrderedDict[tuple[int, str], SessionState] = OrderedDict()
+        # Session this call operates on; guarded by the lock.
+        self._current_key: tuple[int, str] | None = None
+        # account_id -> the Clip whose Session that Account touched last.
+        self._active_clip: dict[int, str] = {}
+        # Clip the shared predictor has open (None when no model Session).
+        self._predictor_clip: str | None = None
         self._jobs: dict[str, PropagateJob] = {}
         self._active_job_id: str | None = None
-        # FastAPI sync routes run on a threadpool. Overlapping Predicts
-        # duplicate SAM2 inference states for the same obj_id.
-        self._lock = threading.Lock()
+        # FastAPI sync routes run on a threadpool. Overlapping inference calls
+        # duplicate SAM2 state for the same obj_id, so one RLock serializes
+        # inference and Session bookkeeping; Predict waits on it with a
+        # timeout instead of blocking forever.
+        self._lock = threading.RLock()
+
+    @property
+    def _session(self) -> SessionState | None:
+        if self._current_key is None:
+            return None
+        return self._sessions.get(self._current_key)
+
+    @_session.setter
+    def _session(self, value: SessionState | None) -> None:
+        if self._current_key is None:
+            return
+        if value is None:
+            self._sessions.pop(self._current_key, None)
+        else:
+            self._sessions[self._current_key] = value
+            self._sessions.move_to_end(self._current_key)
 
     @property
     def active(self) -> bool:
-        return self._session is not None
+        return bool(self._sessions)
 
     def worker_health(self) -> dict[str, Any]:
         h = dict(self._predictor.health())
         h["session_active"] = self.active
         return h
 
-    def get_public(self, *, frame_index: int | None = None) -> dict[str, Any]:
-        if self._session is None:
-            return {"active": False}
-        s = self._session
-        return {
-            "active": True,
-            "session_id": s.session_id,
-            "clip_id": s.clip_id,
-            "concept_text": s.concept_text,
-            "tracks": [t.to_public(frame_index=frame_index) for t in s.tracks],
-            "propagate_job_id": self._active_job_id
-            if self._job_is_blocking()
-            else None,
-        }
+    # --- keying, LRU, predictor Clip ------------------------------------
 
-    def create(
-        self, clip_id: str, *, load_annotations: bool = False
-    ) -> dict[str, Any]:
-        if self._session is not None:
-            raise SessionConflict(
-                f"A Session is already active on clip {self._session.clip_id!r}; "
-                "close it before opening another"
-            )
+    def _session_caps(self) -> tuple[int, int]:
+        per_user = int(getattr(self._settings, "mask_sessions_per_user", 2) or 2)
+        global_cap = int(getattr(self._settings, "mask_sessions_global", 8) or 8)
+        return max(1, per_user), max(1, global_cap)
+
+    def _inference_timeout(self) -> float:
+        raw = getattr(self._settings, "mask_inference_timeout", 30.0)
+        try:
+            seconds = float(raw)
+        except (TypeError, ValueError):
+            seconds = 30.0
+        return seconds if seconds > 0 else 30.0
+
+    def active_clip(self, account_id: int) -> str | None:
+        """Clip of the Session this Account touched last, if any."""
+        return self._active_clip.get(int(account_id))
+
+    def _resolve_clip(self, account_id: int, clip_id: str | None) -> str | None:
+        if clip_id:
+            return str(clip_id)
+        return self._active_clip.get(int(account_id))
+
+    def _set_current(self, key: tuple[int, str]) -> None:
+        self._current_key = key
+        self._active_clip[key[0]] = key[1]
+        if key in self._sessions:
+            self._sessions.move_to_end(key)
+
+    def _select_session(
+        self, account_id: int, clip_id: str | None, *, auto_open: bool
+    ) -> SessionState:
+        """Point the manager at this Account's Session, opening it if allowed."""
+        resolved = self._resolve_clip(account_id, clip_id)
+        if resolved is None:
+            raise SessionNotFound("no active Session")
+        key = (int(account_id), resolved)
+        if key not in self._sessions:
+            if not auto_open:
+                raise SessionNotFound(f"No Session on clip {resolved!r}")
+            self._open_session(int(account_id), resolved, load_annotations=True)
+        self._set_current(key)
+        session = self._session
+        assert session is not None
+        return session
+
+    def _open_session(
+        self, account_id: int, clip_id: str, *, load_annotations: bool
+    ) -> SessionState:
+        key = (int(account_id), str(clip_id))
+        existing = self._sessions.get(key)
+        if existing is not None:
+            self._set_current(key)
+            if load_annotations and not existing.tracks:
+                self._hydrate_from_annotations(clip_id)
+            return existing
         health = self._predictor.health()
         if not health.get("ready", True):
             raise WorkerNotReady(
@@ -295,44 +366,142 @@ class SessionManager:
         except catalog.ClipNotFound as exc:
             raise SessionClipNotFound(clip_id) from exc
 
-        frames_dir = str(
-            (self._settings.frames_root / clip_id).resolve()
-        )
+        session = SessionState(session_id=str(uuid.uuid4()), clip_id=clip_id)
+        self._sessions[key] = session
+        self._set_current(key)
+        self._ensure_predictor_clip(clip_id)
+        if load_annotations:
+            self._hydrate_from_annotations(clip_id)
+        self._enforce_caps()
+        return session
+
+    def _ensure_predictor_clip(self, clip_id: str) -> None:
+        """Make the shared predictor hold this Clip's model Session."""
+        if self._predictor_clip == clip_id:
+            return
+        frames_dir = str((self._settings.frames_root / clip_id).resolve())
         try:
             self._predictor.open_clip(clip_id=clip_id, frames_dir=frames_dir)
         except Exception as exc:
             raise WorkerNotReady(str(exc)) from exc
+        self._predictor_clip = clip_id
 
-        self._session = SessionState(
-            session_id=str(uuid.uuid4()),
-            clip_id=clip_id,
-        )
-        self._active_job_id = None
+    def _enforce_caps(self) -> None:
+        """Evict least-recently-used Sessions past the global / per-user caps."""
+        per_user, global_cap = self._session_caps()
+        while len(self._sessions) > global_cap:
+            self._evict(next(iter(self._sessions)))
+        while True:
+            counts: dict[int, int] = {}
+            for account_id, _clip in self._sessions:
+                counts[account_id] = counts.get(account_id, 0) + 1
+            over = next(
+                (acct for acct, count in counts.items() if count > per_user),
+                None,
+            )
+            if over is None:
+                return
+            self._evict(next(key for key in self._sessions if key[0] == over))
 
-        if load_annotations:
-            self._hydrate_from_annotations(clip_id)
+    def _evict(self, key: tuple[int, str]) -> None:
+        session = self._sessions.pop(key, None)
+        if session is None:
+            return
+        if self._active_clip.get(key[0]) == key[1]:
+            self._active_clip.pop(key[0], None)
+        if self._current_key == key:
+            self._current_key = None
+        self._fail_active_job("Session evicted", session_id=session.session_id)
+        try:
+            self._scribble.clear_memory(session_id=session.session_id)
+        except Exception:
+            pass
+        if self._predictor_clip == session.clip_id and not any(
+            other.clip_id == session.clip_id
+            for other_key, other in self._sessions.items()
+            if other_key != key
+        ):
+            try:
+                self._predictor.close_clip()
+            except Exception:
+                pass
+            self._predictor_clip = None
 
-        return self.get_public()
+    # --- public reads ---------------------------------------------------
 
-    def close(self) -> dict[str, Any]:
+    def get_public(
+        self,
+        *,
+        account_id: int | None = None,
+        clip_id: str | None = None,
+        frame_index: int | None = None,
+    ) -> dict[str, Any]:
+        if account_id is None:
+            s = self._session
+        else:
+            resolved = self._resolve_clip(account_id, clip_id)
+            if resolved is None:
+                return {"active": False}
+            key = (int(account_id), resolved)
+            s = self._sessions.get(key)
+            if s is None:
+                return {"active": False}
+            self._set_current(key)
+        if s is None:
+            return {"active": False}
+        return {
+            "active": True,
+            "session_id": s.session_id,
+            "clip_id": s.clip_id,
+            "concept_text": s.concept_text,
+            "tracks": [t.to_public(frame_index=frame_index) for t in s.tracks],
+            "propagate_job_id": self._active_job_id
+            if self._job_is_blocking(s.session_id)
+            else None,
+        }
+
+    # --- Session lifecycle ----------------------------------------------
+
+    def create(
+        self,
+        account_id: int,
+        clip_id: str,
+        *,
+        load_annotations: bool = False,
+    ) -> dict[str, Any]:
         with self._lock:
+            self._open_session(
+                int(account_id), clip_id, load_annotations=load_annotations
+            )
+            return self.get_public()
+
+    def close(self, account_id: int, clip_id: str | None = None) -> dict[str, Any]:
+        with self._lock:
+            self._select_session(account_id, clip_id, auto_open=False)
             return self._close_unlocked()
 
     def _close_unlocked(self) -> dict[str, Any]:
         if self._session is None:
             raise SessionNotFound("no active Session")
-        self._fail_active_job("Session closed")
-        try:
-            self._predictor.close_clip()
-        except Exception:
-            pass
+        s = self._session
+        self._fail_active_job("Session closed", session_id=s.session_id)
+        if self._predictor_clip == s.clip_id and not any(
+            other.clip_id == s.clip_id
+            for key, other in self._sessions.items()
+            if key != self._current_key
+        ):
+            try:
+                self._predictor.close_clip()
+            except Exception:
+                pass
+            self._predictor_clip = None
         self._scribble_clear_session()
         self._session = None
-        self._active_job_id = None
         return {"active": False}
 
-    def reset(self) -> dict[str, Any]:
+    def reset(self, account_id: int, clip_id: str | None = None) -> dict[str, Any]:
         with self._lock:
+            self._select_session(account_id, clip_id, auto_open=False)
             return self._reset_unlocked()
 
     def _reset_unlocked(self) -> dict[str, Any]:
@@ -340,6 +509,7 @@ class SessionManager:
             raise SessionNotFound("no active Session")
         self._ensure_not_propagating()
         s = self._session
+        self._ensure_predictor_clip(s.clip_id)
         try:
             self._predictor.reset_clip()
         except Exception as exc:
@@ -351,13 +521,27 @@ class SessionManager:
         )
         return self.get_public()
 
-    def predict_concept(self, *, frame_index: int, text: str) -> PredictResult:
+    def predict_concept(
+        self,
+        *,
+        account_id: int,
+        clip_id: str | None = None,
+        frame_index: int,
+        text: str,
+    ) -> PredictResult:
         """Backward-compatible Concept-only Predict."""
-        return self.predict(frame_index=frame_index, text=text)
+        return self.predict(
+            account_id=account_id,
+            clip_id=clip_id,
+            frame_index=frame_index,
+            text=text,
+        )
 
     def predict(
         self,
         *,
+        account_id: int,
+        clip_id: str | None = None,
         frame_index: int,
         text: str | None = None,
         points: list[list[float]] | None = None,
@@ -372,7 +556,15 @@ class SessionManager:
         clear_old_boxes: bool = False,
         use_mask_prior: bool = False,
     ) -> PredictResult:
-        with self._lock:
+        # Predict waits synchronously for the shared predictor; on timeout the
+        # UI shows the agreed "someone else is inferring" error.
+        acquired = self._lock.acquire(timeout=self._inference_timeout())
+        if not acquired:
+            raise SessionBusy(
+                "Another inference is running; try again later"
+            )
+        try:
+            self._select_session(account_id, clip_id, auto_open=True)
             return self._predict_unlocked(
                 frame_index=frame_index,
                 text=text,
@@ -388,6 +580,8 @@ class SessionManager:
                 clear_old_boxes=clear_old_boxes,
                 use_mask_prior=use_mask_prior,
             )
+        finally:
+            self._lock.release()
 
     def _predict_unlocked(
         self,
@@ -473,8 +667,15 @@ class SessionManager:
             use_mask_prior=use_mask_prior,
         )
 
-    def update_track_label(self, track_id: int, label: str) -> dict[str, Any]:
+    def update_track_label(
+        self,
+        account_id: int,
+        track_id: int,
+        label: str,
+        clip_id: str | None = None,
+    ) -> dict[str, Any]:
         with self._lock:
+            self._select_session(account_id, clip_id, auto_open=False)
             return self._update_track_label_unlocked(track_id, label)
 
     def _update_track_label_unlocked(
@@ -492,8 +693,11 @@ class SessionManager:
         self._persist_session()
         return self.get_public()
 
-    def delete_track(self, track_id: int) -> dict[str, Any]:
+    def delete_track(
+        self, account_id: int, track_id: int, clip_id: str | None = None
+    ) -> dict[str, Any]:
         with self._lock:
+            self._select_session(account_id, clip_id, auto_open=False)
             return self._delete_track_unlocked(track_id)
 
     def _delete_track_unlocked(self, track_id: int) -> dict[str, Any]:
@@ -513,9 +717,16 @@ class SessionManager:
             pass
         return self.get_public()
 
-    def clear_frame_mask(self, track_id: int, frame_index: int) -> dict[str, Any]:
+    def clear_frame_mask(
+        self,
+        account_id: int,
+        track_id: int,
+        frame_index: int,
+        clip_id: str | None = None,
+    ) -> dict[str, Any]:
         """Drop Active-Track pixel mask on one Frame; Track stays."""
         with self._lock:
+            self._select_session(account_id, clip_id, auto_open=False)
             return self._clear_frame_mask_unlocked(track_id, frame_index)
 
     def _clear_frame_mask_unlocked(
@@ -567,10 +778,16 @@ class SessionManager:
         return self.get_public(frame_index=frame_index)
 
     def drop_geometric_point(
-        self, track_id: int, frame_index: int, point_index: int
+        self,
+        account_id: int,
+        track_id: int,
+        frame_index: int,
+        point_index: int,
+        clip_id: str | None = None,
     ) -> dict[str, Any]:
         """Drop one leftover point, then Predict remaining list (maybe empty) + Prior."""
         with self._lock:
+            self._select_session(account_id, clip_id, auto_open=False)
             return self._drop_geometric_point_unlocked(
                 track_id, frame_index, point_index
             )
@@ -612,9 +829,16 @@ class SessionManager:
         )
         return self.get_public(frame_index=frame_index)
 
-    def undo(self, *, frame_index: int) -> dict[str, Any]:
+    def undo(
+        self,
+        *,
+        account_id: int,
+        clip_id: str | None = None,
+        frame_index: int,
+    ) -> dict[str, Any]:
         """Restore this Frame's last committed cell edit; empty stack is a no-op."""
         with self._lock:
+            self._select_session(account_id, clip_id, auto_open=False)
             return self._undo_unlocked(frame_index=frame_index)
 
     def _undo_unlocked(self, *, frame_index: int) -> dict[str, Any]:
@@ -692,6 +916,23 @@ class SessionManager:
 
     def start_propagate(
         self,
+        account_id: int,
+        clip_id: str | None = None,
+        *,
+        direction: str,
+        start_frame_index: int,
+        max_frames: int | None = None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            self._select_session(account_id, clip_id, auto_open=True)
+            return self._start_propagate_unlocked(
+                direction=direction,
+                start_frame_index=start_frame_index,
+                max_frames=max_frames,
+            )
+
+    def _start_propagate_unlocked(
+        self,
         *,
         direction: str,
         start_frame_index: int,
@@ -699,7 +940,7 @@ class SessionManager:
     ) -> dict[str, Any]:
         if self._session is None:
             raise SessionNotFound("no active Session")
-        self._ensure_not_propagating()
+        self._ensure_not_propagating(global_job=True)
 
         direction = (direction or "").strip().lower()
         if direction not in VALID_DIRECTIONS:
@@ -757,6 +998,7 @@ class SessionManager:
             job_id=str(uuid.uuid4()),
             session_id=s.session_id,
             clip_id=s.clip_id,
+            account_id=self._current_key[0] if self._current_key else 0,
             direction=direction,
             start_frame_index=start_frame_index,
             max_frames=max_frames,
@@ -781,19 +1023,29 @@ class SessionManager:
             self._maybe_auto_save(job)
         return job.to_public()
 
-    def get_job(self, job_id: str) -> dict[str, Any]:
+    def get_job(self, account_id: int, job_id: str) -> dict[str, Any]:
         job = self._jobs.get(job_id)
-        if job is None:
+        if job is None or int(job.account_id) != int(account_id):
             raise JobNotFound(f"Propagate Job not found: {job_id}")
         if job.status in ("queued", "running"):
             # One frame per poll; the lock keeps concurrent polls from
             # double-consuming pending_frames.
             with self._lock:
+                key = (int(job.account_id), job.clip_id)
+                if key in self._sessions:
+                    self._set_current(key)
                 self._advance_job_stream(job)
         return job.to_public()
 
-    def save_annotations(self) -> dict[str, Any]:
+    def save_annotations(
+        self, account_id: int, clip_id: str | None = None
+    ) -> dict[str, Any]:
         """Explicit Save: write full Session Annotation to disk (replace)."""
+        with self._lock:
+            self._select_session(account_id, clip_id, auto_open=False)
+            return self._save_annotations_unlocked()
+
+    def _save_annotations_unlocked(self) -> dict[str, Any]:
         if self._session is None:
             raise SessionNotFound("no active Session")
         s = self._session
@@ -807,6 +1059,24 @@ class SessionManager:
         )
 
     def set_review(
+        self,
+        account_id: int,
+        *,
+        clip_id: str,
+        frame_index: int,
+        track_id: int,
+        decision: str | None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            self._select_session(account_id, clip_id, auto_open=False)
+            return self._set_review_unlocked(
+                clip_id=clip_id,
+                frame_index=frame_index,
+                track_id=track_id,
+                decision=decision,
+            )
+
+    def _set_review_unlocked(
         self,
         *,
         clip_id: str,
@@ -884,6 +1154,7 @@ class SessionManager:
             return
 
         s = self._session
+        self._ensure_predictor_clip(s.clip_id)
         total = job.frames_total
         if job.status == "queued":
             job.status = "running"
@@ -959,24 +1230,38 @@ class SessionManager:
                 out.append(fi)
         return out
 
-    def _job_is_blocking(self) -> bool:
+    def _job_is_blocking(self, session_id: str | None = None) -> bool:
         if self._active_job_id is None:
             return False
         job = self._jobs.get(self._active_job_id)
-        return job is not None and job.status in ("queued", "running")
+        if job is None:
+            return False
+        if session_id is not None and job.session_id != session_id:
+            return False
+        return job.status in ("queued", "running")
 
-    def _ensure_not_propagating(self) -> None:
-        if self._job_is_blocking():
+    def _ensure_not_propagating(self, *, global_job: bool = False) -> None:
+        session_id = None
+        if not global_job and self._session is not None:
+            session_id = self._session.session_id
+        if self._job_is_blocking(session_id):
             raise SessionConflict(
                 "A Propagate Job is running; wait for it to finish before "
                 "Predict, prompt edits, or reset"
             )
 
-    def _fail_active_job(self, message: str) -> None:
+    def _fail_active_job(
+        self, message: str, session_id: str | None = None
+    ) -> None:
         if self._active_job_id is None:
             return
         job = self._jobs.get(self._active_job_id)
-        if job is not None and job.status in ("queued", "running"):
+        if job is None:
+            self._active_job_id = None
+            return
+        if session_id is not None and job.session_id != session_id:
+            return
+        if job.status in ("queued", "running"):
             job.status = "failed"
             job.error = message
         self._active_job_id = None
@@ -1014,6 +1299,7 @@ class SessionManager:
     def _run_concept(self, *, frame_index: int, concept: str) -> PredictResult:
         s = self._session
         assert s is not None
+        self._ensure_predictor_clip(s.clip_id)
 
         try:
             detections = self._predictor.predict_concept(
@@ -1069,6 +1355,7 @@ class SessionManager:
     ) -> PredictResult:
         s = self._session
         assert s is not None
+        self._ensure_predictor_clip(s.clip_id)
 
         has_pos_point = any(lab == 1 for lab in point_labels)
         has_pos_box = any(lab == 1 for lab in box_labels)

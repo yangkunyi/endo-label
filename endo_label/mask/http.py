@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from endo_label import catalog
+from endo_label.auth import require_label_assignee
 from endo_label.mask import annotations
 from endo_label.config import Settings, load_settings
 from endo_label.mask.predictor import build_predictor
@@ -17,6 +18,7 @@ from endo_label.mask.session import (
     BadPropagateRequest,
     BadReviewRequest,
     JobNotFound,
+    SessionBusy,
     SessionClipNotFound,
     SessionConflict,
     SessionFrameNotFound,
@@ -53,6 +55,7 @@ class PredictBody(BaseModel):
     (integers 1–40, same length as ``scribbles``). Omit to mean 8.
     """
 
+    clip_id: str | None = None
     frame_index: int = Field(..., ge=0)
     text: str | None = None
     points: list[list[float]] | None = None
@@ -78,6 +81,7 @@ class UndoBody(BaseModel):
     Empty Undo stack is a 200 no-op; there is no Redo.
     """
 
+    clip_id: str | None = None
     frame_index: int = Field(..., ge=0)
 
 
@@ -88,6 +92,7 @@ class PropagateBody(BaseModel):
     ``max_frames``: optional cap on steps per direction from the start frame.
     """
 
+    clip_id: str | None = None
     direction: str = Field(..., min_length=1)
     start_frame_index: int = Field(..., ge=0)
     max_frames: int | None = Field(default=None, ge=0)
@@ -116,6 +121,17 @@ def create_app(
     app = FastAPI(title=SERVICE_NAME, version=SERVICE_VERSION)
     app.state.settings = cfg
     app.state.sessions = sessions
+
+    def _account(request: Request):
+        return int(request.state.account.id)
+
+    def _write_clip(request: Request, clip_id: str | None) -> str:
+        """Clip a mask write targets, after the assignment ownership check."""
+        resolved = clip_id or sessions.active_clip(_account(request))
+        if not resolved:
+            raise HTTPException(status_code=404, detail="No active Session")
+        require_label_assignee(request, resolved, "mask")
+        return resolved
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
@@ -174,14 +190,24 @@ def create_app(
         return FileResponse(path, media_type=media_type)
 
     @app.get("/api/session")
-    def get_session(frame_index: int | None = None) -> dict:
-        return sessions.get_public(frame_index=frame_index)
+    def get_session(
+        request: Request,
+        frame_index: int | None = None,
+        clip_id: str | None = None,
+    ) -> dict:
+        return sessions.get_public(
+            account_id=_account(request),
+            clip_id=clip_id,
+            frame_index=frame_index,
+        )
 
     @app.post("/api/session", status_code=201)
-    def create_session(body: CreateSessionBody) -> dict:
+    def create_session(body: CreateSessionBody, request: Request) -> dict:
         try:
             return sessions.create(
-                body.clip_id, load_annotations=body.load_annotations
+                _account(request),
+                body.clip_id,
+                load_annotations=body.load_annotations,
             )
         except SessionConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from None
@@ -193,16 +219,16 @@ def create_app(
             ) from None
 
     @app.delete("/api/session")
-    def close_session() -> dict:
+    def close_session(request: Request, clip_id: str | None = None) -> dict:
         try:
-            return sessions.close()
+            return sessions.close(_account(request), clip_id)
         except SessionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None
 
     @app.post("/api/session/reset")
-    def reset_session() -> dict:
+    def reset_session(request: Request, clip_id: str | None = None) -> dict:
         try:
-            return sessions.reset()
+            return sessions.reset(_account(request), clip_id)
         except SessionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None
         except SessionConflict as exc:
@@ -211,9 +237,12 @@ def create_app(
             raise HTTPException(status_code=503, detail=str(exc)) from None
 
     @app.post("/api/session/predict")
-    def predict(body: PredictBody) -> dict:
+    def predict(body: PredictBody, request: Request) -> dict:
+        clip_id = _write_clip(request, body.clip_id)
         try:
             result = sessions.predict(
+                account_id=_account(request),
+                clip_id=clip_id,
                 frame_index=body.frame_index,
                 text=body.text,
                 points=body.points,
@@ -228,6 +257,8 @@ def create_app(
                 clear_old_boxes=body.clear_old_boxes,
                 use_mask_prior=body.use_mask_prior,
             )
+        except SessionBusy as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from None
         except SessionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None
         except SessionConflict as exc:
@@ -256,9 +287,12 @@ def create_app(
         }
 
     @app.post("/api/session/propagate", status_code=202)
-    def start_propagate(body: PropagateBody) -> dict:
+    def start_propagate(body: PropagateBody, request: Request) -> dict:
+        clip_id = _write_clip(request, body.clip_id)
         try:
             return sessions.start_propagate(
+                _account(request),
+                clip_id,
                 direction=body.direction,
                 start_frame_index=body.start_frame_index,
                 max_frames=body.max_frames,
@@ -282,16 +316,24 @@ def create_app(
             raise HTTPException(status_code=500, detail=str(exc)) from None
 
     @app.get("/api/jobs/{job_id}")
-    def get_job(job_id: str) -> dict:
+    def get_job(job_id: str, request: Request) -> dict:
         try:
-            return sessions.get_job(job_id)
+            return sessions.get_job(_account(request), job_id)
         except JobNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None
 
     @app.patch("/api/session/tracks/{track_id}")
-    def update_track(track_id: int, body: UpdateTrackBody) -> dict:
+    def update_track(
+        track_id: int,
+        body: UpdateTrackBody,
+        request: Request,
+        clip_id: str | None = None,
+    ) -> dict:
+        _write_clip(request, clip_id)
         try:
-            return sessions.update_track_label(track_id, body.label)
+            return sessions.update_track_label(
+                _account(request), track_id, body.label, clip_id
+            )
         except SessionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None
         except SessionConflict as exc:
@@ -302,9 +344,12 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from None
 
     @app.delete("/api/session/tracks/{track_id}")
-    def delete_track(track_id: int) -> dict:
+    def delete_track(
+        track_id: int, request: Request, clip_id: str | None = None
+    ) -> dict:
+        _write_clip(request, clip_id)
         try:
-            return sessions.delete_track(track_id)
+            return sessions.delete_track(_account(request), track_id, clip_id)
         except SessionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None
         except SessionConflict as exc:
@@ -313,9 +358,17 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(exc)) from None
 
     @app.delete("/api/session/tracks/{track_id}/frames/{frame_index}")
-    def clear_frame_mask(track_id: int, frame_index: int) -> dict:
+    def clear_frame_mask(
+        track_id: int,
+        frame_index: int,
+        request: Request,
+        clip_id: str | None = None,
+    ) -> dict:
+        _write_clip(request, clip_id)
         try:
-            return sessions.clear_frame_mask(track_id, frame_index)
+            return sessions.clear_frame_mask(
+                _account(request), track_id, frame_index, clip_id
+            )
         except SessionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None
         except SessionConflict as exc:
@@ -334,11 +387,16 @@ def create_app(
         "/api/session/tracks/{track_id}/frames/{frame_index}/points/{point_index}"
     )
     def drop_geometric_point(
-        track_id: int, frame_index: int, point_index: int
+        track_id: int,
+        frame_index: int,
+        point_index: int,
+        request: Request,
+        clip_id: str | None = None,
     ) -> dict:
+        _write_clip(request, clip_id)
         try:
             return sessions.drop_geometric_point(
-                track_id, frame_index, point_index
+                _account(request), track_id, frame_index, point_index, clip_id
             )
         except SessionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None
@@ -361,9 +419,14 @@ def create_app(
             raise HTTPException(status_code=500, detail=str(exc)) from None
 
     @app.post("/api/session/undo")
-    def undo(body: UndoBody) -> dict:
+    def undo(body: UndoBody, request: Request) -> dict:
+        _write_clip(request, body.clip_id)
         try:
-            return sessions.undo(frame_index=body.frame_index)
+            return sessions.undo(
+                account_id=_account(request),
+                clip_id=body.clip_id,
+                frame_index=body.frame_index,
+            )
         except SessionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None
         except SessionConflict as exc:
@@ -377,9 +440,12 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(exc)) from None
 
     @app.post("/api/session/save")
-    def save_annotations() -> dict:
+    def save_annotations(
+        request: Request, clip_id: str | None = None
+    ) -> dict:
+        _write_clip(request, clip_id)
         try:
-            return sessions.save_annotations()
+            return sessions.save_annotations(_account(request), clip_id)
         except SessionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from None
         except SessionClipNotFound as exc:
@@ -423,9 +489,13 @@ def create_app(
             ) from None
 
     @app.post("/api/clips/{clip_id}/review")
-    def review_track_on_frame(clip_id: str, body: ReviewBody) -> dict:
+    def review_track_on_frame(
+        clip_id: str, body: ReviewBody, request: Request
+    ) -> dict:
+        _write_clip(request, clip_id)
         try:
             return sessions.set_review(
+                _account(request),
                 clip_id=clip_id,
                 frame_index=body.frame_index,
                 track_id=body.track_id,

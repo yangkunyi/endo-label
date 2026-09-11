@@ -485,6 +485,7 @@ export function ClipDesk() {
   const debounceRef = useRef<number | null>(null);
   const prevClipId = useRef<string | undefined>(undefined);
   const predicting = useRef(false);
+  const [predictBusy, setPredictBusy] = useState(false);
   const pendingFrame = useRef(0);
   const sessionOpen = useRef(false);
   const [pending, setPending] = useState<PendingMark[]>([]);
@@ -567,7 +568,7 @@ export function ClipDesk() {
   const loadSessionFrame = useCallback(async (index: number) => {
     const fetchSeq = ++sessionFetchSeq.current;
     try {
-      const session = await getJson<SessionPublic>(sessionPath(index));
+      const session = await getJson<SessionPublic>(sessionPath(index, clipId));
       if (fetchSeq !== sessionFetchSeq.current) {
         // A newer Frame fetch superseded this one; never apply the stale shot.
         return;
@@ -584,23 +585,17 @@ export function ClipDesk() {
         setSessionSnapshot(null);
       }
     }
-  }, []);
+  }, [clipId]);
 
   // Lazy Session: the first Predict or Propagate opens it on this Clip.
+  // Sessions are keyed by (Account, Clip) server-side, so this resumes this
+  // Clip's Session and never closes another Clip's.
   const ensureSession = useCallback(async () => {
     if (!clipId) {
       return;
     }
-    const session = await getJson<SessionPublic>(sessionPath());
+    const session = await getJson<SessionPublic>(sessionPath(undefined, clipId));
     if (!session.active) {
-      await sendJson<SessionPublic>(sessionPath(), "POST", {
-        clip_id: clipId,
-        load_annotations: true,
-      });
-      return;
-    }
-    if (session.clip_id !== clipId) {
-      await sendJson(sessionPath(), "DELETE");
       await sendJson<SessionPublic>(sessionPath(), "POST", {
         clip_id: clipId,
         load_annotations: true,
@@ -680,6 +675,7 @@ export function ClipDesk() {
       return;
     }
     predicting.current = true;
+    setPredictBusy(true);
     clearPredictTimer();
     const marks = pendingRef.current;
     setToast(null);
@@ -687,6 +683,7 @@ export function ClipDesk() {
       await ensureSession();
       const split = splitPendingMarks(marks);
       const body: {
+        clip_id: string;
         frame_index: number;
         points: number[][];
         point_labels: number[];
@@ -695,6 +692,7 @@ export function ClipDesk() {
         scribble_widths?: number[];
         track_id?: number;
       } = {
+        clip_id: clipId,
         frame_index: frameIndex,
         points: split.points,
         point_labels: split.point_labels,
@@ -727,6 +725,7 @@ export function ClipDesk() {
       setToast(workerLoadingToast(err, "Predict failed"));
     } finally {
       predicting.current = false;
+      setPredictBusy(false);
     }
   }, [activeTrackId, clearPredictTimer, clipId, ensureSession, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
 
@@ -766,7 +765,10 @@ export function ClipDesk() {
     clearPredictTimer();
     setToast(null);
     try {
-      await sendJson<SessionPublic>(sessionPointPath(activeTrackId, frameIndex, index), "DELETE");
+      await sendJson<SessionPublic>(
+        sessionPointPath(activeTrackId, frameIndex, index, clipId ?? undefined),
+        "DELETE",
+      );
       sessionOpen.current = true;
       await loadSessionFrame(frameIndex);
       await mutateAnnotation();
@@ -777,7 +779,7 @@ export function ClipDesk() {
     } finally {
       predicting.current = false;
     }
-  }, [activeTrackId, clearPredictTimer, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
+  }, [activeTrackId, clearPredictTimer, clipId, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
 
   const onClearMask = useCallback(async () => {
     if (activeTrackId == null || predicting.current || jobRunning) {
@@ -787,7 +789,10 @@ export function ClipDesk() {
     clearPredictTimer();
     setToast(null);
     try {
-      await sendJson<SessionPublic>(sessionFrameMaskPath(activeTrackId, frameIndex), "DELETE");
+      await sendJson<SessionPublic>(
+        sessionFrameMaskPath(activeTrackId, frameIndex, clipId ?? undefined),
+        "DELETE",
+      );
       sessionOpen.current = true;
       await loadSessionFrame(frameIndex);
       await mutateAnnotation();
@@ -798,7 +803,7 @@ export function ClipDesk() {
     } finally {
       predicting.current = false;
     }
-  }, [activeTrackId, clearPredictTimer, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
+  }, [activeTrackId, clearPredictTimer, clipId, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn]);
 
   const runUndo = useCallback(async () => {
     if (!clipId || predicting.current || jobRunning) {
@@ -809,6 +814,7 @@ export function ClipDesk() {
     setToast(null);
     try {
       const result = await sendJson<UndoResponse>(sessionUndoPath(), "POST", {
+        clip_id: clipId,
         frame_index: frameIndex,
       });
       sessionOpen.current = true;
@@ -854,6 +860,7 @@ export function ClipDesk() {
       }
       // Explicit start from the Frame on screen; never a follow-on to Predict.
       const job = await sendJson<PropagateJobPublic>(sessionPropagatePath(), "POST", {
+        clip_id: clipId,
         direction: propagateDirection,
         start_frame_index: frameIndex,
         max_frames: maxFrames,
@@ -890,14 +897,16 @@ export function ClipDesk() {
   const onRenameTrack = useCallback(async (trackId: number, label: string) => {
     setToast(null);
     try {
-      await sendJson<SessionPublic>(sessionTrackPath(trackId), "PATCH", { label });
+      await sendJson<SessionPublic>(sessionTrackPath(trackId, clipId ?? undefined), "PATCH", {
+        label,
+      });
       sessionOpen.current = true;
       await loadSessionFrame(frameIndex);
       await mutateAnnotation();
     } catch (err) {
       setToast({ text: err instanceof Error ? err.message : "Track Label edit failed", error: true });
     }
-  }, [frameIndex, loadSessionFrame, mutateAnnotation]);
+  }, [clipId, frameIndex, loadSessionFrame, mutateAnnotation]);
 
   const seekPlayhead = useCallback((index: number) => {
     scrub(index);
@@ -1202,7 +1211,8 @@ export function ClipDesk() {
     stopJobPolling();
     setPropagateJob(null);
     setKeptJob(null);
-    void sendJson(sessionPath(), "DELETE").catch(() => undefined);
+    // Sessions are keyed by (Account, Clip): switching Clips keeps the old
+    // one server-side, so do not close it here.
   }, [clearPredictTimer, clipId, stopJobPolling]);
 
   return (
@@ -1359,6 +1369,7 @@ export function ClipDesk() {
             scribbleWidth={scribbleWidth}
             canUndo={(sessionSnapshot?.tracks.length ?? 0) > 0}
             busy={jobRunning}
+            predicting={predictBusy}
             canPropagate={frameMasks.length > 0}
             frameMasks={frameMasks}
             frameKept={frameKept}
@@ -1916,6 +1927,7 @@ function TrackRail({
   scribbleWidth,
   canUndo,
   busy,
+  predicting,
   canPropagate,
   frameMasks,
   frameKept,
@@ -1940,6 +1952,7 @@ function TrackRail({
   scribbleWidth: number;
   canUndo: boolean;
   busy: boolean;
+  predicting: boolean;
   canPropagate: boolean;
   frameMasks: FrameAnnotations["masks"];
   frameKept: boolean;
@@ -1990,10 +2003,10 @@ function TrackRail({
           <Button
             type="button"
             size="sm"
-            disabled={pendingCount === 0 || busy}
+            disabled={pendingCount === 0 || busy || predicting}
             onClick={onPredict}
           >
-            Predict
+            {predicting ? "Inferring…" : "Predict"}
           </Button>
         </div>
       </div>
