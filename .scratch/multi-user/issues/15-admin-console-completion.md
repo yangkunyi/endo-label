@@ -4,7 +4,7 @@
 
 **Blocked by:** 09, 11.
 
-Status: MERGING
+Status: CONFLICT
 
 Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
 
