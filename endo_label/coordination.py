@@ -54,6 +54,18 @@ class LabelWriteForbidden(Exception):
     """Current Account is not the Labeling assignee."""
 
 
+class TransitionForbidden(Exception):
+    """Current Account may not perform this transition."""
+
+
+class ReviewerIsAnnotator(Exception):
+    """An item's reviewer must differ from its annotator."""
+
+
+class NoteRequired(Exception):
+    """A reject transition needs a short note."""
+
+
 @dataclass(frozen=True)
 class Account:
     id: int
@@ -90,14 +102,48 @@ def connect(path: Path) -> sqlite3.Connection:
     con.row_factory = sqlite3.Row
     con.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     con.execute("PRAGMA foreign_keys=ON")
-    mode = con.execute("PRAGMA journal_mode=WAL").fetchone()[0]
-    if str(mode).lower() != "wal":
-        raise RuntimeError(f"failed to enable WAL: {mode}")
+    mode = str(con.execute("PRAGMA journal_mode").fetchone()[0]).lower()
+    if mode != "wal":
+        mode = str(con.execute("PRAGMA journal_mode=WAL").fetchone()[0]).lower()
+        if mode != "wal":
+            raise RuntimeError(f"failed to enable WAL: {mode}")
     _init_schema(con)
     return con
 
 
+_SCHEMA_TABLES = frozenset(
+    {
+        "users",
+        "login_sessions",
+        "projects",
+        "clips",
+        "assignments",
+        "vocab_registry",
+        "project_vocab_enabled",
+        "project_vocab_candidates",
+    }
+)
+
+
+def _schema_present(con: sqlite3.Connection) -> bool:
+    rows = con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    return _SCHEMA_TABLES <= {str(row["name"]) for row in rows}
+
+
 def _init_schema(con: sqlite3.Connection) -> None:
+    """Create the schema once; later connects only run cheap column migrations.
+
+    The bootstrap used to run on every connect, which meant every request took a
+    write lock. Two Clients racing a state transition then hit SQLITE_BUSY
+    (the read-then-write upgrade skips the busy handler) instead of serializing.
+    """
+    if not _schema_present(con):
+        _create_schema(con)
+    _ensure_clip_version_column(con)
+    con.commit()
+
+
+def _create_schema(con: sqlite3.Connection) -> None:
     con.executescript(
         """
         CREATE TABLE IF NOT EXISTS users (
@@ -575,7 +621,7 @@ def _with_assignment(path: Path, clip_id: str, task_type: str, fn):
         if clip is None:
             raise AssignmentNotFound(clip_id)
         row = con.execute(
-            "SELECT clip_id, task_type, state, assignee_id FROM assignments "
+            "SELECT clip_id, task_type, state, assignee_id, reviewer_id FROM assignments "
             "WHERE clip_id=? AND task_type=?",
             (clip_id, task_type),
         ).fetchone()
@@ -634,6 +680,242 @@ def unassign_item(path: Path, clip_id: str, task_type: str) -> dict:
     return _with_assignment(path, clip_id, task_type, _do)
 
 
+def _actor_flags(con: sqlite3.Connection, account_id: int) -> tuple[bool, bool]:
+    row = con.execute(
+        "SELECT admin, reviewer FROM users WHERE id=?", (account_id,)
+    ).fetchone()
+    if row is None:
+        raise UnknownAccount(account_id)
+    return bool(row["admin"]), bool(row["reviewer"])
+
+
+def _actor_is_assignee(row: sqlite3.Row, account_id: int) -> bool:
+    return row["assignee_id"] is not None and int(row["assignee_id"]) == account_id
+
+
+def _actor_is_assigned_reviewer(row: sqlite3.Row, account_id: int) -> bool:
+    return row["reviewer_id"] is not None and int(row["reviewer_id"]) == account_id
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def submit_item(path: Path, clip_id: str, task_type: str, *, account_id: int) -> dict:
+    """Labeling -> Submitted. The assignee or an admin may submit; labels lock."""
+
+    def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
+        if row["state"] != "Labeling":
+            raise AssignmentConflict(row["state"])
+        admin, _reviewer = _actor_flags(con, account_id)
+        if not (_actor_is_assignee(row, account_id) or admin):
+            raise TransitionForbidden()
+        con.execute(
+            "UPDATE assignments SET state='Submitted', note=NULL "
+            "WHERE clip_id=? AND task_type=?",
+            (clip_id, task_type),
+        )
+        return _fetch_item(con, clip_id, task_type)
+
+    return _with_assignment(path, clip_id, task_type, _do)
+
+
+def recall_item(path: Path, clip_id: str, task_type: str, *, account_id: int) -> dict:
+    """Submitted -> Labeling. The assignee or an admin may recall before review."""
+
+    def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
+        if row["state"] != "Submitted":
+            raise AssignmentConflict(row["state"])
+        admin, _reviewer = _actor_flags(con, account_id)
+        if not (_actor_is_assignee(row, account_id) or admin):
+            raise TransitionForbidden()
+        con.execute(
+            "UPDATE assignments SET state='Labeling', note=NULL, reviewer_id=NULL "
+            "WHERE clip_id=? AND task_type=?",
+            (clip_id, task_type),
+        )
+        return _fetch_item(con, clip_id, task_type)
+
+    return _with_assignment(path, clip_id, task_type, _do)
+
+
+def assign_reviewer(
+    path: Path, clip_id: str, task_type: str, username: str, *, account_id: int
+) -> dict:
+    """Submitted -> Reviewing. Admin assigns a reviewer other than the annotator."""
+
+    def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
+        admin, _reviewer = _actor_flags(con, account_id)
+        if not admin:
+            raise TransitionForbidden()
+        if row["state"] != "Submitted":
+            raise AssignmentConflict(row["state"])
+        reviewer_id = _account_id(con, username)
+        if row["assignee_id"] is not None and int(row["assignee_id"]) == reviewer_id:
+            raise ReviewerIsAnnotator()
+        con.execute(
+            "UPDATE assignments SET state='Reviewing', reviewer_id=?, note=NULL "
+            "WHERE clip_id=? AND task_type=?",
+            (reviewer_id, clip_id, task_type),
+        )
+        return _fetch_item(con, clip_id, task_type)
+
+    return _with_assignment(path, clip_id, task_type, _do)
+
+
+def pass_item(path: Path, clip_id: str, task_type: str, *, account_id: int) -> dict:
+    """Reviewing -> Done. The assigned reviewer or an admin passes; Done is terminal."""
+
+    def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
+        if row["state"] != "Reviewing":
+            raise AssignmentConflict(row["state"])
+        admin, _reviewer = _actor_flags(con, account_id)
+        if not (_actor_is_assigned_reviewer(row, account_id) or admin):
+            raise TransitionForbidden()
+        con.execute(
+            "UPDATE assignments SET state='Done', reviewed_by=?, reviewed_at=?, note=NULL "
+            "WHERE clip_id=? AND task_type=?",
+            (account_id, _now_iso(), clip_id, task_type),
+        )
+        return _fetch_item(con, clip_id, task_type)
+
+    return _with_assignment(path, clip_id, task_type, _do)
+
+
+def reject_item(
+    path: Path, clip_id: str, task_type: str, note: str, *, account_id: int
+) -> dict:
+    """Reviewing / Done -> Labeling with one short note. The reviewer or an admin rejects."""
+
+    note = (note or "").strip()
+    if not note:
+        raise NoteRequired()
+
+    def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
+        state = row["state"]
+        if state not in ("Reviewing", "Done"):
+            raise AssignmentConflict(state)
+        admin, reviewer = _actor_flags(con, account_id)
+        if state == "Reviewing":
+            allowed = admin or _actor_is_assigned_reviewer(row, account_id)
+        else:
+            allowed = admin or reviewer
+        if not allowed:
+            raise TransitionForbidden()
+        con.execute(
+            "UPDATE assignments SET state='Labeling', note=?, reviewer_id=NULL, "
+            "reviewed_by=NULL, reviewed_at=NULL WHERE clip_id=? AND task_type=?",
+            (note, clip_id, task_type),
+        )
+        return _fetch_item(con, clip_id, task_type)
+
+    return _with_assignment(path, clip_id, task_type, _do)
+
+
+def rereview_item(path: Path, clip_id: str, task_type: str, *, account_id: int) -> dict:
+    """Done -> Submitted for a fresh review. A reviewer or an admin reopens it."""
+
+    def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
+        if row["state"] != "Done":
+            raise AssignmentConflict(row["state"])
+        admin, reviewer = _actor_flags(con, account_id)
+        if not (admin or reviewer):
+            raise TransitionForbidden()
+        con.execute(
+            "UPDATE assignments SET state='Submitted', reviewer_id=NULL, note=NULL, "
+            "reviewed_by=NULL, reviewed_at=NULL WHERE clip_id=? AND task_type=?",
+            (clip_id, task_type),
+        )
+        return _fetch_item(con, clip_id, task_type)
+
+    return _with_assignment(path, clip_id, task_type, _do)
+
+
+def _holding_counts(con: sqlite3.Connection) -> dict[int, int]:
+    rows = con.execute(
+        "SELECT assignee_id, COUNT(*) AS n FROM assignments "
+        "WHERE assignee_id IS NOT NULL AND state IN ('Labeling', 'Submitted', 'Reviewing') "
+        "GROUP BY assignee_id"
+    ).fetchall()
+    return {int(row["assignee_id"]): int(row["n"]) for row in rows}
+
+
+def auto_assign_items(
+    path: Path,
+    *,
+    usernames: list[str],
+    items: list[tuple[str, str]] | None = None,
+    clip_ids: list[str] | None = None,
+    task_type: str | None = None,
+    project: str | None = None,
+) -> dict:
+    """Assign Unassigned items to the given Accounts, always picking the lowest holder.
+
+    "Holding count" is the Account's items in Labeling / Submitted / Reviewing: an
+    item in flight keeps counting until it is Done. Ties break by username so the
+    distribution is deterministic. `clip_ids` / `task_type` / `project` narrow the
+    candidate set (board multi-select, Task type, study). `items` is an explicit
+    (Clip, Task type) pick; anything in it that is not Unassigned is ignored.
+    """
+    names = list(dict.fromkeys(name.strip() for name in usernames if name.strip()))
+    if not names:
+        raise ValueError("at least one assignee is required")
+    if task_type is not None and task_type not in TASK_TYPES:
+        raise AssignmentNotFound(task_type)
+    con = connect(path)
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        user_ids = {name: _account_id(con, name) for name in names}
+        query = (
+            "SELECT a.clip_id, a.task_type FROM assignments a "
+            "JOIN clips c ON c.id = a.clip_id "
+            "JOIN projects p ON p.id = c.project_id "
+            "WHERE a.state = 'Unassigned'"
+        )
+        params: list[object] = []
+        if task_type is not None:
+            query += " AND a.task_type = ?"
+            params.append(task_type)
+        if clip_ids:
+            placeholders = ",".join("?" for _ in clip_ids)
+            query += f" AND a.clip_id IN ({placeholders})"
+            params.extend(clip_ids)
+        if project is not None:
+            query += " AND p.name = ?"
+            params.append(project.strip())
+        query += " ORDER BY a.clip_id, a.task_type"
+        rows = con.execute(query, params).fetchall()
+        if items is not None:
+            wanted = set(items)
+            rows = [row for row in rows if (row["clip_id"], row["task_type"]) in wanted]
+
+        existing = _holding_counts(con)
+        holding = {name: existing.get(user_ids[name], 0) for name in names}
+        assigned = []
+        for row in rows:
+            chosen = min(names, key=lambda name: (holding[name], name))
+            con.execute(
+                "UPDATE assignments SET state='Labeling', assignee_id=? "
+                "WHERE clip_id=? AND task_type=?",
+                (user_ids[chosen], row["clip_id"], row["task_type"]),
+            )
+            holding[chosen] += 1
+            assigned.append(
+                {
+                    "clip_id": row["clip_id"],
+                    "task_type": row["task_type"],
+                    "assignee": chosen,
+                }
+            )
+        con.commit()
+        return {"assigned": assigned, "counts": holding}
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+
 def clip_version(path: Path, clip_id: str) -> int:
     con = connect(path)
     try:
@@ -644,12 +926,14 @@ def clip_version(path: Path, clip_id: str) -> int:
 
 
 def _write_allowed(row: sqlite3.Row | None, account_id: int) -> bool:
-    return (
-        row is not None
-        and row["assignee_id"] is not None
-        and int(row["assignee_id"]) == account_id
-        and row["state"] == "Labeling"
-    )
+    """Labeling: the assignee writes. Submitted/Done: nobody. Reviewing: the reviewer."""
+    if row is None:
+        return False
+    if row["state"] == "Labeling":
+        return row["assignee_id"] is not None and int(row["assignee_id"]) == account_id
+    if row["state"] == "Reviewing":
+        return row["reviewer_id"] is not None and int(row["reviewer_id"]) == account_id
+    return False
 
 
 def assert_label_writer(
@@ -665,7 +949,7 @@ def assert_label_writer(
         if clip is None:
             raise AssignmentNotFound(clip_id)
         row = con.execute(
-            "SELECT state, assignee_id FROM assignments WHERE clip_id=? AND task_type=?",
+            "SELECT state, assignee_id, reviewer_id FROM assignments WHERE clip_id=? AND task_type=?",
             (clip_id, task_type),
         ).fetchone()
         if not _write_allowed(row, account_id):
@@ -689,7 +973,7 @@ def authorize_label_write(
         if clip is None:
             raise AssignmentNotFound(clip_id)
         row = con.execute(
-            "SELECT state, assignee_id FROM assignments WHERE clip_id=? AND task_type=?",
+            "SELECT state, assignee_id, reviewer_id FROM assignments WHERE clip_id=? AND task_type=?",
             (clip_id, task_type),
         ).fetchone()
         if not _write_allowed(row, account_id):
