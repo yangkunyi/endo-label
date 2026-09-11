@@ -2,4 +2,4 @@
 # runner: dsh - the DeepSeek harness CLI in its sdk-minimal profile (one bash tool) runs every agent node.
 # concurrency: 1 - one Ticket at a time: these Tickets touch one codebase and a serial Main keeps merges clean.
 runner: dsh
-concurrency: 1
+concurrency: 3
