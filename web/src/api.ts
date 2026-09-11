@@ -281,11 +281,16 @@ export function registryLabel(item: {
   return item.name;
 }
 
-export function sessionPath(frameIndex?: number): string {
-  if (frameIndex == null) {
-    return "/api/session";
+export function sessionPath(frameIndex?: number, clipId?: string): string {
+  const params = new URLSearchParams();
+  if (frameIndex != null) {
+    params.set("frame_index", String(frameIndex));
   }
-  return `/api/session?frame_index=${frameIndex}`;
+  if (clipId) {
+    params.set("clip_id", clipId);
+  }
+  const query = params.toString();
+  return query ? `/api/session?${query}` : "/api/session";
 }
 
 export function sessionPredictPath(): string {
@@ -296,19 +301,24 @@ export function sessionPointPath(
   trackId: number,
   frameIndex: number,
   pointIndex: number,
+  clipId?: string,
 ): string {
-  return `/api/session/tracks/${trackId}/frames/${frameIndex}/points/${pointIndex}`;
+  const base = `/api/session/tracks/${trackId}/frames/${frameIndex}/points/${pointIndex}`;
+  return clipId ? `${base}?clip_id=${encodeURIComponent(clipId)}` : base;
 }
 
 export function sessionFrameMaskPath(
   trackId: number,
   frameIndex: number,
+  clipId?: string,
 ): string {
-  return `/api/session/tracks/${trackId}/frames/${frameIndex}`;
+  const base = `/api/session/tracks/${trackId}/frames/${frameIndex}`;
+  return clipId ? `${base}?clip_id=${encodeURIComponent(clipId)}` : base;
 }
 
-export function sessionTrackPath(trackId: number): string {
-  return `/api/session/tracks/${trackId}`;
+export function sessionTrackPath(trackId: number, clipId?: string): string {
+  const base = `/api/session/tracks/${trackId}`;
+  return clipId ? `${base}?clip_id=${encodeURIComponent(clipId)}` : base;
 }
 
 export function sessionUndoPath(): string {

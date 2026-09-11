@@ -16,10 +16,12 @@ import {
   phaseFramePath,
   phaseSpanPath,
   jobPath,
+  sessionFrameMaskPath,
   sessionPath,
   sessionPointPath,
   sessionPredictPath,
   sessionPropagatePath,
+  sessionTrackPath,
   toggleClassTag,
   tripletClipPath,
   tripletFramePath,
@@ -48,7 +50,20 @@ test("session and annotation paths match compose HTTP", () => {
   expect(sessionPath()).toBe("/api/session");
   expect(sessionPredictPath()).toBe("/api/session/predict");
   expect(sessionPath(0)).toBe("/api/session?frame_index=0");
+  expect(sessionPath(undefined, "CLIPA")).toBe("/api/session?clip_id=CLIPA");
+  expect(sessionPath(0, "CLIPA")).toBe(
+    "/api/session?frame_index=0&clip_id=CLIPA",
+  );
   expect(sessionPointPath(1, 0, 2)).toBe("/api/session/tracks/1/frames/0/points/2");
+  expect(sessionPointPath(1, 0, 2, "CLIPA")).toBe(
+    "/api/session/tracks/1/frames/0/points/2?clip_id=CLIPA",
+  );
+  expect(sessionFrameMaskPath(1, 0, "CLIPA")).toBe(
+    "/api/session/tracks/1/frames/0?clip_id=CLIPA",
+  );
+  expect(sessionTrackPath(1, "CLIPA")).toBe(
+    "/api/session/tracks/1?clip_id=CLIPA",
+  );
   expect(sessionPropagatePath()).toBe("/api/session/propagate");
   expect(jobPath("job-9")).toBe("/api/jobs/job-9");
   expect(annotationSummaryPath("CLIPA")).toBe("/api/clips/CLIPA/annotations");

@@ -125,7 +125,7 @@ A Track-on-Frame that Propagate must not overwrite: Source is `manual` or `refin
 _Avoid_: Locked (UI-only), frozen track
 
 **Session**:
-Live **mask** working state (prompts, Tracks, SAM / Scribble memory, Geometric Memory). At most one. Opens when mask Predict / Propagate actually runs. Phase, class, and triplet do not need a Session.
+Live **mask** working state (prompts, Tracks, SAM / Scribble memory, Geometric Memory). At most one per Account per Clip; auto-opens on the first mask action, is kept across Clip switches and resumes on return, and is least-recently-used evicted past the configured caps (2 per Account / 8 global by default). Phase, class, and triplet do not need a Session.
 _Avoid_: requiring a Session to edit phase/class/triplet
 
 **Account**:

@@ -75,6 +75,11 @@ class Settings:
     # Coordination SQLite (WAL). None → labels_root.parent / "coordination.sqlite".
     coordination_db: Path | None = None
     session_cookie_secure: bool = False
+    # Mask Sessions per Account / per process (LRU eviction past the cap).
+    mask_sessions_per_user: int = 2
+    mask_sessions_global: int = 8
+    # Predict waits this long on the global inference lock before 503.
+    mask_inference_timeout: float = 30.0
 
 
 def default_config_path() -> Path:
@@ -166,6 +171,15 @@ def _optional_int(value: object, path: Path, key: str) -> int | None:
         raise ConfigError(f"{path}: {key} must be an integer") from None
 
 
+def _optional_float(value: object, path: Path, key: str) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise ConfigError(f"{path}: {key} must be a number") from None
+
+
 def load_settings(config_path: Path | str | None = None) -> Settings:
     path = Path(config_path) if config_path is not None else default_config_path()
     if not path.is_file():
@@ -234,6 +248,16 @@ def load_settings(config_path: Path | str | None = None) -> Settings:
     secure_raw = data.get("session_cookie_secure")
     session_cookie_secure = bool(secure_raw)
 
+    caps_per_user = _optional_int(
+        data.get("mask_sessions_per_user"), path, "mask_sessions_per_user"
+    )
+    caps_global = _optional_int(
+        data.get("mask_sessions_global"), path, "mask_sessions_global"
+    )
+    inference_timeout = _optional_float(
+        data.get("mask_inference_timeout"), path, "mask_inference_timeout"
+    )
+
     return Settings(
         frames_root=frames_root,
         clip_allowlist=allowlist,
@@ -257,4 +281,9 @@ def load_settings(config_path: Path | str | None = None) -> Settings:
         scribble_gpu_id=_optional_int(data.get("scribble_gpu_id"), path, "scribble_gpu_id"),
         coordination_db=coordination_db,
         session_cookie_secure=session_cookie_secure,
+        mask_sessions_per_user=caps_per_user if caps_per_user is not None else 2,
+        mask_sessions_global=caps_global if caps_global is not None else 8,
+        mask_inference_timeout=inference_timeout
+        if inference_timeout is not None
+        else 30.0,
     )

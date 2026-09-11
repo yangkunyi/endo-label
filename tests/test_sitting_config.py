@@ -289,3 +289,25 @@ def test_sam31_paths_default_to_old_tool_kit(tmp_path: Path) -> None:
         "/data3/yky/sam3_1_label_tool/sam31_label_kit/ckpt/sam3.1_multiplex.pt"
     )
     assert settings.sam31_repo == Path("/data3/yky/sam3_1_label_tool/sam3")
+
+
+def test_mask_session_caps_and_timeout_parse_from_yaml(tmp_path: Path) -> None:
+    config = _worker_yaml(
+        tmp_path,
+        "frames_root: /tmp/f\n"
+        "mask_sessions_per_user: 3\n"
+        "mask_sessions_global: 9\n"
+        "mask_inference_timeout: 12.5\n",
+    )
+    settings = load_settings(config)
+    assert settings.mask_sessions_per_user == 3
+    assert settings.mask_sessions_global == 9
+    assert settings.mask_inference_timeout == 12.5
+
+
+def test_mask_session_caps_default_two_and_eight(tmp_path: Path) -> None:
+    config = _worker_yaml(tmp_path, "frames_root: /tmp/f\n")
+    settings = load_settings(config)
+    assert settings.mask_sessions_per_user == 2
+    assert settings.mask_sessions_global == 8
+    assert settings.mask_inference_timeout == 30.0
