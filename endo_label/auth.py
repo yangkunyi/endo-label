@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from endo_label.capabilities import account_capabilities
 from endo_label.coordination import (
     Account,
     AssignmentNotFound,
@@ -21,6 +22,7 @@ from endo_label.coordination import (
     create_session,
     db_path,
     delete_session,
+    item_payload,
 )
 
 SESSION_COOKIE = "session_id"
@@ -43,6 +45,11 @@ def _me(account: Account) -> dict:
             "reviewer": account.reviewer,
             "annotator": account.annotator,
         },
+        "capabilities": account_capabilities(
+            admin=account.admin,
+            reviewer=account.reviewer,
+            annotator=account.annotator,
+        ),
     }
 
 
@@ -162,5 +169,17 @@ def logout(request: Request, response: Response) -> dict:
 
 
 @router.get("/api/me")
-def me(request: Request) -> dict:
-    return _me(request.state.account)
+def me(
+    request: Request,
+    clip_id: str | None = None,
+    task_type: str | None = None,
+) -> dict:
+    """Identity plus capabilities. With a Clip and Task type, the item's own matrix cell."""
+    account: Account = request.state.account
+    payload = _me(account)
+    if clip_id and task_type:
+        item = item_payload(db_path(request.app.state.settings), account, clip_id, task_type)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Not Found")
+        payload["item"] = item
+    return payload
