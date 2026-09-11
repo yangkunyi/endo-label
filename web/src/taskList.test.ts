@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { MyItem } from "./api";
-import { rejectNote, stateBadge, taskActions, taskHeading } from "./taskList";
+import { rejectNote, rejectNoteIsValid, splitItems, stateBadge, taskActions, taskHeading } from "./taskList";
 
 function item(over: Partial<MyItem> = {}): MyItem {
   return {
@@ -65,4 +65,61 @@ test("every state gets its own badge", () => {
 
 test("an item heading names the Clip and the Task type", () => {
   expect(taskHeading(item())).toBe("CLIPA · phase");
+});
+
+test("a Reviewing item offers Pass and Reject when the server says so", () => {
+  expect(
+    taskActions(
+      item({
+        state: "Reviewing",
+        reviewer: "carol",
+        capabilities: { pass: true, reject: true, edit_labels: true },
+      }),
+    ),
+  ).toEqual([
+    { action: "pass", label: "Pass" },
+    { action: "reject", label: "Reject" },
+  ]);
+});
+
+test("a Done item offers Reject and reopen for a reviewer", () => {
+  expect(
+    taskActions(
+      item({
+        state: "Done",
+        reviewer: "carol",
+        capabilities: { reject: true, re_review: true },
+      }),
+    ),
+  ).toEqual([
+    { action: "reject", label: "Reject" },
+    { action: "re_review", label: "Reopen for review" },
+  ]);
+});
+
+test("My Tasks splits the annotator's own items from the review queue", () => {
+  const mine = item({ clip_id: "CLIPA", assignee: "alice" });
+  const reviewing = item({
+    clip_id: "CLIPB",
+    state: "Reviewing",
+    assignee: "bob",
+    reviewer: "carol",
+  });
+  const done = item({ clip_id: "CLIPC", state: "Done", assignee: "bob", reviewer: "carol" });
+  const other = item({ clip_id: "CLIPD", assignee: "bob" });
+
+  expect(splitItems([mine, reviewing, done, other], "carol")).toEqual({
+    mine: [],
+    review: [reviewing, done],
+  });
+  expect(splitItems([mine, reviewing, done, other], "alice")).toEqual({
+    mine: [mine],
+    review: [],
+  });
+});
+
+test("a reject needs a non-blank note", () => {
+  expect(rejectNoteIsValid("fix frame 3")).toBe(true);
+  expect(rejectNoteIsValid("   ")).toBe(false);
+  expect(rejectNoteIsValid("")).toBe(false);
 });

@@ -15,16 +15,40 @@ export function stateBadge(state: string): { label: string; className: string } 
   return STATE_BADGES[state] ?? { label: state, className: "bg-muted text-muted-foreground" };
 }
 
+/** Every transition button, in the order the desk and the list show them. */
+const TASK_BUTTONS: TaskButton[] = [
+  { action: "submit", label: "Submit" },
+  { action: "recall", label: "Recall" },
+  { action: "pass", label: "Pass" },
+  { action: "reject", label: "Reject" },
+  { action: "re_review", label: "Reopen for review" },
+];
+
 /** The buttons an item row offers, straight from the server's capability payload. */
 export function taskActions(item: MyItem): TaskButton[] {
-  const buttons: TaskButton[] = [];
-  if (item.capabilities?.submit) {
-    buttons.push({ action: "submit", label: "Submit" });
+  return TASK_BUTTONS.filter((button) => item.capabilities?.[button.action]);
+}
+
+/** A reject needs one short note; whitespace is not a note. */
+export function rejectNoteIsValid(note: string): boolean {
+  return note.trim().length > 0;
+}
+
+/** One `/api/me/items` payload serves both sides: the assignee's work, the reviewer's queue. */
+export function splitItems(
+  items: MyItem[],
+  username: string,
+): { mine: MyItem[]; review: MyItem[] } {
+  const mine: MyItem[] = [];
+  const review: MyItem[] = [];
+  for (const item of items) {
+    if (item.assignee === username) {
+      mine.push(item);
+    } else if (item.reviewer === username) {
+      review.push(item);
+    }
   }
-  if (item.capabilities?.recall) {
-    buttons.push({ action: "recall", label: "Recall" });
-  }
-  return buttons;
+  return { mine, review };
 }
 
 /** The reviewer's reject note; it is a banner only while the item is back in Labeling. */

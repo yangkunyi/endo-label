@@ -27,7 +27,7 @@ export type Me = {
 
 export type MyItemsResponse = { items: MyItem[] };
 
-export type ItemAction = "submit" | "recall";
+export type ItemAction = "submit" | "recall" | "pass" | "reject" | "re_review";
 
 /** The HTTP status carries the meaning a save path needs; the message is for people. */
 export class HttpError extends Error {

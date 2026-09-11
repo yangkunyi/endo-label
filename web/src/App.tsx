@@ -10,13 +10,13 @@ import { Login } from "./Login";
 import { MyTasks } from "./MyTasks";
 import { getJson, mePath, type Me } from "./api";
 
-/** An annotator's default page is My Tasks; everyone else lands on the desk. */
+/** Annotators and reviewers default to My Tasks; everyone else lands on the desk. */
 function Home() {
   const { data } = useSWR(mePath(), getJson<Me>);
   if (!data) {
     return <p className="p-6">Loading…</p>;
   }
-  return data.capabilities?.annotate ? <MyTasks /> : <ClipDesk />;
+  return data.capabilities?.annotate || data.capabilities?.review ? <MyTasks /> : <ClipDesk />;
 }
 
 export default function App() {
