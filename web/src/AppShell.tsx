@@ -2,8 +2,11 @@ import { Link, Navigate, Outlet, useNavigate } from "react-router-dom";
 import useSWR, { mutate } from "swr";
 import { getJson, mePath, sendJson, type Me } from "./api";
 import { Button } from "./components/ui/button";
+import { useWorkflowEvents } from "./workflowEvents";
 
 export function AppShell() {
+  // Assignment transitions arrive here; every list and board refetches on one.
+  useWorkflowEvents();
   const navigate = useNavigate();
   const { data, error } = useSWR(mePath(), getJson<Me>);
   if (!data && !error) {

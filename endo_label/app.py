@@ -11,6 +11,7 @@ from endo_label.admin_router import router as admin_router
 from endo_label.auth import install_auth, router as auth_router
 from endo_label.config import Settings, load_settings
 from endo_label.coordination import apply_config_registrations
+from endo_label.events import EventBroker, router as events_router
 from endo_label.frame_class.router import make_router as class_router
 from endo_label.items_router import router as items_router
 from endo_label.mask.http import create_app as create_mask_app
@@ -63,8 +64,10 @@ def create_app(
     cfg = settings if settings is not None else load_settings()
     apply_config_registrations(cfg)
     app = create_mask_app(cfg, session_manager=session_manager)
+    app.state.events = EventBroker()
     install_auth(app)
     app.include_router(auth_router)
+    app.include_router(events_router)
     app.include_router(admin_router)
     app.include_router(projects_router)
     app.include_router(registry_router)
