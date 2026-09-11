@@ -166,6 +166,36 @@ export type RegistryBrowse = {
 
 export type RegistryVisible = { items: RegistryItem[] };
 
+export type AdminUser = {
+  id: number;
+  username: string;
+  roles: { admin: boolean; reviewer: boolean; annotator: boolean };
+  disabled: boolean;
+};
+
+export type AdminUsersResponse = { users: AdminUser[] };
+
+export type CreateUserResponse = { user: AdminUser; temporary_password: string };
+
+export type ProjectRow = {
+  id: number;
+  name: string;
+  hospital: string;
+  clips: { id: string; kind: string }[];
+};
+
+export type ProjectsResponse = { projects: ProjectRow[] };
+
+export type ProjectResponse = {
+  project: { id: number; name: string; hospital: string };
+};
+
+export type TagsResponse = { tags: string[] };
+
+export type ClipTagsResponse = { clip_id: string; tags: string[] };
+
+export type ItemFilters = { project?: string; tag?: string };
+
 export type MaskProvenance = { mask_handoff?: boolean };
 
 export type MaskRle = {
@@ -317,6 +347,58 @@ export function vocabPath(): string {
 
 export function registryPath(): string {
   return "/api/registry";
+}
+
+export function adminUsersPath(): string {
+  return "/api/admin/users";
+}
+
+export function adminUserPath(username: string): string {
+  return `/api/admin/users/${encodeURIComponent(username)}`;
+}
+
+export function projectsPath(): string {
+  return "/api/projects";
+}
+
+export function projectPath(projectId: number): string {
+  return `/api/projects/${projectId}`;
+}
+
+export function tagsPath(): string {
+  return "/api/tags";
+}
+
+export function clipTagsPath(clipId: string): string {
+  return `/api/clips/${encodeURIComponent(clipId)}/tags`;
+}
+
+export function itemsPath(filters: ItemFilters = {}): string {
+  const query = new URLSearchParams();
+  if (filters.project) {
+    query.set("project", filters.project);
+  }
+  if (filters.tag) {
+    query.set("tag", filters.tag);
+  }
+  const suffix = query.toString();
+  return suffix ? `/api/items?${suffix}` : "/api/items";
+}
+
+export function clipsPath(filters: ItemFilters = {}): string {
+  const query = new URLSearchParams();
+  if (filters.project) {
+    query.set("project", filters.project);
+  }
+  if (filters.tag) {
+    query.set("tag", filters.tag);
+  }
+  const suffix = query.toString();
+  return suffix ? `/api/clips?${suffix}` : "/api/clips";
+}
+
+export function deliverPath(clipId: string, taskType: string): string {
+  return `/api/items/${encodeURIComponent(clipId)}/${encodeURIComponent(taskType)}/deliver`;
 }
 
 export function registryVisiblePath(projectId: number): string {

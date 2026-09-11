@@ -40,6 +40,15 @@ import {
   registryEnablePath,
   registryLabel,
   registryPath,
+  adminUserPath,
+  adminUsersPath,
+  clipTagsPath,
+  clipsPath,
+  deliverPath,
+  itemsPath,
+  projectPath,
+  projectsPath,
+  tagsPath,
   registryPromotePath,
   registryRenamePath,
   registryRestorePath,
@@ -61,6 +70,25 @@ test("session and annotation paths match compose HTTP", () => {
   expect(jobPath("job-9")).toBe("/api/jobs/job-9");
   expect(annotationSummaryPath("CLIPA")).toBe("/api/clips/CLIPA/annotations");
   expect(annotationFramePath("CLIPA", 0)).toBe("/api/clips/CLIPA/annotations/frames/0");
+});
+
+test("admin console paths match compose HTTP", () => {
+  expect(adminUsersPath()).toBe("/api/admin/users");
+  expect(adminUserPath("alice")).toBe("/api/admin/users/alice");
+  expect(adminUserPath("a b")).toBe("/api/admin/users/a%20b");
+  expect(projectsPath()).toBe("/api/projects");
+  expect(projectPath(3)).toBe("/api/projects/3");
+  expect(tagsPath()).toBe("/api/tags");
+  expect(clipTagsPath("CLIPA")).toBe("/api/clips/CLIPA/tags");
+  expect(deliverPath("CLIPA", "phase")).toBe("/api/items/CLIPA/phase/deliver");
+  expect(itemsPath()).toBe("/api/items");
+  expect(itemsPath({ project: "West Study" })).toBe("/api/items?project=West+Study");
+  expect(itemsPath({ tag: "west" })).toBe("/api/items?tag=west");
+  expect(itemsPath({ project: "West Study", tag: "west" })).toBe(
+    "/api/items?project=West+Study&tag=west",
+  );
+  expect(clipsPath()).toBe("/api/clips");
+  expect(clipsPath({ tag: "west" })).toBe("/api/clips?tag=west");
 });
 
 test("registry paths match compose HTTP", () => {

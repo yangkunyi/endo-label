@@ -138,8 +138,8 @@ def create_app(
         }
 
     @app.get("/api/clips")
-    def get_clips() -> dict:
-        return {"clips": catalog.list_clips(cfg)}
+    def get_clips(project: str | None = None, tag: str | None = None) -> dict:
+        return {"clips": catalog.list_clips(cfg, project=project, tag=tag)}
 
     @app.get("/api/clips/{clip_id}")
     def get_clip(clip_id: str) -> dict:

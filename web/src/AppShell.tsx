@@ -24,6 +24,8 @@ export function AppShell() {
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-3 py-2">
         <nav className="flex items-center gap-3 text-sm">
           <Link to="/">Desk</Link>
+          {data.roles.admin ? <Link to="/admin/users">Users</Link> : null}
+          {data.roles.admin ? <Link to="/admin/projects">Projects</Link> : null}
           {data.capabilities?.annotate ? <Link to="/tasks">My Tasks</Link> : null}
           {data.roles.admin ? <Link to="/admin/vocab">Vocab</Link> : null}
           {data.roles.admin ? <Link to="/admin/assignments">Assignments</Link> : null}

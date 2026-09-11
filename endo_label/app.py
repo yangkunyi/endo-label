@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
+from endo_label.admin_router import router as admin_router
 from endo_label.auth import install_auth, router as auth_router
 from endo_label.config import Settings, load_settings
 from endo_label.coordination import apply_config_registrations
@@ -64,6 +65,7 @@ def create_app(
     app = create_mask_app(cfg, session_manager=session_manager)
     install_auth(app)
     app.include_router(auth_router)
+    app.include_router(admin_router)
     app.include_router(projects_router)
     app.include_router(registry_router)
     app.include_router(items_router)

@@ -17,6 +17,7 @@ from endo_label.coordination import (
     assign_reviewer,
     auto_assign_items,
     db_path,
+    deliver_item,
     items_payload,
     my_items,
     pass_item,
@@ -26,6 +27,7 @@ from endo_label.coordination import (
     rereview_item,
     submit_item,
     unassign_item,
+    undeliver_item,
 )
 
 router = APIRouter(tags=["items"])
@@ -86,8 +88,12 @@ def _mutate(fn):
 
 
 @router.get("/api/items", dependencies=_admin_only)
-def list_items(request: Request) -> dict:
-    return {"items": items_payload(_path(request))}
+def list_items(
+    request: Request,
+    project: str | None = None,
+    tag: str | None = None,
+) -> dict:
+    return {"items": items_payload(_path(request), project=project, tag=tag)}
 
 
 @router.get("/api/me/items")
@@ -174,6 +180,24 @@ def review_reject(clip_id: str, task_type: str, body: RejectBody, request: Reque
             task_type,
             body.note,
             account_id=_account_id(request),
+        )
+    )
+
+
+@router.post("/api/items/{clip_id}/{task_type}/deliver")
+def deliver(clip_id: str, task_type: str, request: Request) -> dict:
+    return _mutate(
+        lambda: deliver_item(
+            _path(request), clip_id, task_type, account_id=_account_id(request)
+        )
+    )
+
+
+@router.delete("/api/items/{clip_id}/{task_type}/deliver")
+def undeliver(clip_id: str, task_type: str, request: Request) -> dict:
+    return _mutate(
+        lambda: undeliver_item(
+            _path(request), clip_id, task_type, account_id=_account_id(request)
         )
     )
 

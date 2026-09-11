@@ -47,6 +47,10 @@ class UnknownAccount(Exception):
     """No Account with that username."""
 
 
+class UnknownClip(Exception):
+    """No registered Clip with that id."""
+
+
 class VersionConflict(Exception):
     """Clip version does not match."""
 
@@ -122,6 +126,7 @@ _SCHEMA_TABLES = frozenset(
         "vocab_registry",
         "project_vocab_enabled",
         "project_vocab_candidates",
+        "clip_tags",
     }
 )
 
@@ -215,6 +220,11 @@ def _create_schema(con: sqlite3.Connection) -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS vocab_registry_active_triplet
             ON vocab_registry(kind, instrument, verb, target)
             WHERE archived = 0 AND kind = 'triplet';
+        CREATE TABLE IF NOT EXISTS clip_tags (
+            clip_id TEXT NOT NULL REFERENCES clips(id) ON DELETE CASCADE,
+            tag TEXT NOT NULL,
+            PRIMARY KEY (clip_id, tag)
+        );
         """
     )
     _ensure_clip_version_column(con)
@@ -285,6 +295,31 @@ def create_account(
         con.close()
 
 
+def list_accounts(path: Path) -> list[Account]:
+    con = connect(path)
+    try:
+        rows = con.execute(
+            "SELECT * FROM users ORDER BY username COLLATE NOCASE"
+        ).fetchall()
+        return [_account_from_row(row) for row in rows]
+    finally:
+        con.close()
+
+
+def account_by_username(path: Path, username: str) -> Account:
+    con = connect(path)
+    try:
+        row = con.execute(
+            "SELECT * FROM users WHERE username=? COLLATE NOCASE",
+            (username.strip(),),
+        ).fetchone()
+        if row is None:
+            raise UnknownAccount(username)
+        return _account_from_row(row)
+    finally:
+        con.close()
+
+
 def _account_from_row(row: sqlite3.Row) -> Account:
     return Account(
         id=row["id"],
@@ -303,30 +338,38 @@ def set_roles(
     admin: bool,
     reviewer: bool,
     annotator: bool,
-) -> None:
+) -> Account:
     con = connect(path)
     try:
         cur = con.execute(
             "UPDATE users SET admin=?, reviewer=?, annotator=? WHERE username=? COLLATE NOCASE",
             (int(admin), int(reviewer), int(annotator), username),
         )
-        con.commit()
         if cur.rowcount != 1:
-            raise KeyError(username)
+            raise UnknownAccount(username)
+        con.commit()
+        row = con.execute(
+            "SELECT * FROM users WHERE username=? COLLATE NOCASE", (username,)
+        ).fetchone()
+        return _account_from_row(row)
     finally:
         con.close()
 
 
-def set_disabled(path: Path, username: str, disabled: bool) -> None:
+def set_disabled(path: Path, username: str, disabled: bool) -> Account:
     con = connect(path)
     try:
         cur = con.execute(
             "UPDATE users SET disabled=? WHERE username=? COLLATE NOCASE",
             (int(disabled), username),
         )
-        con.commit()
         if cur.rowcount != 1:
-            raise KeyError(username)
+            raise UnknownAccount(username)
+        con.commit()
+        row = con.execute(
+            "SELECT * FROM users WHERE username=? COLLATE NOCASE", (username,)
+        ).fetchone()
+        return _account_from_row(row)
     finally:
         con.close()
 
@@ -445,6 +488,26 @@ def get_or_create_project(path: Path, name: str, hospital: str = "") -> Project:
         return get_project_by_name(path, name)
 
 
+def update_project_hospital(path: Path, project_id: int, hospital: str) -> Project:
+    hospital = hospital.strip()
+    con = connect(path)
+    try:
+        cur = con.execute(
+            "UPDATE projects SET hospital=? WHERE id=?",
+            (hospital, project_id),
+        )
+        if cur.rowcount != 1:
+            raise ProjectNotFound(project_id)
+        con.commit()
+        row = con.execute(
+            "SELECT id, name, hospital FROM projects WHERE id=?",
+            (project_id,),
+        ).fetchone()
+        return _project_from_row(row)
+    finally:
+        con.close()
+
+
 def list_projects(path: Path) -> list[Project]:
     con = connect(path)
     try:
@@ -454,13 +517,80 @@ def list_projects(path: Path) -> list[Project]:
         con.close()
 
 
-def list_registered_clips(path: Path) -> list[RegisteredClip]:
+def list_registered_clips(
+    path: Path,
+    *,
+    project: str | None = None,
+    tag: str | None = None,
+) -> list[RegisteredClip]:
+    query = (
+        "SELECT c.id, c.project_id, c.kind, c.path FROM clips c "
+        "JOIN projects p ON p.id = c.project_id"
+    )
+    conditions: list[str] = []
+    params: list[object] = []
+    if project is not None:
+        conditions.append("p.name = ?")
+        params.append(project.strip())
+    if tag is not None:
+        conditions.append(
+            "EXISTS (SELECT 1 FROM clip_tags t WHERE t.clip_id = c.id AND t.tag = ?)"
+        )
+        params.append(tag.strip())
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY c.rowid"
     con = connect(path)
     try:
-        rows = con.execute(
-            "SELECT id, project_id, kind, path FROM clips ORDER BY rowid"
-        ).fetchall()
+        rows = con.execute(query, params).fetchall()
         return [_clip_from_row(row) for row in rows]
+    finally:
+        con.close()
+
+
+def set_clip_tags(path: Path, clip_id: str, tags: list[str]) -> list[str]:
+    normalized = list(dict.fromkeys(tag.strip() for tag in tags if tag.strip()))
+    con = connect(path)
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        if con.execute("SELECT id FROM clips WHERE id=?", (clip_id,)).fetchone() is None:
+            raise UnknownClip(clip_id)
+        con.execute("DELETE FROM clip_tags WHERE clip_id=?", (clip_id,))
+        for tag in normalized:
+            con.execute(
+                "INSERT OR IGNORE INTO clip_tags (clip_id, tag) VALUES (?, ?)",
+                (clip_id, tag),
+            )
+        con.commit()
+        return _clip_tags(con, clip_id)
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+
+def clip_tags(path: Path, clip_id: str) -> list[str]:
+    con = connect(path)
+    try:
+        return _clip_tags(con, clip_id)
+    finally:
+        con.close()
+
+
+def _clip_tags(con: sqlite3.Connection, clip_id: str) -> list[str]:
+    rows = con.execute(
+        "SELECT tag FROM clip_tags WHERE clip_id=? ORDER BY tag",
+        (clip_id,),
+    ).fetchall()
+    return [str(row["tag"]) for row in rows]
+
+
+def all_tags(path: Path) -> list[str]:
+    con = connect(path)
+    try:
+        rows = con.execute("SELECT DISTINCT tag FROM clip_tags ORDER BY tag").fetchall()
+        return [str(row["tag"]) for row in rows]
     finally:
         con.close()
 
@@ -490,6 +620,14 @@ def _valid_clip_id(clip_id: str) -> str:
     return clip_id
 
 
+def _write_tags(con: sqlite3.Connection, clip_id: str, tags) -> None:
+    for tag in dict.fromkeys(str(tag).strip() for tag in tags if str(tag).strip()):
+        con.execute(
+            "INSERT OR IGNORE INTO clip_tags (clip_id, tag) VALUES (?, ?)",
+            (clip_id, tag),
+        )
+
+
 def register_clip(
     path: Path,
     *,
@@ -497,6 +635,7 @@ def register_clip(
     clip_id: str,
     kind: str,
     media_path: Path,
+    tags: tuple[str, ...] | list[str] = (),
 ) -> RegisteredClip:
     clip_id = _valid_clip_id(clip_id)
     kind = kind.strip()
@@ -516,6 +655,9 @@ def register_clip(
                 and existing["path"] == stored
             ):
                 _ensure_assignment_rows(con, clip_id)
+                if tags:
+                    con.execute("DELETE FROM clip_tags WHERE clip_id=?", (clip_id,))
+                    _write_tags(con, clip_id, tags)
                 con.commit()
                 return _clip_from_row(existing)
             raise ClipExists(clip_id)
@@ -524,6 +666,7 @@ def register_clip(
             (clip_id, project_id, kind, stored),
         )
         _ensure_assignment_rows(con, clip_id)
+        _write_tags(con, clip_id, tags)
         con.commit()
         return RegisteredClip(
             id=clip_id, project_id=project_id, kind=kind, path=Path(stored)
@@ -545,6 +688,7 @@ def apply_config_registrations(settings: Settings) -> None:
                 clip_id=clip.id,
                 kind=clip.kind,
                 media_path=clip.path,
+                tags=clip.tags,
             )
 
 
@@ -561,16 +705,18 @@ SELECT
   reviewed.username AS reviewed_by,
   a.reviewed_at,
   a.delivered_at,
-  c.version
+  c.version,
+  p.name AS project
 FROM assignments a
 JOIN clips c ON c.id = a.clip_id
+JOIN projects p ON p.id = c.project_id
 LEFT JOIN users AS assignee ON assignee.id = a.assignee_id
 LEFT JOIN users AS reviewer ON reviewer.id = a.reviewer_id
 LEFT JOIN users AS reviewed ON reviewed.id = a.reviewed_by
 """
 
 
-def _item_dict(row: sqlite3.Row) -> dict:
+def _item_dict(row: sqlite3.Row, tags: list[str]) -> dict:
     return {
         "clip_id": row["clip_id"],
         "task_type": row["task_type"],
@@ -582,6 +728,8 @@ def _item_dict(row: sqlite3.Row) -> dict:
         "reviewed_at": row["reviewed_at"],
         "delivered_at": row["delivered_at"],
         "version": int(row["version"]),
+        "project": row["project"],
+        "tags": tags,
     }
 
 
@@ -592,7 +740,7 @@ def _fetch_item(con: sqlite3.Connection, clip_id: str, task_type: str) -> dict:
     ).fetchone()
     if row is None:
         raise AssignmentNotFound((clip_id, task_type))
-    return _item_dict(row)
+    return _item_dict(row, _clip_tags(con, clip_id))
 
 
 def _account_id(con: sqlite3.Connection, username: str) -> int:
@@ -605,17 +753,41 @@ def _account_id(con: sqlite3.Connection, username: str) -> int:
     return int(row["id"])
 
 
-def items_payload(path: Path) -> list[dict]:
+def items_payload(
+    path: Path,
+    *,
+    project: str | None = None,
+    tag: str | None = None,
+) -> list[dict]:
+    query = _ITEM_SELECT
+    conditions: list[str] = []
+    params: list[object] = []
+    if project is not None:
+        conditions.append("p.name = ?")
+        params.append(project.strip())
+    if tag is not None:
+        conditions.append(
+            "EXISTS (SELECT 1 FROM clip_tags t "
+            "WHERE t.clip_id = a.clip_id AND t.tag = ?)"
+        )
+        params.append(tag.strip())
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY a.clip_id, a.task_type"
     con = connect(path)
     try:
-        rows = con.execute(_ITEM_SELECT + " ORDER BY a.clip_id, a.task_type").fetchall()
-        return [_item_dict(row) for row in rows]
+        rows = con.execute(query, params).fetchall()
+        tags_by_clip = {
+            clip_id: _clip_tags(con, clip_id)
+            for clip_id in {str(row["clip_id"]) for row in rows}
+        }
+        return [_item_dict(row, tags_by_clip[str(row["clip_id"])]) for row in rows]
     finally:
         con.close()
 
 
 def _item_payload_for(con: sqlite3.Connection, row: sqlite3.Row, account: Account) -> dict:
-    payload = _item_dict(row)
+    payload = _item_dict(row, _clip_tags(con, str(row["clip_id"])))
     payload["capabilities"] = capabilities.item_capabilities(
         state=row["state"],
         assignee_id=row["assignee_id"],
@@ -868,6 +1040,43 @@ def rereview_item(path: Path, clip_id: str, task_type: str, *, account_id: int) 
         con.execute(
             "UPDATE assignments SET state='Submitted', reviewer_id=NULL, note=NULL, "
             "reviewed_by=NULL, reviewed_at=NULL WHERE clip_id=? AND task_type=?",
+            (clip_id, task_type),
+        )
+        return _fetch_item(con, clip_id, task_type)
+
+    return _with_assignment(path, clip_id, task_type, _do)
+
+
+def deliver_item(path: Path, clip_id: str, task_type: str, *, account_id: int) -> dict:
+    """Record downstream consumption: set delivered_at if not already set.
+
+    Delivery rides outside the state machine, so any state is deliverable and
+    the first timestamp is kept. Admin and reviewer Accounts may set it.
+    """
+
+    def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
+        admin, reviewer = _actor_flags(con, account_id)
+        if not (admin or reviewer):
+            raise TransitionForbidden()
+        con.execute(
+            "UPDATE assignments SET delivered_at=COALESCE(delivered_at, ?) "
+            "WHERE clip_id=? AND task_type=?",
+            (_now_iso(), clip_id, task_type),
+        )
+        return _fetch_item(con, clip_id, task_type)
+
+    return _with_assignment(path, clip_id, task_type, _do)
+
+
+def undeliver_item(path: Path, clip_id: str, task_type: str, *, account_id: int) -> dict:
+    """Clear the delivered marker. Admin and reviewer Accounts may clear it."""
+
+    def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
+        admin, reviewer = _actor_flags(con, account_id)
+        if not (admin or reviewer):
+            raise TransitionForbidden()
+        con.execute(
+            "UPDATE assignments SET delivered_at=NULL WHERE clip_id=? AND task_type=?",
             (clip_id, task_type),
         )
         return _fetch_item(con, clip_id, task_type)

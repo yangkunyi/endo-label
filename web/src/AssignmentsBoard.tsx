@@ -1,6 +1,16 @@
 import { useState, type FormEvent } from "react";
 import useSWR, { mutate } from "swr";
-import { getJson, sendJson } from "./api";
+import {
+  deliverPath,
+  getJson,
+  itemsPath,
+  projectsPath,
+  sendJson,
+  tagsPath,
+  type Me,
+  type ProjectsResponse,
+  type TagsResponse,
+} from "./api";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 
@@ -15,6 +25,8 @@ type AssignmentItem = {
   reviewed_at: string | null;
   delivered_at: string | null;
   version: number;
+  project: string;
+  tags: string[];
 };
 
 type ItemsResponse = { items: AssignmentItem[] };
@@ -29,10 +41,49 @@ const COLUMNS: { state: string; action: "assign" | "reassign" | "reviewer" | nul
   { state: "Done", action: null },
 ];
 
-const ITEMS_KEY = "/api/items";
-
 function itemKey(item: AssignmentItem): string {
   return `${item.clip_id}:${item.task_type}`;
+}
+
+function DeliveredMarker({
+  item,
+  canDeliver,
+  itemsKey,
+}: {
+  item: AssignmentItem;
+  canDeliver: boolean;
+  itemsKey: string;
+}) {
+  const [error, setError] = useState<string | null>(null);
+
+  async function toggle() {
+    setError(null);
+    try {
+      await sendJson(
+        deliverPath(item.clip_id, item.task_type),
+        item.delivered_at ? "DELETE" : "POST",
+      );
+      await mutate(itemsKey);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update delivery");
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {item.delivered_at ? (
+        <span className="text-xs text-muted-foreground">
+          Delivered {new Date(item.delivered_at).toLocaleString()}
+        </span>
+      ) : null}
+      {canDeliver ? (
+        <Button type="button" size="sm" variant="outline" onClick={toggle}>
+          {item.delivered_at ? "Clear delivery" : "Mark delivered"}
+        </Button>
+      ) : null}
+      {error ? <p role="alert">{error}</p> : null}
+    </div>
+  );
 }
 
 function ItemRow({
@@ -40,11 +91,15 @@ function ItemRow({
   action,
   selected,
   onSelect,
+  canDeliver,
+  itemsKey,
 }: {
   item: AssignmentItem;
   action: "assign" | "reassign" | "reviewer" | null;
   selected: boolean;
   onSelect: (key: string, checked: boolean) => void;
+  canDeliver: boolean;
+  itemsKey: string;
 }) {
   const [username, setUsername] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +114,7 @@ function ItemRow({
         [reviewerAction ? "reviewer" : "assignee"]: username,
       });
       setUsername("");
-      await mutate(ITEMS_KEY);
+      await mutate(itemsKey);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update Assignment");
     }
@@ -87,10 +142,15 @@ function ItemRow({
           <span className="text-muted-foreground"> · review: {item.reviewer}</span>
         ) : null}
       </div>
+      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+        <span>{item.project}</span>
+        {item.tags.length ? <span>{item.tags.join(", ")}</span> : null}
+      </div>
       {item.reviewed_by ? (
         <p className="text-xs text-muted-foreground">Reviewed by {item.reviewed_by}</p>
       ) : null}
       {item.note ? <p className="text-xs text-muted-foreground">Note: {item.note}</p> : null}
+      <DeliveredMarker item={item} canDeliver={canDeliver} itemsKey={itemsKey} />
       {action ? (
         <form className="flex gap-2" onSubmit={onSubmit}>
           <Input
@@ -113,10 +173,12 @@ function AutoAssign({
   unassigned,
   selected,
   clear,
+  itemsKey,
 }: {
   unassigned: AssignmentItem[];
   selected: Set<string>;
   clear: () => void;
+  itemsKey: string;
 }) {
   const [assignees, setAssignees] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -142,7 +204,7 @@ function AutoAssign({
       });
       setNotice(`Assigned ${result.assigned.length} item(s)`);
       clear();
-      await mutate(ITEMS_KEY);
+      await mutate(itemsKey);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not auto-assign");
     }
@@ -168,8 +230,15 @@ function AutoAssign({
 }
 
 export function AssignmentsBoard() {
-  const { data, error } = useSWR(ITEMS_KEY, getJson<ItemsResponse>);
+  const [project, setProject] = useState("");
+  const [tag, setTag] = useState("");
+  const itemsKey = itemsPath({ project, tag });
+  const { data, error } = useSWR(itemsKey, getJson<ItemsResponse>);
+  const { data: projects } = useSWR(projectsPath(), getJson<ProjectsResponse>);
+  const { data: tags } = useSWR(tagsPath(), getJson<TagsResponse>);
+  const { data: me } = useSWR("/api/me", getJson<Me>);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const canDeliver = Boolean(me?.roles.admin || me?.roles.reviewer);
 
   if (!data && !error) {
     return <p className="p-6">Loading…</p>;
@@ -200,6 +269,40 @@ export function AssignmentsBoard() {
   return (
     <main className="h-full overflow-auto p-6">
       <h1 className="text-xl font-semibold">Assignments</h1>
+      <div className="mt-4 flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Project
+          <select
+            aria-label="Filter by Project"
+            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+            value={project}
+            onChange={(event) => setProject(event.target.value)}
+          >
+            <option value="">All Projects</option>
+            {projects?.projects.map((row) => (
+              <option key={row.id} value={row.name}>
+                {row.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Clip tag
+          <select
+            aria-label="Filter by Clip tag"
+            className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+            value={tag}
+            onChange={(event) => setTag(event.target.value)}
+          >
+            <option value="">All tags</option>
+            {tags?.tags.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       <div className="mt-4 grid grid-cols-5 gap-4">
         {COLUMNS.map((column) => {
           const items = data.items.filter((item) => item.state === column.state);
@@ -216,6 +319,8 @@ export function AssignmentsBoard() {
                     action={column.action}
                     selected={selected.has(itemKey(item))}
                     onSelect={onSelect}
+                    canDeliver={canDeliver}
+                    itemsKey={itemsKey}
                   />
                 ))}
               </ul>
@@ -227,6 +332,7 @@ export function AssignmentsBoard() {
         unassigned={unassigned}
         selected={selected}
         clear={() => setSelected(new Set())}
+        itemsKey={itemsKey}
       />
     </main>
   );
