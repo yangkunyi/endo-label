@@ -130,6 +130,32 @@ export type Vocab = {
   triples: VocabTriple[];
 };
 
+/** What the current Account may do with this Clip's Project word list. */
+export type VocabPermissions = {
+  vocab_edit: boolean;
+  registry_write: boolean;
+  candidate_create: boolean;
+};
+
+/** One picker row as the scoped desk vocab returns it. */
+export type VocabPickerItem = {
+  id: number;
+  kind: RegistryKind;
+  name: string;
+  instrument: string;
+  verb: string;
+  target: string;
+  candidate: boolean;
+};
+
+/** The desk picker for one Clip: its Project's enabled words plus candidates. */
+export type ScopedVocab = Vocab & {
+  clip_id?: string;
+  project_id?: number;
+  permissions?: VocabPermissions;
+  items?: VocabPickerItem[];
+};
+
 export type RegistryKind = "phase" | "class" | "triplet";
 
 export type RegistryItem = {
@@ -341,8 +367,16 @@ export function tripletRowPath(
   return `/api/triplet/${encodeURIComponent(clipId)}/frames/${frameIndex}/${tripletId}`;
 }
 
-export function vocabPath(): string {
-  return "/api/vocab";
+export function vocabPath(clipId?: string): string {
+  if (!clipId) {
+    return "/api/vocab";
+  }
+  const query = new URLSearchParams({ clip_id: clipId });
+  return `/api/vocab?${query.toString()}`;
+}
+
+export function vocabCandidatePath(): string {
+  return "/api/vocab/candidates";
 }
 
 export function registryPath(): string {

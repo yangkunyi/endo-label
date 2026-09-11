@@ -225,17 +225,92 @@ def triple_cells(path: Path) -> dict[int, tuple[str, str, str]]:
     }
 
 
-def desk_vocab(path: Path) -> dict:
-    items = [item for item in list_items(path) if not item.archived]
+def candidates_for_project(path: Path, project_id: int) -> list[Candidate]:
+    con = connect(path)
+    try:
+        _require_project(con, project_id)
+        rows = con.execute(
+            "SELECT * FROM project_vocab_candidates WHERE project_id=? ORDER BY id",
+            (project_id,),
+        ).fetchall()
+        return [_candidate_from_row(row) for row in rows]
+    finally:
+        con.close()
+
+
+def _identity(kind: str, *, name: str, instrument: str, verb: str, target: str):
+    if kind == "triplet":
+        return ("triplet", instrument, verb, target)
+    return (kind, name, "", "")
+
+
+def _unique(rows: list[tuple]) -> list[tuple]:
+    return list(dict.fromkeys(rows))
+
+
+def _merged_identities(
+    items: list[RegistryItem], candidates: list[Candidate]
+) -> list[tuple]:
+    identities = [
+        _identity(
+            item.kind,
+            name=item.name,
+            instrument=item.instrument,
+            verb=item.verb,
+            target=item.target,
+        )
+        for item in items
+    ]
+    identities += [
+        _identity(
+            candidate.kind,
+            name=candidate.name,
+            instrument=candidate.instrument,
+            verb=candidate.verb,
+            target=candidate.target,
+        )
+        for candidate in candidates
+    ]
+    return _unique(identities)
+
+
+def _vocab_lists(identities: list[tuple]) -> dict:
     return {
-        "phases": [item.name for item in items if item.kind == "phase"],
-        "class_tags": [item.name for item in items if item.kind == "class"],
+        "phases": [row[1] for row in identities if row[0] == "phase"],
+        "class_tags": [row[1] for row in identities if row[0] == "class"],
         "triples": [
-            {"instrument": item.instrument, "verb": item.verb, "target": item.target}
-            for item in items
-            if item.kind == "triplet"
+            {"instrument": row[1], "verb": row[2], "target": row[3]}
+            for row in identities
+            if row[0] == "triplet"
         ],
     }
+
+
+def desk_vocab(path: Path, project_id: int | None = None) -> dict:
+    """The picker set. Without a Project: the legacy desk-wide registry.
+
+    With a Project: its enabled (non-archived) registry words plus its
+    project-local candidates, so the labeler can use a word they just proposed
+    before an admin promotes it.
+    """
+    if project_id is None:
+        items = [item for item in list_items(path) if not item.archived]
+        candidates: list[Candidate] = []
+    else:
+        items = visible_items(path, project_id)
+        candidates = candidates_for_project(path, project_id)
+    return _vocab_lists(_merged_identities(items, candidates))
+
+
+def project_picker(path: Path, project_id: int) -> dict:
+    """`desk_vocab` plus the picker rows, so the desk can act per identity."""
+    items = visible_items(path, project_id)
+    candidates = candidates_for_project(path, project_id)
+    picker = _vocab_lists(_merged_identities(items, candidates))
+    picker["items"] = [
+        {**item.as_dict(), "candidate": False} for item in items
+    ] + [{**candidate.as_dict(), "candidate": True} for candidate in candidates]
+    return picker
 
 
 def delete_item(path: Path, vocab_id: int) -> None:

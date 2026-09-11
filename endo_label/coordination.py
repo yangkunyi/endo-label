@@ -548,6 +548,20 @@ def list_registered_clips(
         con.close()
 
 
+def clip_project_id(path: Path, clip_id: str) -> int:
+    """The Project a registered Clip belongs to (exactly one)."""
+    con = connect(path)
+    try:
+        row = con.execute(
+            "SELECT project_id FROM clips WHERE id=?", (clip_id,)
+        ).fetchone()
+        if row is None:
+            raise UnknownClip(clip_id)
+        return int(row["project_id"])
+    finally:
+        con.close()
+
+
 def set_clip_tags(path: Path, clip_id: str, tags: list[str]) -> list[str]:
     normalized = list(dict.fromkeys(tag.strip() for tag in tags if tag.strip()))
     con = connect(path)
