@@ -9,7 +9,6 @@ import {
   classFramePath,
   classSpanPath,
   frameClassTags,
-  clipMediaPath,
   framePhaseName,
   frameTripletRows,
   getJson,
@@ -51,11 +50,11 @@ import {
 } from "./api";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
-import { VideoPlayer, PlayerTransport } from "./components/ui/video-player";
 import { ClipRail } from "./desk/ClipRail";
 import { DeskItemActions } from "./desk/DeskItemActions";
 import { isEditableTarget } from "./desk/keyboard";
-import { MaskPanel, MaskSessionProvider, PlayerMaskOverlay } from "./desk/MaskPanel";
+import { MaskPanel, MaskSessionProvider } from "./desk/MaskPanel";
+import { PlaybackProvider, PlayerPanel, TransportRow, usePlayback } from "./desk/PlayerPanel";
 import { ResizeHandle } from "./desk/ResizeHandle";
 import { brushOfKind, laneIsVisible, laneVisibilityKey, useDeskStore, type BrushIdentity, type EditorKind } from "./deskStore";
 import { libraryRowSemanticStyle, nowEmptyText } from "./editorCards";
@@ -321,7 +320,6 @@ export function ClipDesk() {
   const [taskFocus, setTaskFocus] = useState<EditorKind>("class");
   const storedIndex = useDeskStore((s) => s.frameIndex);
   const openClip = useDeskStore((s) => s.openClip);
-  const scrub = useDeskStore((s) => s.scrub);
   const layout = useDeskStore((s) => s.layout);
   const setLayout = useDeskStore((s) => s.setLayout);
   const spanStart = useDeskStore((s) => s.spanStart);
@@ -347,14 +345,7 @@ export function ClipDesk() {
   };
 
   const spanBusy = useRef(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const playerSectionRef = useRef<HTMLElement>(null);
-  const [playing, setPlaying] = useState(false);
-  const [transportTime, setTransportTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [rate, setRate] = useState(1);
-  const [muted, setMuted] = useState(false);
-  const [volume, setVolume] = useState(1);
+
 
   const { data: health } = useSWR(healthPath(), getJson<HealthResponse>, {
     refreshInterval: 5000,
@@ -372,57 +363,7 @@ export function ClipDesk() {
   const frameMasks = frameAnn?.masks ?? [];
 
 
-  const togglePlayback = useCallback(() => {
-    const el = videoRef.current;
-    if (!el) return;
-    if (el.paused) {
-      void el.play().catch(() => undefined);
-    } else {
-      el.pause();
-    }
-  }, []);
 
-  const pausePlayback = useCallback(() => {
-    videoRef.current?.pause();
-  }, []);
-
-  const seekPlayhead = useCallback((index: number) => {
-    scrub(index);
-    const el = videoRef.current;
-    if (el) {
-      const fps = data?.fps && data.fps > 0 ? data.fps : 25;
-      el.currentTime = index / fps;
-    }
-  }, [data, scrub]);
-
-  const changeRate = useCallback((value: number) => {
-    const el = videoRef.current;
-    if (el) {
-      el.playbackRate = value;
-    }
-  }, []);
-
-  const toggleMute = useCallback(() => {
-    const el = videoRef.current;
-    if (el) {
-      el.muted = !el.muted;
-    }
-  }, []);
-
-  const changeVolume = useCallback((value: number) => {
-    const el = videoRef.current;
-    if (el) {
-      el.volume = value;
-    }
-  }, []);
-
-  const toggleFullscreen = useCallback(() => {
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => undefined);
-    } else {
-      void playerSectionRef.current?.requestFullscreen().catch(() => undefined);
-    }
-  }, []);
 
 
   const markedFrom = spanStart && spanStart.clipId === clipId ? spanStart.frameIndex : null;
@@ -603,11 +544,6 @@ export function ClipDesk() {
       if (isEditableTarget(event.target)) {
         return;
       }
-      if (event.key === " " && clipId && data && data.frame_count > 0) {
-        event.preventDefault();
-        togglePlayback();
-        return;
-      }
       if ((event.key === "Backspace" || event.key === "Delete") && barSelection.length > 0) {
         event.preventDefault();
         void deleteSelectedBars();
@@ -629,7 +565,7 @@ export function ClipDesk() {
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [applyRange, barSelection.length, clipId, data, deleteSelectedBars, frameIndex, hasBrush, setSpanStart, togglePlayback]);
+  }, [applyRange, barSelection.length, clipId, data, deleteSelectedBars, frameIndex, hasBrush, setSpanStart]);
 
   useLayoutEffect(() => {
     if (data) {
@@ -645,6 +581,7 @@ export function ClipDesk() {
         <h1 className="text-sm font-semibold">{data?.id ?? "Workbench"}</h1>
         {data ? <DeskItemActions clipId={data.id} taskType={taskFocus} /> : null}
       </header>
+      <PlaybackProvider clip={data} frameIndex={frameIndex}>
       <MaskSessionProvider
         clipId={clipId}
         clip={data}
@@ -665,47 +602,7 @@ export function ClipDesk() {
               value={layout.clipRailWidth}
               onResize={(value) => setLayout({ clipRailWidth: value })}
             />
-            <section ref={playerSectionRef} aria-label="Player" className="relative flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-t-xl bg-black">
-              <div className="flex min-h-0 flex-1 items-center justify-center">
-                {error ? (
-                  <div className="p-6 text-center"><h2 className="mb-2 text-lg font-semibold">{clipId}</h2><p>{error instanceof Error ? error.message : "Clip not found"}</p></div>
-                ) : isLoading ? (
-                  <p>Loading Clip…</p>
-                ) : data?.frame_count ? (
-                  <VideoPlayer
-                    src={clipMediaPath(data.id)}
-                    videoRef={videoRef}
-                    frameLabel={`Frame ${frameIndex}`}
-                    onLoadedMetadata={(el) => {
-                      setDuration(el.duration);
-                      const fps = data.fps > 0 ? data.fps : 25;
-                      el.currentTime = frameIndex / fps;
-                    }}
-                    onTimeUpdate={(currentTime) => {
-                      setTransportTime(currentTime);
-                      const fps = data.fps > 0 ? data.fps : 25;
-                      const last = Math.max(0, data.frame_count - 1);
-                      const index = Math.min(last, Math.max(0, Math.round(currentTime * fps)));
-                      if (index !== frameIndex) {
-                        scrub(index);
-                      }
-                    }}
-                    onPlayChange={setPlaying}
-                    onRateChange={setRate}
-                    onVolumeChange={(nextMuted, nextVolume) => {
-                      setMuted(nextMuted);
-                      setVolume(nextVolume);
-                    }}
-                  >
-                    <PlayerMaskOverlay videoRef={videoRef} onPause={pausePlayback} />
-                  </VideoPlayer>
-                ) : data ? (
-                  <p>This Clip has no Frames.</p>
-                ) : (
-                  <div className="p-6 text-center"><h2 className="mb-2 text-xl font-semibold">Choose a Clip</h2><p className="text-muted-foreground">Select a Clip from the left rail to begin labeling.</p></div>
-                )}
-              </div>
-            </section>
+            <PlayerPanel clipId={clipId} clip={data} error={error} isLoading={isLoading} />
           </div>
           {data?.frame_count ? (
             <TimelineBand
@@ -716,22 +613,7 @@ export function ClipDesk() {
               previewRange={previewRange}
               brushKeys={focusedBrush.map(brushColorKey)}
               barSelection={barSelection}
-              transport={
-                <PlayerTransport
-                  playing={playing}
-                  currentTime={transportTime}
-                  duration={duration}
-                  rate={rate}
-                  muted={muted}
-                  volume={volume}
-                  onTogglePlay={togglePlayback}
-                  onSetRate={changeRate}
-                  onToggleMute={toggleMute}
-                  onSetVolume={changeVolume}
-                  onToggleFullscreen={toggleFullscreen}
-                />
-              }
-              onSeek={seekPlayhead}
+              transport={<TransportRow />}
               onToggleBar={(bar) =>
                 setBarSelection((prev) =>
                   prev.some((item) => sameLaneBar(item, bar))
@@ -835,6 +717,7 @@ export function ClipDesk() {
         </div>
       </div>
       </MaskSessionProvider>
+      </PlaybackProvider>
       <ResizeHandle
         label="Resize Frame controls"
         direction="vertical"
@@ -917,7 +800,6 @@ function TimelineBand({
   brushKeys,
   barSelection,
   transport,
-  onSeek,
   onToggleBar,
   onClearBars,
   onPaintLane,
@@ -931,12 +813,12 @@ function TimelineBand({
   brushKeys: string[];
   barSelection: LaneBar[];
   transport: ReactNode;
-  onSeek: (index: number) => void;
   onToggleBar: (bar: LaneBar) => void;
   onClearBars: () => void;
   onPaintLane: (laneKey: string, from: number, to: number) => void;
   onTrimBar: (laneKey: string, oldStart: number, oldEnd: number, newStart: number, newEnd: number) => void;
 }) {
+  const { seek: onSeek } = usePlayback();
   const trackRef = useRef<HTMLDivElement>(null);
   const laneTrackRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
