@@ -29,6 +29,21 @@ def account_capabilities(*, admin: bool, reviewer: bool, annotator: bool) -> dic
     return {"admin": admin, "review": reviewer, "annotate": annotator}
 
 
+def may_create_candidate(*, admin: bool, reviewer: bool, annotator: bool) -> bool:
+    """Any Account that labels or curates may propose a Project-local word."""
+    return admin or reviewer or annotator
+
+
+def may_edit_project_vocab(*, admin: bool, reviewer: bool) -> bool:
+    """The Project word list (enable/disable, candidate add/edit) is reviewer+."""
+    return admin or reviewer
+
+
+def may_write_registry(*, admin: bool) -> bool:
+    """Global identity (add/rename/archive/promote) stays admin-only."""
+    return admin
+
+
 def item_capabilities(
     *,
     state: str,

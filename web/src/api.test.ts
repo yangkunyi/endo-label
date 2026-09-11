@@ -55,8 +55,10 @@ import {
   registryRenamePath,
   registryRestorePath,
   registryVisiblePath,
+  vocabCandidatePath,
   vocabDeletePath,
   vocabListPath,
+  vocabPath,
   vocabRenamePath,
   vocabTripleDeletePath,
   vocabTripleRenamePath,
@@ -166,6 +168,9 @@ test("phase and vocab paths match compose HTTP", () => {
   expect(phaseSpanPath("CLIPA")).toBe("/api/phase/CLIPA/span");
   expect(phaseFramePath("CLIPA", 0)).toBe("/api/phase/CLIPA/frames/0");
   expect(vocabListPath("phases")).toBe("/api/vocab/phases");
+  expect(vocabPath()).toBe("/api/vocab");
+  expect(vocabPath("CLIPA")).toBe("/api/vocab?clip_id=CLIPA");
+  expect(vocabCandidatePath()).toBe("/api/vocab/candidates");
   expect(vocabRenamePath("phases")).toBe("/api/vocab/phases/rename");
   expect(vocabRenamePath("class_tags")).toBe("/api/vocab/class_tags/rename");
   expect(vocabDeletePath("phases", "Preparation")).toBe("/api/vocab/phases/Preparation");

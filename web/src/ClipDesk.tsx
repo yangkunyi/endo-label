@@ -25,6 +25,7 @@ import {
   phaseClipPath,
   phaseFramePath,
   phaseSpanPath,
+  registryDisablePath,
   sendJson,
   sessionFrameMaskPath,
   sessionPath,
@@ -37,6 +38,7 @@ import {
   tripletClipPath,
   tripletFramePath,
   tripletSpanPath,
+  vocabCandidatePath,
   vocabDeletePath,
   vocabListPath,
   vocabPath,
@@ -54,6 +56,8 @@ import {
   type Me,
   type MyItem,
   type PhaseDoc,
+  type ScopedVocab,
+  type VocabPickerItem,
   type PredictResult,
   type PropagateDirection,
   type PropagateJobPublic,
@@ -115,6 +119,35 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 // The Job fills one Frame per status poll, so this is the fill rate too.
 const JOB_POLL_MS = 400;
+
+/** What the desk may offer for the focused Clip's Project word list. */
+type VocabControls = {
+  canRegistryWrite: boolean;
+  canEditVocab: boolean;
+  canCreateCandidate: boolean;
+  projectId: number | null;
+  items: VocabPickerItem[];
+};
+
+function pickerItemFor(
+  items: VocabPickerItem[],
+  kind: EditorKind,
+  target: { name?: string; instrument?: string; verb?: string; target?: string },
+): VocabPickerItem | undefined {
+  return items.find((row) => {
+    if (row.candidate || row.kind !== kind) {
+      return false;
+    }
+    if (kind === "triplet") {
+      return (
+        row.instrument === target.instrument &&
+        row.verb === target.verb &&
+        row.target === target.target
+      );
+    }
+    return row.name === target.name;
+  });
+}
 
 function brushLabel(identity: BrushIdentity): string {
   if (identity.kind === "class") {
@@ -297,7 +330,7 @@ async function ensureVocabName(
   listName: string,
   raw: string,
   names: string[],
-  mutateVocab: KeyedMutator<Vocab>,
+  mutateVocab: KeyedMutator<ScopedVocab>,
 ): Promise<string | null> {
   const name = raw.trim();
   if (!name) {
@@ -306,8 +339,10 @@ async function ensureVocabName(
   if (names.includes(name)) {
     return name;
   }
-  const next = await sendJson<Vocab>(vocabListPath(listName), "POST", { name });
-  await mutateVocab(next, { revalidate: false });
+  await sendJson<unknown>(vocabListPath(listName), "POST", { name });
+  // The registry write answers the legacy desk-wide set; the desk shows the
+  // Clip's Project set, so revalidate the scoped key instead of injecting it.
+  await mutateVocab();
   return name;
 }
 
@@ -447,7 +482,10 @@ export function ClipDesk() {
     clipId ? tripletClipPath(clipId) : null,
     getJson<TripletDoc>,
   );
-  const { data: vocab, mutate: mutateVocab } = useSWR(vocabPath(), getJson<Vocab>);
+  const { data: vocab, mutate: mutateVocab } = useSWR(
+    clipId ? vocabPath(clipId) : null,
+    getJson<ScopedVocab>,
+  );
   const { data: annotation, mutate: mutateAnnotation } = useSWR(
     clipId ? annotationSummaryPath(clipId) : null,
     getJsonAllow404<AnnotationSummary>,
@@ -472,6 +510,14 @@ export function ClipDesk() {
     setBarScope(selectionScope);
     setBarSelection([]);
   }
+  const vocabControls: VocabControls = {
+    canRegistryWrite: vocab?.permissions?.registry_write ?? false,
+    canEditVocab: vocab?.permissions?.vocab_edit ?? false,
+    canCreateCandidate: vocab?.permissions?.candidate_create ?? false,
+    projectId: vocab?.project_id ?? null,
+    items: vocab?.items ?? [],
+  };
+
   const spanBusy = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerSectionRef = useRef<HTMLElement>(null);
@@ -1417,6 +1463,7 @@ export function ClipDesk() {
                   mutateVocab={mutateVocab}
                   laneVisible={laneVisibleFor}
                   onToggleLane={toggleLaneFor}
+                  controls={vocabControls}
                 />
               ) : taskFocus === "triplet" ? (
                 <TripletEditor
@@ -1430,6 +1477,7 @@ export function ClipDesk() {
                   mutateVocab={mutateVocab}
                   laneVisible={laneVisibleFor}
                   onToggleLane={toggleLaneFor}
+                  controls={vocabControls}
                 />
               ) : (
                 <PhaseEditor
@@ -1443,6 +1491,7 @@ export function ClipDesk() {
                   mutateVocab={mutateVocab}
                   laneVisible={laneVisibleFor}
                   onToggleLane={toggleLaneFor}
+                  controls={vocabControls}
                 />
               )
             ) : (
@@ -2222,6 +2271,8 @@ function LibraryList({
   deleteLabel,
   mutateVocab,
   onAfterChange,
+  controls,
+  onRetract,
   label = "Library",
   colorNames = true,
 }: {
@@ -2237,8 +2288,10 @@ function LibraryList({
   listName: string;
   renameLabel: string;
   deleteLabel: (name: string) => string;
-  mutateVocab: KeyedMutator<Vocab>;
+  mutateVocab: KeyedMutator<ScopedVocab>;
   onAfterChange?: () => Promise<void>;
+  controls: VocabControls;
+  onRetract?: (name: string) => void;
   label?: string;
   colorNames?: boolean;
 }) {
@@ -2335,7 +2388,11 @@ function LibraryList({
                   aria-pressed={on}
                   data-label-color={colorNames ? labelColor(name) : undefined}
                   onClick={() => schedulePick(name)}
-                  onDoubleClick={() => startRename(name)}
+                  onDoubleClick={() => {
+                    if (controls.canRegistryWrite) {
+                      startRename(name);
+                    }
+                  }}
                 >
                   {colorNames ? (
                     <span
@@ -2379,28 +2436,52 @@ function LibraryList({
               >
                 <Brush size={14} />
               </Button>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                aria-label={deleteLabel(name)}
-                className="opacity-30 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                onClick={() => {
-                  if (!window.confirm(`${deleteLabel(name)} from every Clip?`)) {
-                    return;
-                  }
-                  void run(async () => {
-                    const next = await trashBrush(
-                      brushIdentity(name),
-                      sendJson<Vocab>(vocabDeletePath(listName, name), "DELETE"),
-                    );
-                    await mutateVocab(next, { revalidate: false });
+              {controls.canRegistryWrite ? (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label={deleteLabel(name)}
+                  className="opacity-30 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => {
+                    if (!window.confirm(`${deleteLabel(name)} from every Clip?`)) {
+                      return;
+                    }
+                    void run(async () => {
+                      await trashBrush(
+                        brushIdentity(name),
+                        sendJson<unknown>(vocabDeletePath(listName, name), "DELETE"),
+                      );
+                      await mutateVocab();
+                      await onAfterChange?.();
+                    });
+                  }}
+                >
+                  <Trash2 size={14} />
+                </Button>
+              ) : controls.canEditVocab &&
+                onRetract &&
+                controls.items.some(
+                  (row) =>
+                    !row.candidate &&
+                    row.kind === (listName === "phases" ? "phase" : "class") &&
+                    row.name === name,
+                ) ? (
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label={`Remove ${name} from this Project`}
+                  title="Remove from this Project"
+                  className="opacity-30 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => void run(async () => {
+                    await onRetract(name);
                     await onAfterChange?.();
-                  });
-                }}
-              >
-                <Trash2 size={14} />
-              </Button>
+                  })}
+                >
+                  <Trash2 size={14} />
+                </Button>
+              ) : null}
             </li>
           );
         })}
@@ -2412,14 +2493,20 @@ function LibraryList({
 
 function AddVocabRow({
   listName,
+  kind,
+  clipId,
   names,
   mutateVocab,
   ariaLabel,
+  controls,
 }: {
   listName: string;
+  kind: EditorKind;
+  clipId: string;
   names: string[];
-  mutateVocab: KeyedMutator<Vocab>;
+  mutateVocab: KeyedMutator<ScopedVocab>;
   ariaLabel: string;
+  controls: VocabControls;
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -2431,11 +2518,24 @@ function AddVocabRow({
     }
     setError(null);
     try {
-      await ensureVocabName(listName, raw, names, mutateVocab);
+      if (controls.canRegistryWrite) {
+        await ensureVocabName(listName, raw, names, mutateVocab);
+      } else if (controls.canCreateCandidate) {
+        if (!names.includes(raw)) {
+          await sendJson(vocabCandidatePath(), "POST", { clip_id: clipId, kind, name: raw });
+          await mutateVocab();
+        }
+      } else {
+        return;
+      }
       setDraft("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Write failed");
     }
+  }
+
+  if (!controls.canRegistryWrite && !controls.canCreateCandidate) {
+    return null;
   }
 
   return (
@@ -2507,6 +2607,7 @@ function ClassEditor({
   mutateVocab,
   laneVisible,
   onToggleLane,
+  controls,
 }: {
   clipId: string;
   frameIndex: number;
@@ -2515,9 +2616,10 @@ function ClassEditor({
   classTags: string[];
   version: number | undefined;
   mutateClass: KeyedMutator<ClassDoc>;
-  mutateVocab: KeyedMutator<Vocab>;
+  mutateVocab: KeyedMutator<ScopedVocab>;
   laneVisible: (name: string) => boolean;
   onToggleLane: (name: string) => void;
+  controls: VocabControls;
 }) {
   const [error, setError] = useState<string | null>(null);
   const current = frameClassTags(classFrames, frameIndex);
@@ -2540,6 +2642,16 @@ function ClassEditor({
       }
       setError(saveErrorMessage(err));
     }
+  }
+
+  async function retractClass(name: string) {
+    const item = pickerItemFor(controls.items, "class", { name });
+    if (!item || controls.projectId === null) {
+      return;
+    }
+    await sendJson(registryDisablePath(item.id), "POST", { project_id: controls.projectId });
+    await mutateVocab();
+    await mutateClass();
   }
 
   return (
@@ -2574,6 +2686,8 @@ function ClassEditor({
           renameLabel="Rename class tag"
           deleteLabel={(name) => `Delete class tag ${name}`}
           mutateVocab={mutateVocab}
+          controls={controls}
+          onRetract={(name) => retractClass(name)}
           onAfterChange={async () => {
             await mutateClass();
           }}
@@ -2582,7 +2696,15 @@ function ClassEditor({
           }}
           onToggleBrush={(name) => toggleBrush({ kind: "class", name })}
         />
-        <AddVocabRow listName="class_tags" names={classTags} mutateVocab={mutateVocab} ariaLabel="Add class name" />
+        <AddVocabRow
+          listName="class_tags"
+          kind="class"
+          clipId={clipId}
+          names={classTags}
+          mutateVocab={mutateVocab}
+          ariaLabel="Add class name"
+          controls={controls}
+        />
       </EditorCard>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </section>
@@ -2600,6 +2722,7 @@ function PhaseEditor({
   mutateVocab,
   laneVisible,
   onToggleLane,
+  controls,
 }: {
   clipId: string;
   frameIndex: number;
@@ -2608,9 +2731,10 @@ function PhaseEditor({
   phases: string[];
   version: number | undefined;
   mutatePhase: KeyedMutator<PhaseDoc>;
-  mutateVocab: KeyedMutator<Vocab>;
+  mutateVocab: KeyedMutator<ScopedVocab>;
   laneVisible: (name: string) => boolean;
   onToggleLane: (name: string) => void;
+  controls: VocabControls;
 }) {
   const [error, setError] = useState<string | null>(null);
   const current = framePhaseName(phaseFrames, frameIndex);
@@ -2633,6 +2757,16 @@ function PhaseEditor({
       }
       setError(saveErrorMessage(err));
     }
+  }
+
+  async function retractPhase(name: string) {
+    const item = pickerItemFor(controls.items, "phase", { name });
+    if (!item || controls.projectId === null) {
+      return;
+    }
+    await sendJson(registryDisablePath(item.id), "POST", { project_id: controls.projectId });
+    await mutateVocab();
+    await mutatePhase();
   }
 
   return (
@@ -2671,6 +2805,8 @@ function PhaseEditor({
           renameLabel="Rename phase"
           deleteLabel={(name) => `Delete phase ${name}`}
           mutateVocab={mutateVocab}
+          controls={controls}
+          onRetract={(name) => retractPhase(name)}
           onAfterChange={async () => {
             await mutatePhase();
           }}
@@ -2679,7 +2815,15 @@ function PhaseEditor({
           }}
           onToggleBrush={(name) => toggleBrush({ kind: "phase", name })}
         />
-        <AddVocabRow listName="phases" names={phases} mutateVocab={mutateVocab} ariaLabel="Add phase name" />
+        <AddVocabRow
+          listName="phases"
+          kind="phase"
+          clipId={clipId}
+          names={phases}
+          mutateVocab={mutateVocab}
+          ariaLabel="Add phase name"
+          controls={controls}
+        />
       </EditorCard>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </section>
@@ -2705,6 +2849,7 @@ function TripletEditor({
   mutateVocab,
   laneVisible,
   onToggleLane,
+  controls,
 }: {
   clipId: string;
   frameIndex: number;
@@ -2713,9 +2858,10 @@ function TripletEditor({
   triples: VocabTriple[];
   version: number | undefined;
   mutateTriplet: KeyedMutator<TripletDoc>;
-  mutateVocab: KeyedMutator<Vocab>;
+  mutateVocab: KeyedMutator<ScopedVocab>;
   laneVisible: (key: string) => boolean;
   onToggleLane: (key: string) => void;
+  controls: VocabControls;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState({ instrument: "", verb: "", target: "" });
@@ -2775,8 +2921,20 @@ function TripletEditor({
     }
     setError(null);
     try {
-      const next = await sendJson<Vocab>(vocabTriplesPath(), "POST", { instrument, verb, target });
-      await mutateVocab(next, { revalidate: false });
+      if (controls.canRegistryWrite) {
+        await sendJson<unknown>(vocabTriplesPath(), "POST", { instrument, verb, target });
+      } else if (controls.canCreateCandidate) {
+        await sendJson<unknown>(vocabCandidatePath(), "POST", {
+          clip_id: clipId,
+          kind: "triplet",
+          instrument,
+          verb,
+          target,
+        });
+      } else {
+        return;
+      }
+      await mutateVocab();
       setDraft({ instrument: "", verb: "", target: "" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Write failed");
@@ -2789,11 +2947,28 @@ function TripletEditor({
     }
     setError(null);
     try {
-      const next = await trashBrush(
+      await trashBrush(
         { kind: "triplet", ...row },
-        sendJson<Vocab>(vocabTripleDeletePath(row.instrument, row.verb, row.target), "DELETE"),
+        sendJson<unknown>(vocabTripleDeletePath(row.instrument, row.verb, row.target), "DELETE"),
       );
-      await mutateVocab(next, { revalidate: false });
+      await mutateVocab();
+      await mutateTriplet();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Write failed");
+    }
+  }
+
+  async function retractRow(row: VocabTriple) {
+    const item = pickerItemFor(controls.items, "triplet", row);
+    if (!item || controls.projectId === null) {
+      return;
+    }
+    setError(null);
+    try {
+      await sendJson(registryDisablePath(item.id), "POST", {
+        project_id: controls.projectId,
+      });
+      await mutateVocab();
       await mutateTriplet();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Write failed");
@@ -2814,6 +2989,9 @@ function TripletEditor({
   }
 
   function startRename(row: VocabTriple, slot: "instrument" | "verb" | "target") {
+    if (!controls.canRegistryWrite) {
+      return;
+    }
     if (clickTimer.current != null) {
       window.clearTimeout(clickTimer.current);
       clickTimer.current = null;
@@ -2840,8 +3018,8 @@ function TripletEditor({
     setError(null);
     void (async () => {
       try {
-        const next = await sendJson<Vocab>(vocabTripleRenamePath(), "POST", { from, to });
-        await mutateVocab(next, { revalidate: false });
+        await sendJson<unknown>(vocabTripleRenamePath(), "POST", { from, to });
+        await mutateVocab();
         await mutateTriplet();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Write failed");
@@ -3048,16 +3226,31 @@ function TripletEditor({
                         >
                           <Brush size={14} />
                         </Button>
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          aria-label={`Delete triple ${key}`}
-                          className="opacity-30 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                          onClick={() => void trashRow(row)}
-                        >
-                          <Trash2 size={14} />
-                        </Button>
+                        {controls.canRegistryWrite ? (
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            aria-label={`Delete triple ${key}`}
+                            className="opacity-30 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => void trashRow(row)}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        ) : controls.canEditVocab &&
+                          pickerItemFor(controls.items, "triplet", row) ? (
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            aria-label={`Remove triple ${key} from this Project`}
+                            title="Remove from this Project"
+                            className="opacity-30 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => void retractRow(row)}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -3066,6 +3259,7 @@ function TripletEditor({
             </tbody>
           </table>
         </div>
+        {controls.canRegistryWrite || controls.canCreateCandidate ? (
         <div className="mt-2 flex flex-col gap-1 border-t border-border/50 pt-2">
           <div className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-1">
             <Input
@@ -3103,6 +3297,7 @@ function TripletEditor({
             </Button>
           </div>
         </div>
+        ) : null}
         <datalist id="triplet-instrument-words">
           {instrumentWords.map((word) => <option key={word} value={word} />)}
         </datalist>

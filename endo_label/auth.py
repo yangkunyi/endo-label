@@ -8,7 +8,11 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from endo_label.capabilities import account_capabilities
+from endo_label.capabilities import (
+    account_capabilities,
+    may_create_candidate,
+    may_edit_project_vocab,
+)
 from endo_label.coordination import (
     Account,
     AssignmentNotFound,
@@ -83,6 +87,22 @@ def require_admin(request: Request) -> Account:
     account: Account = request.state.account
     if not account.admin:
         raise HTTPException(status_code=403, detail="Admin only")
+    return account
+
+
+def require_candidate_creator(request: Request) -> Account:
+    account: Account = request.state.account
+    if not may_create_candidate(
+        admin=account.admin, reviewer=account.reviewer, annotator=account.annotator
+    ):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return account
+
+
+def require_project_vocab_editor(request: Request) -> Account:
+    account: Account = request.state.account
+    if not may_edit_project_vocab(admin=account.admin, reviewer=account.reviewer):
+        raise HTTPException(status_code=403, detail="Forbidden")
     return account
 
 

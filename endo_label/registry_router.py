@@ -5,11 +5,18 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
-from endo_label.auth import require_admin
-from endo_label.coordination import Account, ProjectNotFound, db_path
+from endo_label.auth import require_admin, require_project_vocab_editor
+from endo_label.coordination import (
+    Account,
+    ProjectNotFound,
+    UnknownClip,
+    clip_project_id,
+    db_path,
+)
 from endo_label import labels_store
 from endo_label.registry import (
     CandidateNotFound,
+    candidates_for_project,
     RegistryConflict,
     RegistryItemNotFound,
     browse_payload,
@@ -64,12 +71,29 @@ def get_registry(request: Request) -> dict:
 
 
 @router.get("/api/registry/visible")
-def get_visible(request: Request, project_id: int) -> dict:
+def get_visible(
+    request: Request,
+    project_id: int | None = None,
+    clip_id: str | None = None,
+) -> dict:
+    if project_id is None and clip_id is not None:
+        try:
+            project_id = clip_project_id(_path(request), clip_id)
+        except UnknownClip:
+            raise HTTPException(
+                status_code=404, detail=f"Clip not found: {clip_id}"
+            ) from None
+    if project_id is None:
+        raise HTTPException(status_code=400, detail="project_id is required")
     try:
         items = visible_items(_path(request), project_id)
+        candidates = candidates_for_project(_path(request), project_id)
     except ProjectNotFound as exc:
         raise _http(exc) from None
-    return {"items": [item.as_dict() for item in items]}
+    return {
+        "items": [{**item.as_dict(), "candidate": False} for item in items]
+        + [{**candidate.as_dict(), "archived": False, "candidate": True} for candidate in candidates]
+    }
 
 
 @router.post("/api/registry")
@@ -120,7 +144,7 @@ def post_edit_candidate(
     candidate_id: int,
     body: RegistryWriteBody,
     request: Request,
-    _: Account = Depends(require_admin),
+    _: Account = Depends(require_project_vocab_editor),
 ) -> dict:
     try:
         candidate = edit_candidate(
@@ -220,7 +244,7 @@ def post_enable(
     vocab_id: int,
     body: ProjectBody,
     request: Request,
-    _: Account = Depends(require_admin),
+    _: Account = Depends(require_project_vocab_editor),
 ) -> dict:
     try:
         set_enabled(_path(request), vocab_id, body.project_id, True)
@@ -234,7 +258,7 @@ def post_disable(
     vocab_id: int,
     body: ProjectBody,
     request: Request,
-    _: Account = Depends(require_admin),
+    _: Account = Depends(require_project_vocab_editor),
 ) -> dict:
     try:
         set_enabled(_path(request), vocab_id, body.project_id, False)
