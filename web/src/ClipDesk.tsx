@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Brush, Check, Eye, EyeOff, Trash2, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Brush, Check, Eye, EyeOff, Trash2 } from "lucide-react";
 import { useParams } from "react-router-dom";
 import useSWR, { type KeyedMutator } from "swr";
 import {
@@ -12,7 +12,6 @@ import {
   frameTripletRows,
   getJson,
   getJsonAllow404,
-  healthPath,
   isVersionConflict,
   saveErrorMessage,
   withVersion,
@@ -35,7 +34,6 @@ import {
   type ClassDoc,
   type ClipMeta,
   type FrameAnnotations,
-  type HealthResponse,
   type PhaseDoc,
   type ScopedVocab,
   type VocabPickerItem,
@@ -48,9 +46,10 @@ import {
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { ClipRail } from "./desk/ClipRail";
-import { brushColorKey, brushLabel, tripleIdentity, useBrushRange, useDeskLanes } from "./desk/lanes";
+import { FrameControls } from "./desk/FrameControls";
+import type { DeskNotice } from "./desk/notice";
+import { tripleIdentity, useDeskLanes } from "./desk/lanes";
 import { DeskItemActions } from "./desk/DeskItemActions";
-import { isEditableTarget } from "./desk/keyboard";
 import { MaskPanel, MaskSessionProvider } from "./desk/MaskPanel";
 import { PlaybackProvider, PlayerPanel } from "./desk/PlayerPanel";
 import { TimelinePanel } from "./desk/TimelinePanel";
@@ -60,10 +59,6 @@ import { useDeskStore, type BrushIdentity, type EditorKind } from "./deskStore";
 import { libraryRowSemanticStyle, nowEmptyText, nowFillStyle } from "./editorCards";
 import { cn } from "./lib/utils";
 import { labelColor } from "./timeline";
-import {
-  WORKER_LOADING_LABEL,
-  workerStatusIsLoading,
-} from "./workerStatus";
 
 /** What the desk may offer for the focused Clip's Project word list. */
 type VocabControls = {
@@ -145,9 +140,7 @@ export function ClipDesk() {
   const openClip = useDeskStore((s) => s.openClip);
   const layout = useDeskStore((s) => s.layout);
   const setLayout = useDeskStore((s) => s.setLayout);
-  const setSpanStart = useDeskStore((s) => s.setSpanStart);
-  const dropBrush = useDeskStore((s) => s.dropBrush);
-  const [toast, setToast] = useState<{ text: string; error: boolean } | null>(null);
+  const [toast, setToast] = useState<DeskNotice>(null);
   const vocabControls: VocabControls = {
     canRegistryWrite: vocab?.permissions?.registry_write ?? false,
     canEditVocab: vocab?.permissions?.vocab_edit ?? false,
@@ -155,15 +148,6 @@ export function ClipDesk() {
     projectId: vocab?.project_id ?? null,
     items: vocab?.items ?? [],
   };
-
-
-
-  const { data: health } = useSWR(healthPath(), getJson<HealthResponse>, {
-    refreshInterval: 5000,
-  });
-  const workerLoading = workerStatusIsLoading(health?.worker);
-
-
 
   const frameIndex = data && storedIndex >= data.frame_count ? Math.max(0, data.frame_count - 1) : storedIndex;
   const { data: frameAnn, mutate: mutateFrameAnn } = useSWR(
@@ -173,16 +157,6 @@ export function ClipDesk() {
   const tracks: TrackRow[] = annotation?.tracks ?? [];
   const frameMasks = frameAnn?.masks ?? [];
 
-
-
-
-
-  const { markedFrom, rangeFrom, rangeTo, focusedBrush, hasBrush } = useBrushRange({
-    clipId,
-    frameIndex,
-    focus: taskFocus,
-    vocab,
-  });
   const { laneVisibleFor, toggleLaneFor } = useDeskLanes({
     focus: taskFocus,
     frameCount: data?.frame_count,
@@ -202,50 +176,6 @@ export function ClipDesk() {
     mutateTriplet,
     notify: setToast,
   });
-
-  const applyRange = useCallback(async (remove: boolean) => {
-    if (!clipId || !data || focusedBrush.length === 0) {
-      return;
-    }
-    setToast(null);
-    try {
-      await writer.runExclusive(async () => {
-        for (const identity of focusedBrush) {
-          await writer.commitIdentityRange(identity, rangeFrom, rangeTo, remove);
-        }
-        setSpanStart(null);
-        setToast({
-          text: `${remove ? "Removed" : "Wrote"} ${focusedBrush.map(brushLabel).join(", ")} on frames ${rangeFrom}–${rangeTo}`,
-          error: false,
-        });
-      });
-    } catch (err) {
-      setToast({ text: err instanceof Error ? err.message : "Write failed", error: true });
-    }
-  }, [clipId, data, focusedBrush, rangeFrom, rangeTo, setSpanStart, writer]);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (isEditableTarget(event.target)) {
-        return;
-      }
-      if (!clipId || !data || data.frame_count <= 0 || !hasBrush) {
-        return;
-      }
-      const key = event.key.toLowerCase();
-      if (key === "[" || key === "i") {
-        event.preventDefault();
-        setSpanStart({ clipId, frameIndex });
-        return;
-      }
-      if (key === "]" || key === "o") {
-        event.preventDefault();
-        void applyRange(false);
-      }
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [applyRange, clipId, data, frameIndex, hasBrush, setSpanStart]);
 
   useLayoutEffect(() => {
     if (data) {
@@ -397,68 +327,16 @@ export function ClipDesk() {
         reverse
         onResize={(value) => setLayout({ bottomBarHeight: value })}
       />
-      <footer aria-label="Player controls" className="flex shrink-0 items-center gap-3 overflow-x-auto border-t border-border bg-card px-4 py-2" style={{ height: layout.bottomBarHeight }}>
-        <span className="shrink-0 text-xs font-medium text-muted-foreground">Playback in player</span>
-        <output className="w-24 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{data ? `Frame ${frameIndex} of ${data.frame_count}` : "No Clip"}</output>
-        {markedFrom != null ? (
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{rangeFrom} → {rangeTo}</span>
-        ) : null}
-        <div data-brush="" className="flex min-w-0 items-center gap-2">
-          {focusedBrush.map((identity) => {
-            const id = brushColorKey(identity);
-            return (
-              <span
-                key={`${identity.kind}:${id}`}
-                data-label-color={labelColor(id)}
-                className="flex max-w-48 items-center gap-0.5 truncate text-xs font-medium"
-                style={{ borderLeft: `3px solid ${labelColor(id)}`, paddingLeft: 6 }}
-              >
-                <span className="truncate">{brushLabel(identity)}</span>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="h-5 w-5"
-                  aria-label={`Remove ${brushLabel(identity)} from Brush`}
-                  onClick={() => dropBrush(identity)}
-                >
-                  <X size={12} />
-                </Button>
-              </span>
-            );
-          })}
-        </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!hasBrush || !clipId}
-          onClick={() => {
-            if (clipId && hasBrush) {
-              setSpanStart({ clipId, frameIndex });
-            }
-          }}
-        >
-          Mark from
-        </Button>
-        <Button type="button" size="sm" disabled={!hasBrush} onClick={() => void applyRange(false)}>
-          Apply to frames {rangeFrom}–{rangeTo}
-        </Button>
-        <Button type="button" size="sm" variant="secondary" disabled={!hasBrush} onClick={() => void applyRange(true)}>
-          Remove from frames {rangeFrom}–{rangeTo}
-        </Button>
-        {workerLoading ? (
-          // Health poll says the SAM 3.1 worker is still loading (ticket 09).
-          <span role="status" className="shrink-0 text-xs text-muted-foreground">
-            {WORKER_LOADING_LABEL}
-          </span>
-        ) : null}
-        {toast ? (
-          <span role={toast.error ? "alert" : "status"} className={toast.error ? "text-xs text-destructive" : "text-xs text-foreground"}>
-            {toast.text}
-          </span>
-        ) : null}
-      </footer>
+      <FrameControls
+        clip={data}
+        frameIndex={frameIndex}
+        focus={taskFocus}
+        vocab={vocab}
+        writer={writer}
+        notify={setToast}
+        notice={toast}
+        height={layout.bottomBarHeight}
+      />
     </main>
   );
 }
@@ -1075,7 +953,6 @@ function PhaseEditor({
     </section>
   );
 }
-
 
 function uniqueTripleWords(triples: VocabTriple[], slot: keyof VocabTriple): string[] {
   return [...new Set(triples.map((row) => row[slot]).filter(Boolean))];
