@@ -27,6 +27,7 @@ export function EditorRail({
   phaseDoc,
   classDoc,
   tripletDoc,
+  version,
   mutatePhase,
   mutateClass,
   mutateTriplet,
@@ -43,6 +44,7 @@ export function EditorRail({
   phaseDoc: PhaseDoc | undefined;
   classDoc: ClassDoc | undefined;
   tripletDoc: TripletDoc | undefined;
+  version: number | undefined;
   mutatePhase: KeyedMutator<PhaseDoc>;
   mutateClass: KeyedMutator<ClassDoc>;
   mutateTriplet: KeyedMutator<TripletDoc>;
@@ -84,7 +86,7 @@ export function EditorRail({
               frameCount={clip.frame_count}
               classFrames={classDoc?.frames ?? {}}
               classTags={vocab?.class_tags ?? []}
-              version={classDoc?.version}
+              version={version}
               mutateClass={mutateClass}
               mutateVocab={mutateVocab}
               laneVisible={laneVisible}
@@ -98,7 +100,7 @@ export function EditorRail({
               frameCount={clip.frame_count}
               tripletFrames={tripletDoc?.frames ?? {}}
               triples={vocab?.triples ?? []}
-              version={tripletDoc?.version}
+              version={version}
               mutateTriplet={mutateTriplet}
               mutateVocab={mutateVocab}
               laneVisible={laneVisible}
@@ -112,7 +114,7 @@ export function EditorRail({
               frameCount={clip.frame_count}
               phaseFrames={phaseDoc?.frames ?? {}}
               phases={vocab?.phases ?? []}
-              version={phaseDoc?.version}
+              version={version}
               mutatePhase={mutatePhase}
               mutateVocab={mutateVocab}
               laneVisible={laneVisible}

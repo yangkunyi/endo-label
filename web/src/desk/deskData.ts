@@ -62,11 +62,22 @@ export function useDeskData(clipId: string | undefined) {
     }
   }, [data, openClip]);
 
+  // One Clip carries one version across its Task types, so a save of any kind
+  // bumps the number all three docs carry. The freshest value on hand is the
+  // one the next save must echo back, whatever kind that save is.
+  const labelVersions = [phaseDoc?.version, classDoc?.version, tripletDoc?.version];
+  const version = labelVersions.reduce<number | undefined>(
+    (newest, held) =>
+      held !== undefined && (newest === undefined || held > newest) ? held : newest,
+    undefined,
+  );
+
   return {
     clip: data,
     clipError: error,
     clipLoading: isLoading,
     frameIndex,
+    version,
     frameMasks,
     tracks,
     phaseDoc,

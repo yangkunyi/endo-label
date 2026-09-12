@@ -38,9 +38,7 @@ export function ClipDesk() {
   const writer = useIdentityWriter({
     clipId,
     focus: taskFocus,
-    phaseVersion: desk.phaseDoc?.version,
-    classVersion: desk.classDoc?.version,
-    tripletVersion: desk.tripletDoc?.version,
+    version: desk.version,
     mutatePhase: desk.mutatePhase,
     mutateClass: desk.mutateClass,
     mutateTriplet: desk.mutateTriplet,
@@ -115,6 +113,7 @@ export function ClipDesk() {
               phaseDoc={desk.phaseDoc}
               classDoc={desk.classDoc}
               tripletDoc={desk.tripletDoc}
+              version={desk.version}
               mutatePhase={desk.mutatePhase}
               mutateClass={desk.mutateClass}
               mutateTriplet={desk.mutateTriplet}
