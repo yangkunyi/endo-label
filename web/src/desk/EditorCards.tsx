@@ -389,7 +389,12 @@ export function TripletEditor({
     setError(null);
     try {
       if (controls.canRegistryWrite) {
-        await sendJson<unknown>(vocabTriplesPath(), "POST", { instrument, verb, target });
+        await sendJson<unknown>(vocabTriplesPath(), "POST", {
+          instrument,
+          verb,
+          target,
+          clip_id: clipId,
+        });
       } else if (controls.canCreateCandidate) {
         await sendJson<unknown>(vocabCandidatePath(), "POST", {
           clip_id: clipId,

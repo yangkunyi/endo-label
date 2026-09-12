@@ -263,3 +263,72 @@ def test_candidate_creation_and_vocab_editing_role_matrix(tmp_path: Path, role: 
             response.status_code,
             response.text,
         )
+
+
+def test_admin_desk_add_lands_in_this_clips_project_picker(tmp_path: Path) -> None:
+    """The desk's add row writes the registry and makes the word usable here.
+
+    A just-typed word must show up in the very picker it was typed into: the
+    admin's add enables the (created or already-global) name for this Clip's
+    Project. Other Projects keep their own enabled set.
+    """
+    clients, _settings_obj, _west, _east = _world(tmp_path)
+    admin = clients["admin"]
+
+    # Curated elsewhere first: global, but not enabled for CLIPA's Project yet.
+    assert admin.post("/api/vocab/phases", json={"name": "Preparation"}).status_code == 200
+    assert admin.get("/api/vocab", params={"clip_id": "CLIPA"}).json()["phases"] == []
+
+    added = admin.post("/api/vocab/phases", json={"name": "Preparation", "clip_id": "CLIPA"})
+    assert added.status_code == 200, added.text
+    assert admin.get("/api/vocab", params={"clip_id": "CLIPA"}).json()["phases"] == [
+        "Preparation"
+    ]
+
+    # A brand-new name takes the same path, and repeating the add is idempotent.
+    assert (
+        admin.post("/api/vocab/phases", json={"name": "Calot", "clip_id": "CLIPA"}).status_code
+        == 200
+    )
+    assert (
+        admin.post("/api/vocab/class_tags", json={"name": "blurred", "clip_id": "CLIPA"}).status_code
+        == 200
+    )
+    assert (
+        admin.post("/api/vocab/phases", json={"name": "Calot", "clip_id": "CLIPA"}).status_code
+        == 200
+    )
+    scoped = admin.get("/api/vocab", params={"clip_id": "CLIPA"}).json()
+    assert scoped["phases"] == ["Preparation", "Calot"]
+    assert scoped["class_tags"] == ["blurred"]
+
+    # The other Project's picker never moves with an admin's desk add.
+    other = admin.get("/api/vocab", params={"clip_id": "CLIPB"}).json()
+    assert other["phases"] == []
+    assert other["class_tags"] == []
+
+
+def test_admin_desk_add_of_a_triple_enables_it_for_this_clip(tmp_path: Path) -> None:
+    clients, _settings_obj, _west, _east = _world(tmp_path)
+    admin = clients["admin"]
+    triple = _triple("grasper", "retract", "gallbladder")
+
+    created = admin.post("/api/vocab/triples", json={**triple, "clip_id": "CLIPA"})
+    assert created.status_code == 200, created.text
+    assert admin.get("/api/vocab", params={"clip_id": "CLIPA"}).json()["triples"] == [triple]
+
+    # Existing global triple: the add enables it here instead of conflicting.
+    assert admin.post("/api/vocab/triples", json={**triple, "clip_id": "CLIPA"}).status_code == 200
+    assert admin.get("/api/vocab", params={"clip_id": "CLIPB"}).json()["triples"] == []
+
+
+def test_admin_desk_add_honours_the_global_triple_conflict(tmp_path: Path) -> None:
+    """A triple nobody enabled here still collides with the registry identity."""
+    clients, _settings_obj, _west, _east = _world(tmp_path)
+    admin = clients["admin"]
+    triple = _triple("hook", "pull", "fundus")
+    assert admin.post("/api/registry", json={"kind": "triplet", **triple}).status_code == 200
+
+    response = admin.post("/api/vocab/triples", json={**triple, "clip_id": "CLIPA"})
+    assert response.status_code == 200, response.text
+    assert admin.get("/api/vocab", params={"clip_id": "CLIPA"}).json()["triples"] == [triple]

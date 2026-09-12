@@ -280,7 +280,7 @@ export function AddVocabRow({
     setError(null);
     try {
       if (controls.canRegistryWrite) {
-        await ensureVocabName(listName, raw, names, mutateVocab);
+        await ensureVocabName(listName, raw, names, clipId, mutateVocab);
       } else if (controls.canCreateCandidate) {
         if (!names.includes(raw)) {
           await sendJson(vocabCandidatePath(), "POST", { clip_id: clipId, kind, name: raw });

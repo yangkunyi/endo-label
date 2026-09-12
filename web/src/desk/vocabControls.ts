@@ -47,6 +47,7 @@ export async function ensureVocabName(
   listName: string,
   raw: string,
   names: string[],
+  clipId: string,
   mutateVocab: KeyedMutator<ScopedVocab>,
 ): Promise<string | null> {
   const name = raw.trim();
@@ -56,7 +57,9 @@ export async function ensureVocabName(
   if (names.includes(name)) {
     return name;
   }
-  await sendJson<unknown>(vocabListPath(listName), "POST", { name });
+  // The Clip makes the server enable the word for this Project, so the picker
+  // the labeler is looking at offers it on the next fetch.
+  await sendJson<unknown>(vocabListPath(listName), "POST", { name, clip_id: clipId });
   // The registry write answers the legacy desk-wide set; the desk shows the
   // Clip's Project set, so revalidate the scoped key instead of injecting it.
   await mutateVocab();
