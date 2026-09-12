@@ -2,6 +2,7 @@ import { Link, Navigate, Outlet, useNavigate } from "react-router-dom";
 import useSWR, { mutate } from "swr";
 import { getJson, mePath, sendJson, type Me } from "./api";
 import { Button } from "./components/ui/button";
+import { ChangePassword } from "./ChangePassword";
 import { useWorkflowEvents } from "./workflowEvents";
 
 export function AppShell() {
@@ -36,6 +37,7 @@ export function AppShell() {
           {data.roles.admin ? <Link to="/admin/assignments">Assignments</Link> : null}
         </nav>
         <div className="flex items-center gap-3">
+          <ChangePassword />
           <span className="text-sm">{data.username}</span>
           <Button type="button" variant="ghost" size="sm" onClick={logout}>
             Log out

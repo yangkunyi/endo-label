@@ -209,3 +209,46 @@ def test_create_admin_cli_prints_temp_password_and_logs_in(tmp_path: Path, capsy
     main(["create-admin", "boss", "--config", str(yaml_path)])
     again = capsys.readouterr().out
     assert "already exists" in again.lower()
+
+
+def test_owner_changes_their_own_password(tmp_path: Path) -> None:
+    """Story: after first login the owner replaces the admin's temporary password."""
+    settings = _settings(tmp_path)
+    create_account(db_path(settings), "alice", "temp-password", annotator=True)
+    client = TestClient(create_app(settings))
+    assert client.post("/api/auth/login", json={"username": "alice", "password": "temp-password"}).status_code == 200
+
+    wrong = client.post(
+        "/api/auth/password",
+        json={"current_password": "not-my-password", "new_password": "chosen-password"},
+    )
+    assert wrong.status_code == 403
+    assert client.post("/api/auth/login", json={"username": "alice", "password": "temp-password"}).status_code == 200
+
+    empty = client.post(
+        "/api/auth/password",
+        json={"current_password": "temp-password", "new_password": "   "},
+    )
+    assert empty.status_code == 400
+
+    changed = client.post(
+        "/api/auth/password",
+        json={"current_password": "temp-password", "new_password": "chosen-password"},
+    )
+    assert changed.status_code == 200, changed.text
+    # The session that changed it stays usable; the old password does not.
+    assert client.get("/api/me").json()["username"] == "alice"
+    fresh = TestClient(create_app(settings))
+    assert fresh.post("/api/auth/login", json={"username": "alice", "password": "temp-password"}).status_code == 401
+    assert fresh.post("/api/auth/login", json={"username": "alice", "password": "chosen-password"}).status_code == 200
+
+
+def test_password_change_needs_a_session(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    create_account(db_path(settings), "alice", "temp-password", annotator=True)
+    client = TestClient(create_app(settings))
+    response = client.post(
+        "/api/auth/password",
+        json={"current_password": "temp-password", "new_password": "chosen-password"},
+    )
+    assert response.status_code == 401

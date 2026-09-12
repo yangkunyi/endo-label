@@ -27,6 +27,7 @@ from endo_label.coordination import (
     db_path,
     delete_session,
     item_payload,
+    set_password,
 )
 
 SESSION_COOKIE = "session_id"
@@ -39,6 +40,11 @@ _PUBLIC_API = frozenset({"/api/health", "/api/auth/login", "/api/auth/logout"})
 class LoginBody(BaseModel):
     username: str
     password: str
+
+
+class PasswordBody(BaseModel):
+    current_password: str
+    new_password: str
 
 
 def _me(account: Account) -> dict:
@@ -185,6 +191,20 @@ def logout(request: Request, response: Response) -> dict:
     if token:
         delete_session(db_path(request.app.state.settings), token)
     response.delete_cookie(SESSION_COOKIE, path="/")
+    return {"ok": True}
+
+
+@router.post("/api/auth/password")
+def change_password(body: PasswordBody, request: Request) -> dict:
+    """The Account's own password change: prove the current one, set the new one."""
+    account: Account = request.state.account
+    path = db_path(request.app.state.settings)
+    if authenticate(path, account.username, body.current_password) is None:
+        raise HTTPException(status_code=403, detail="Current password is wrong")
+    new_password = body.new_password.strip()
+    if not new_password:
+        raise HTTPException(status_code=400, detail="The new password cannot be empty")
+    set_password(path, account.id, new_password)
     return {"ok": True}
 
 
