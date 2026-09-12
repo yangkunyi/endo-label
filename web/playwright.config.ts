@@ -42,7 +42,10 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `${python} -m endo_label --config web/e2e/config.yaml --port ${apiPort}`,
+      // The isolated sitting is wiped before uvicorn starts, so the server's
+      // config registration lands in a fresh DB. Playwright starts webServers
+      // before globalSetup, so a wipe there would erase those registrations.
+      command: `rm -rf web/e2e/.work && exec ${python} -m endo_label --config web/e2e/config.yaml --port ${apiPort}`,
       cwd: repoRoot,
       env: { ...process.env, PYTHONPATH: repoRoot },
       url: `http://127.0.0.1:${apiPort}/api/health`,
