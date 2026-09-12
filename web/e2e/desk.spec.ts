@@ -1,5 +1,6 @@
 import { expect, type APIRequestContext, type Locator, type Page, test } from "@playwright/test";
-import { loginApi } from "./auth";
+import { E2E_USER, loginApi } from "./auth";
+import { clearLabels, ensureLabelingFor } from "./harness";
 
 test.describe.configure({ mode: "serial" });
 
@@ -19,6 +20,12 @@ async function ensureVocab(request: APIRequestContext, lists: Record<string, str
 
 test.beforeEach(async ({ page }) => {
   await loginApi(page.request);
+  // Label writes need the Account to hold the (Clip, Task type) item: every item
+  // the desk touches is Labeling for the spec Account.
+  await ensureLabelingFor(page.request, E2E_USER);
+  // Serial specs share one sitting: strip the labels a previous test left, so a
+  // retired word from an earlier test cannot make this Frame unwritable.
+  await clearLabels(page.request);
   await ensureVocab(page.request, {
     phases: ["Preparation", "Clipping and cutting"],
     class_tags: ["grasper", "hook", "clipper", "scissors", "blurred"],
@@ -305,8 +312,10 @@ test("Library selected toggles this Frame; Plus does not write; trash confirms; 
   await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("LibToggleP");
   page.once("dialog", (dialog) => dialog.accept());
   await phaseLib.getByRole("button", { name: "Delete phase LibToggleP" }).click();
-  await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBeUndefined();
+  // Retiring a name leaves the labels that already carry it alone (ticket 17):
+  // the row goes, this Frame keeps its Phase.
   await expect(phaseRow).toHaveCount(0);
+  await expect.poll(async () => (await clipFrames(page, "phase"))["0"]).toBe("LibToggleP");
 
   await focusTask(page, "class");
   await expect(page.locator('[data-editor-card="class"]').getByRole("button", { name: "List" })).toHaveCount(0);
@@ -334,8 +343,9 @@ test("Library selected toggles this Frame; Plus does not write; trash confirms; 
   await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("LibToggleC");
   page.once("dialog", (dialog) => dialog.accept());
   await classLib.getByRole("button", { name: "Delete class tag LibToggleC" }).click();
-  await expect.poll(async () => (((await clipFrames(page, "class"))["0"] as string[]) ?? []).includes("LibToggleC")).toBe(false);
+  // Same for a class tag: archived, not rewritten out of the labels.
   await expect(classRow).toHaveCount(0);
+  await expect.poll(async () => ((await clipFrames(page, "class"))["0"] as string[]) ?? []).toContain("LibToggleC");
 });
 
 test("class re-pick toggles off; phase re-pick clears; triplet same triple toggles", async ({ page }) => {
@@ -658,17 +668,22 @@ test("Library click is this Frame; Library trash confirms then removes the desk 
   await expect.poll(async () => ((await clipFrames(page, "class"))["1"] as string[]) ?? []).toContain("DeskTrashC");
 
   await focusTask(page, "phase");
+  const phaseLibrary = page.getByRole("list", { name: "Library" });
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("list", { name: "Library" }).getByRole("button", { name: "Delete phase DeskTrashP" }).click();
-  await expect.poll(async () => await clipFrames(page, "phase")).not.toMatchObject({ "1": "DeskTrashP" });
+  await phaseLibrary.getByRole("button", { name: "Delete phase DeskTrashP" }).click();
+  // Retiring a name drops the row but leaves the labels already carrying it.
+  await expect(phaseLibrary.getByRole("button", { name: "DeskTrashP", exact: true })).toHaveCount(0);
+  await expect.poll(async () => (await clipFrames(page, "phase"))["1"]).toBe("DeskTrashP");
 
   await focusTask(page, "class");
+  const classLibrary = page.getByRole("list", { name: "Library" });
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("list", { name: "Library" }).getByRole("button", { name: "Delete class tag DeskTrashC" }).click();
-  await expect.poll(async () => (((await clipFrames(page, "class"))["1"] as string[]) ?? []).includes("DeskTrashC")).toBe(false);
+  await classLibrary.getByRole("button", { name: "Delete class tag DeskTrashC" }).click();
+  await expect(classLibrary.getByRole("button", { name: "DeskTrashC", exact: true })).toHaveCount(0);
+  await expect.poll(async () => ((await clipFrames(page, "class"))["1"] as string[]) ?? []).toContain("DeskTrashC");
 });
 
-test("trashing a Vocab triple confirms then drops it from every Clip", async ({ page }) => {
+test("trashing a Vocab triple confirms, retires the picker row, and keeps the labels", async ({ page }) => {
   await page.goto("/clips/CLIP_E2E");
   await fillTriplet(page, "DeskTrashTool", "grasp", "gallbladder");
   await page.goto("/clips/CLIP_E2E_B");
@@ -689,13 +704,15 @@ test("trashing a Vocab triple confirms then drops it from every Clip", async ({ 
 
   page.once("dialog", (dialog) => dialog.accept());
   await trash.click();
+  await expect(page.getByRole("button", { name: "DeskTrashTool / grasp / gallbladder", exact: true })).toHaveCount(0);
+  // Archiving is desk-wide retirement, not a label rewrite: both Clips keep the
+  // rows they already carry (ticket 17).
   await expect.poll(async () => {
     const framesA = (await clipFrames(page, "triplet", "CLIP_E2E")) as Record<string, { instrument: string }[]>;
     const framesB = (await clipFrames(page, "triplet", "CLIP_E2E_B")) as Record<string, { instrument: string }[]>;
     return (framesA["0"] ?? []).some((row) => row.instrument === "DeskTrashTool")
-      || (framesB["0"] ?? []).some((row) => row.instrument === "DeskTrashTool");
-  }).toBe(false);
-  await expect(page.getByRole("button", { name: "DeskTrashTool / grasp / gallbladder", exact: true })).toHaveCount(0);
+      && (framesB["0"] ?? []).some((row) => row.instrument === "DeskTrashTool");
+  }).toBe(true);
 });
 
 test("trashing a Brushed identity drops its footer chip; surviving kinds keep theirs; non-Brushed trash changes nothing", async ({ page }) => {
@@ -1556,7 +1573,9 @@ test("double-clicking a Vocab triple cell rewrites desk-wide; collision is refus
   await collideInput.fill("RenamedAct");
   await collideInput.press("Enter");
 
-  await expect(page.locator("[data-editor-card='triplet']").getByText(/would hold duplicate triple/i)).toBeVisible();
+  // Duplicate cells are one registry identity now, so the rename is refused as
+  // already present (ticket 17) instead of rewriting labels into a collision.
+  await expect(page.locator("[data-editor-card='triplet']").getByText(/already present/i)).toBeVisible();
 
   await expect.poll(async () => {
     const framesB = (await clipFrames(page, "triplet", "CLIP_E2E_B")) as Record<string, { instrument: string; verb: string; target: string }[]>;
@@ -1648,10 +1667,11 @@ test("e2e closeout: span paint preserves Vocab, Now read-only, Library trash wor
   await trashBtn.click();
 
   await expect(libRow).toHaveCount(0);
+  // Retirement keeps both Frames' labels; only the picker row goes.
   await expect.poll(async () => {
     const frames = (await clipFrames(page, "class")) as Record<string, string[]>;
-    return (frames["0"] ?? []).includes("CloseoutClass") || (frames["1"] ?? []).includes("CloseoutClass");
-  }).toBe(false);
+    return (frames["0"] ?? []).includes("CloseoutClass") && (frames["1"] ?? []).includes("CloseoutClass");
+  }).toBe(true);
 });
 
 test("Triplet hairline grid structure and in-cell double-click rename without column shifts", async ({ page }) => {

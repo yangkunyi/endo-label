@@ -2,6 +2,8 @@ import { expect, type APIRequestContext, type Locator, type Page, test } from "@
 import { rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { E2E_USER, loginApi } from "./auth";
+import { enableVocab, ensureLabelingFor } from "./harness";
 
 test.describe.configure({ mode: "serial" });
 
@@ -54,8 +56,18 @@ async function resetSitting(request: APIRequestContext) {
   }
 }
 
-test.beforeEach(async ({ request }) => {
-  await ensureVocab(request, API, { phases: ["Preparation", "Clipping and cutting"], class_tags: ["grasper", "hook"] });
+test.beforeEach(async ({ page }) => {
+  // Every /api call is the Account's: log the page's context in, hold the mask
+  // item this Clip needs, then wipe the sitting the previous spec left.
+  const request = page.request;
+  await loginApi(request);
+  await ensureLabelingFor(request, E2E_USER);
+  // The desk picker offers only this Project's enabled words, so seed through
+  // the desk's own add path (registry write + enable for the Clip).
+  await enableVocab(request, "CLIP_E2E", {
+    phases: ["Preparation", "Clipping and cutting"],
+    class_tags: ["grasper", "hook"],
+  });
   await resetSitting(request);
 });
 
@@ -153,9 +165,20 @@ function trackPredicts(page: Page) {
   return urls;
 }
 
-async function sessionState(request: APIRequestContext, frameIndex?: number): Promise<SessionState> {
-  const url = frameIndex == null ? `${API}/api/session` : `${API}/api/session?frame_index=${frameIndex}`;
-  return (await (await request.get(url)).json()) as SessionState;
+async function sessionState(
+  request: APIRequestContext,
+  frameIndex?: number,
+  clipId?: string,
+): Promise<SessionState> {
+  const params = new URLSearchParams();
+  if (frameIndex != null) {
+    params.set("frame_index", String(frameIndex));
+  }
+  if (clipId) {
+    params.set("clip_id", clipId);
+  }
+  const query = params.toString() ? `?${params}` : "";
+  return (await (await request.get(`${API}/api/session${query}`)).json()) as SessionState;
 }
 
 async function frameAnnotation(request: APIRequestContext, clipId: string, index: number) {
@@ -178,7 +201,8 @@ async function pickLibraryName(page: Page, kind: "phase" | "class", name: string
   await expect(row).toHaveAttribute("aria-pressed", "true");
 }
 
-test("point → silhouette + Track row; picture click never plays; Space does", async ({ page, request }) => {
+test("point → silhouette + Track row; picture click never plays; Space does", async ({ page }) => {
+  const request = page.request;
   await page.goto("/clips/CLIP_E2E");
   await videoReady(page);
   await expect(page.locator("video")).toHaveJSProperty("paused", true);
@@ -205,7 +229,8 @@ test("point → silhouette + Track row; picture click never plays; Space does", 
   await expect(page.getByText("Frame 1 of 2")).toBeVisible({ timeout: 5_000 });
 });
 
-test("reload shows the silhouette from disk with no Save control", async ({ page, request }) => {
+test("reload shows the silhouette from disk with no Save control", async ({ page }) => {
+  const request = page.request;
   await page.goto("/clips/CLIP_E2E");
   await videoReady(page);
   await clickAt(page, 0.5, 0.5);
@@ -224,7 +249,8 @@ test("reload shows the silhouette from disk with no Save control", async ({ page
   await expect(page.getByRole("button", { name: /save/i })).toHaveCount(0);
 });
 
-test("leftover pin is visible, a click on it deletes only the pin", async ({ page, request }) => {
+test("leftover pin is visible, a click on it deletes only the pin", async ({ page }) => {
+  const request = page.request;
   await page.goto("/clips/CLIP_E2E");
   await videoReady(page);
   await clickAt(page, 0.4, 0.5);
@@ -249,7 +275,8 @@ test("leftover pin is visible, a click on it deletes only the pin", async ({ pag
   expect(countsAfter).toEqual(countsBefore);
 });
 
-test("Active Track comes from the rail only; a picture click refines it", async ({ page, request }) => {
+test("Active Track comes from the rail only; a picture click refines it", async ({ page }) => {
+  const request = page.request;
   await page.goto("/clips/CLIP_E2E");
   await videoReady(page);
   await clickAt(page, 0.5, 0.5);
@@ -279,7 +306,8 @@ test("Active Track comes from the rail only; a picture click refines it", async 
   expect(state.tracks).toHaveLength(2);
 });
 
-test("drag is a Scribble stroke that creates a Track; right-click never opens the menu", async ({ page, request }) => {
+test("drag is a Scribble stroke that creates a Track; right-click never opens the menu", async ({ page }) => {
+  const request = page.request;
   await page.goto("/clips/CLIP_E2E");
   await videoReady(page);
 
@@ -305,7 +333,8 @@ test("drag is a Scribble stroke that creates a Track; right-click never opens th
   expect(state.tracks).toHaveLength(1);
 });
 
-test("Undo (keyboard and rail) restores this Frame; there is no Save", async ({ page, request }) => {
+test("Undo (keyboard and rail) restores this Frame; there is no Save", async ({ page }) => {
+  const request = page.request;
   await page.goto("/clips/CLIP_E2E");
   await videoReady(page);
   await clickAt(page, 0.4, 0.5);
@@ -337,7 +366,8 @@ test("Undo (keyboard and rail) restores this Frame; there is no Save", async ({ 
   await expect(page.getByRole("button", { name: /save/i })).toHaveCount(0);
 });
 
-test("short forward Propagate fills the neighbor Frame; the seed stays manual", async ({ page, request }) => {
+test("short forward Propagate fills the neighbor Frame; the seed stays manual", async ({ page }) => {
+  const request = page.request;
   await page.goto("/clips/CLIP_E2E");
   await videoReady(page);
   await clickAt(page, 0.5, 0.5);
@@ -361,7 +391,8 @@ test("short forward Propagate fills the neighbor Frame; the seed stays manual", 
     .toBeGreaterThan(0);
 });
 
-test("scrubbing drops pending marks: no Predict, no extra Track", async ({ page, request }) => {
+test("scrubbing drops pending marks: no Predict, no extra Track", async ({ page }) => {
+  const request = page.request;
   await page.goto("/clips/CLIP_E2E");
   await videoReady(page);
   const predicts = trackPredicts(page);
@@ -379,24 +410,36 @@ test("scrubbing drops pending marks: no Predict, no extra Track", async ({ page,
   await expect.poll(async () => (await overlayPixel(page, 0.5, 0.5)).a).toBe(0);
 });
 
-test("changing Clip closes the Session; the old Clip's Annotation is still GET-able", async ({ page, request }) => {
+test("changing Clip keeps this Account's other Session; returning resumes it", async ({ page }) => {
+  const request = page.request;
   await page.goto("/clips/CLIP_E2E");
   await videoReady(page);
   await clickAt(page, 0.5, 0.5);
   await expect(trackRow(page, "track-1")).toBeVisible();
-  expect((await sessionState(request)).active).toBe(true);
+  expect((await sessionState(request, undefined, "CLIP_E2E")).active).toBe(true);
 
   await page.locator('a[href="/clips/CLIP_E2E_B"]').click();
   await expect(page).toHaveURL(/\/clips\/CLIP_E2E_B$/);
   await videoReady(page);
-  await expect.poll(async () => (await sessionState(request)).active).toBe(false);
+  // Sessions are keyed by (Account, Clip): the other Clip's Session stays open
+  // and this Clip has none until its first mask action.
+  await expect(trackRow(page, "track-1")).toHaveCount(0);
+  expect((await sessionState(request, undefined, "CLIP_E2E_B")).active).toBe(false);
+  expect((await sessionState(request, undefined, "CLIP_E2E")).active).toBe(true);
 
   const previous = await frameAnnotation(request, "CLIP_E2E", 0);
   expect(previous?.masks).toHaveLength(1);
-  await expect.poll(async () => (await overlayPixel(page, 0.5, 0.5)).a).toBe(0);
+
+  await page.locator('a[href="/clips/CLIP_E2E"]').click();
+  await expect(page).toHaveURL(/\/clips\/CLIP_E2E$/);
+  await videoReady(page);
+  // Back on the first Clip: the same Session and its Track are still there.
+  await expect(trackRow(page, "track-1")).toBeVisible();
+  await expect.poll(async () => (await overlayPixel(page, 0.5, 0.5)).a).toBeGreaterThan(0);
 });
 
-test("mixed sitting: phase span then a point — each store keeps only its own kind", async ({ page, request }) => {
+test("mixed sitting: phase span then a point — each store keeps only its own kind", async ({ page }) => {
+  const request = page.request;
   await page.goto("/clips/CLIP_E2E");
   await videoReady(page);
 
@@ -447,7 +490,8 @@ test("mixed sitting: phase span then a point — each store keeps only its own k
   expect(countsAfter).toEqual(countsBefore);
 });
 
-test("worker-down sitting still edits phase, class, and triplet", async ({ page, request }) => {
+test("worker-down sitting still edits phase, class, and triplet", async ({ page }) => {
+  const request = page.request;
   // This test sits on the :7893 process, whose SAM worker failed to load.
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
@@ -501,6 +545,10 @@ test("worker-down sitting still edits phase, class, and triplet", async ({ page,
   expect(classDoc).toMatchObject({ "0": ["grasper"] });
   const tripletDoc = (await (await request.get(`${DOWN_API}/api/triplet/CLIP_E2E`)).json()).frames;
   expect(tripletDoc).toMatchObject({ "0": [{ instrument: "DownTool" }] });
+
+  // The shell's event stream is still riding this route; drop it before the
+  // page goes away so its abort cannot fail the next spec.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 // --- Closeout for tickets 08–10 (run once here, ticket 10) ---
@@ -509,7 +557,8 @@ function trackStateBadge(page: Page, state: string): Locator {
   return page.getByRole("list", { name: "Track list" }).locator(`[data-track-state="${state}"]`);
 }
 
-test("leftover pins stay on their Frame: hidden after scrub, back on return", async ({ page, request }) => {
+test("leftover pins stay on their Frame: hidden after scrub, back on return", async ({ page }) => {
+  const request = page.request;
   await page.goto("/clips/CLIP_E2E");
   await videoReady(page);
   await clickAt(page, 0.4, 0.5);
@@ -530,7 +579,8 @@ test("leftover pins stay on their Frame: hidden after scrub, back on return", as
   await expect.poll(async () => (await overlayPixel(page, 0.62, 0.5)).a).toBe(255);
 });
 
-test("Track rail shows per-Track state: manual, refined, empty, propagated", async ({ page, request }) => {
+test("Track rail shows per-Track state: manual, refined, empty, propagated", async ({ page }) => {
+  const request = page.request;
   await page.goto("/clips/CLIP_E2E");
   await videoReady(page);
 
@@ -568,7 +618,8 @@ test("Track rail shows per-Track state: manual, refined, empty, propagated", asy
   await expect(trackStateBadge(page, "refined")).toBeVisible();
 });
 
-test("a Scribble stroke shows the handoff provenance next to the state", async ({ page, request }) => {
+test("a Scribble stroke shows the handoff provenance next to the state", async ({ page }) => {
+  const request = page.request;
   await page.goto("/clips/CLIP_E2E");
   await videoReady(page);
 
@@ -582,7 +633,8 @@ test("a Scribble stroke shows the handoff provenance next to the state", async (
   await expect(badge).toHaveAttribute("data-protected", "true");
 });
 
-test("Propagate leaves a Protected slot and the desk says kept", async ({ page, request }) => {
+test("Propagate leaves a Protected slot and the desk says kept", async ({ page }) => {
+  const request = page.request;
   await page.goto("/clips/CLIP_E2E");
   await videoReady(page);
 

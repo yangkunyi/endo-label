@@ -15,6 +15,7 @@ from endo_label.config import Settings
 from endo_label.coordination import Account, ProjectNotFound, UnknownClip, clip_project_id, db_path
 from endo_label.registry import (
     RegistryConflict,
+    RegistryItem,
     RegistryItemNotFound,
     create_candidate,
     create_item,
@@ -23,6 +24,7 @@ from endo_label.registry import (
     project_picker,
     rename_item,
     set_archived,
+    set_enabled,
 )
 
 _LISTS = {"phases": "phase", "class_tags": "class"}
@@ -30,6 +32,9 @@ _LISTS = {"phases": "phase", "class_tags": "class"}
 
 class VocabAddBody(BaseModel):
     name: str = Field(..., min_length=1)
+    # The desk's add row names the Clip it is labeling; the word is then enabled
+    # for that Clip's Project, so it is usable in the picker it was typed into.
+    clip_id: str = ""
 
 
 class VocabRenameBody(BaseModel):
@@ -43,6 +48,7 @@ class VocabTripleBody(BaseModel):
     instrument: str = Field(..., min_length=1)
     verb: str = Field(..., min_length=1)
     target: str = Field(..., min_length=1)
+    clip_id: str = ""
 
 
 class VocabTripleRenameBody(BaseModel):
@@ -81,6 +87,30 @@ def make_router(settings: Settings) -> APIRouter:
 
     def _already_present(exc: RegistryConflict) -> HTTPException:
         return HTTPException(status_code=409, detail=f"already present: {exc}")
+
+    def _create_or_find(kind: str, clip_id: str, **identity: str) -> RegistryItem:
+        """Write the registry row. With a Clip (the desk's add row) an identity
+        that already exists is reused — the word is about to be enabled for that
+        Clip's Project, not created a second time. Without one, a duplicate is
+        still the plain conflict the global add has always answered."""
+        try:
+            return create_item(_path(), kind, **identity)
+        except RegistryConflict as exc:
+            if not clip_id.strip():
+                raise _already_present(exc) from None
+            try:
+                return find_active(_path(), kind, **identity)
+            except (ValueError, RegistryItemNotFound):
+                name = identity.get("name") or " / ".join(
+                    identity[key] for key in ("instrument", "verb", "target")
+                )
+                raise HTTPException(status_code=409, detail=f"archived name: {name}") from None
+
+    def _enable_for_clip(vocab_id: int, clip_id: str) -> None:
+        """The Clip's Project enables the word the desk just wrote."""
+        if not clip_id.strip():
+            return
+        set_enabled(_path(), vocab_id, _project_for_clip(clip_id.strip()), True)
 
     def _project_for_clip(clip_id: str) -> int:
         try:
@@ -143,17 +173,12 @@ def make_router(settings: Settings) -> APIRouter:
     ) -> dict:
         instrument, verb, target = _stripped_triple(body)
         try:
-            create_item(
-                _path(),
-                "triplet",
-                instrument=instrument,
-                verb=verb,
-                target=target,
+            item = _create_or_find(
+                "triplet", body.clip_id, instrument=instrument, verb=verb, target=target
             )
-        except RegistryConflict as exc:
-            raise _already_present(exc) from None
         except ValueError as err:
             raise HTTPException(status_code=400, detail=str(err)) from None
+        _enable_for_clip(item.id, body.clip_id)
         return _vocab()
 
     @router.delete("/api/vocab/triples")
@@ -226,11 +251,10 @@ def make_router(settings: Settings) -> APIRouter:
         if not name:
             raise HTTPException(status_code=400, detail="empty name")
         try:
-            create_item(_path(), kind, name=name)
-        except RegistryConflict as exc:
-            raise _already_present(exc) from None
+            item = _create_or_find(kind, body.clip_id, name=name)
         except ValueError as err:
             raise HTTPException(status_code=400, detail=str(err)) from None
+        _enable_for_clip(item.id, body.clip_id)
         return _vocab()
 
     @router.post("/api/vocab/{list_name}/rename")

@@ -356,6 +356,21 @@ def set_roles(
         con.close()
 
 
+def set_password(path: Path, account_id: int, password: str) -> None:
+    """Replace one Account's password hash — the owner's own change."""
+    con = connect(path)
+    try:
+        cur = con.execute(
+            "UPDATE users SET password_hash=? WHERE id=?",
+            (hash_password(password), account_id),
+        )
+        if cur.rowcount != 1:
+            raise UnknownAccount(account_id)
+        con.commit()
+    finally:
+        con.close()
+
+
 def set_disabled(path: Path, username: str, disabled: bool) -> Account:
     con = connect(path)
     try:

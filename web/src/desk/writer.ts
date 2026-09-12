@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { KeyedMutator } from "swr";
 import {
   classSpanPath,
@@ -90,9 +90,7 @@ export type IdentityWriter = {
 export function useIdentityWriter({
   clipId,
   focus,
-  phaseVersion,
-  classVersion,
-  tripletVersion,
+  version,
   mutatePhase,
   mutateClass,
   mutateTriplet,
@@ -100,29 +98,37 @@ export function useIdentityWriter({
 }: {
   clipId: string | undefined;
   focus: EditorKind;
-  phaseVersion: number | undefined;
-  classVersion: number | undefined;
-  tripletVersion: number | undefined;
+  version: number | undefined;
   mutatePhase: KeyedMutator<PhaseDoc>;
   mutateClass: KeyedMutator<ClassDoc>;
   mutateTriplet: KeyedMutator<TripletDoc>;
   notify: (notice: DeskNotice) => void;
 }): IdentityWriter {
   const spanBusy = useRef(false);
+  // One Clip, one version: a commit of several identities answers with the next
+  // version on its first write, so the rest of the commit must carry it. The
+  // prop is the desk's freshest read; the ref is what this commit already wrote.
+  const heldVersion = useRef<number | undefined>(version);
+  useEffect(() => {
+    if (version !== undefined && (heldVersion.current === undefined || version > heldVersion.current)) {
+      heldVersion.current = version;
+    }
+  }, [version]);
+
+  const adoptVersion = (latest: number | undefined) => {
+    if (latest !== undefined) {
+      heldVersion.current = latest;
+    }
+  };
 
   const commitIdentityRange = useCallback(
     async (identity: BrushIdentity, from: number, to: number, remove: boolean) => {
       if (!clipId) {
         return;
       }
-      const version =
-        identity.kind === "phase"
-          ? phaseVersion
-          : identity.kind === "class"
-            ? classVersion
-            : tripletVersion;
       try {
-        const doc = await postIdentitySpan(clipId, identity, from, to, remove, version);
+        const doc = await postIdentitySpan(clipId, identity, from, to, remove, heldVersion.current);
+        adoptVersion(doc.version);
         if (identity.kind === "phase") {
           await mutatePhase(doc as PhaseDoc, { revalidate: false });
         } else if (identity.kind === "class") {
@@ -133,12 +139,21 @@ export function useIdentityWriter({
       } catch (err) {
         if (isVersionConflict(err)) {
           // Stale Clip version: refetch the held labels before the user retries.
-          await Promise.all([mutatePhase(), mutateClass(), mutateTriplet()]);
+          const [phase, classDoc, triplet] = await Promise.all([
+            mutatePhase(),
+            mutateClass(),
+            mutateTriplet(),
+          ]);
+          for (const doc of [phase, classDoc, triplet]) {
+            if (doc && doc.version !== undefined && (heldVersion.current === undefined || doc.version > heldVersion.current)) {
+              heldVersion.current = doc.version;
+            }
+          }
         }
         throw err;
       }
     },
-    [classVersion, clipId, mutateClass, mutatePhase, mutateTriplet, phaseVersion, tripletVersion],
+    [clipId, mutateClass, mutatePhase, mutateTriplet],
   );
 
   const runExclusive = useCallback(async (work: () => Promise<void>) => {
