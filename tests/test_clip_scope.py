@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from endo_label.app import create_app
 from endo_label.config import Settings
 from endo_label.coordination import (
+    add_project_member,
     assign_item,
     create_account,
     create_project,
@@ -75,6 +76,11 @@ def _world(tmp_path: Path) -> tuple[Settings, Path, FastAPI]:
     )
     create_account(path, "alice", "pw", annotator=True)
     create_account(path, "carol", "pw", reviewer=True)
+    # Assignment only takes Project members (pilot-ux/09), so every Account this
+    # fixture assigns work to joins both Projects first.
+    for project in (west, east):
+        for username in (ADMIN_USERNAME, "alice", "carol"):
+            add_project_member(path, project.id, username)
     return settings, path, create_app(settings)
 
 

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from endo_label.app import create_app
 from endo_label.config import Settings
 from endo_label.coordination import create_account, db_path
-from tests.sitting_http import ensure_registered, login, seed_admin
+from tests.sitting_http import ensure_members, ensure_registered, login, seed_admin
 
 _PHASE = "Preparation"
 
@@ -40,6 +40,7 @@ def _clients(tmp_path: Path) -> tuple[TestClient, TestClient, TestClient, TestCl
     create_account(path, "alice", "pw", annotator=True)
     create_account(path, "carol", "pw", reviewer=True)
     create_account(path, "dave", "pw", annotator=True, reviewer=True)
+    ensure_members(settings, "alice", "carol", "dave")
     app = create_app(settings)
     admin, alice, carol, dave = (TestClient(app) for _ in range(4))
     login(admin)

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ClipMeta, TripletRow, Vocab } from "../api";
 import { useDeskStore, type EditorKind } from "../deskStore";
+import { foldCoverage } from "../timeline";
 import { brushColorKey, useBrushRange, useDeskLanes } from "./lanes";
 import { TransportRow } from "./PlayerPanel";
 import { TimelineBand } from "./TimelineBand";
@@ -43,6 +44,19 @@ export function TimelinePanel({
     vocab,
   });
   const { previewRange, focusedBrush } = useBrushRange({ clipId, frameIndex, focus, vocab });
+  // One derived map per Task type: the strip draws it and the desk's hints count
+  // it, both through `foldCoverage` (ADR 0029).
+  const coverage = useMemo(
+    () =>
+      foldCoverage({
+        task: focus,
+        frameCount: clip.frame_count,
+        phaseFrames,
+        classFrames,
+        tripletFrames,
+      }),
+    [classFrames, clip.frame_count, focus, phaseFrames, tripletFrames],
+  );
   const [barSelection, setBarSelection] = useState<LaneBar[]>([]);
   const selectionScope = `${clipId ?? ""}:${focus}`;
   const [barScope, setBarScope] = useState(selectionScope);
@@ -144,6 +158,7 @@ export function TimelinePanel({
       frameCount={clip.frame_count}
       frameIndex={frameIndex}
       lanes={lanes}
+      coverage={coverage}
       previewRange={previewRange}
       brushKeys={focusedBrush.map(brushColorKey)}
       barSelection={barSelection}

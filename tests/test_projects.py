@@ -81,6 +81,7 @@ def test_creating_a_project_and_registering_media_shows_in_projects_and_clip_dir
             "name": "West China Chole",
             "hospital": "West China",
             "clips": [{"id": "CASE01", "kind": "jpeg"}],
+            "members": [],
         }
     ]
     clips = client.get("/api/clips")
@@ -117,6 +118,7 @@ def test_yaml_projects_register_when_sitting_starts(tmp_path: Path) -> None:
             "name": "YAML Study",
             "hospital": "Test Hospital",
             "clips": [{"id": "YAMLCASE", "kind": "jpeg"}],
+            "members": [],
         }
     ]
     assert client.get("/api/clips").json()["clips"] == [

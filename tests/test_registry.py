@@ -164,6 +164,22 @@ def test_enable_matrix_decides_each_projects_visible_set(tmp_path: Path) -> None
     assert other["id"] in by_name["East"]["enabled_ids"]
 
 
+def test_visible_needs_a_project_or_a_clip(tmp_path: Path) -> None:
+    """The scoped picker read has no desk-wide answer to fall back on."""
+    client, _settings_obj = _admin(tmp_path)
+
+    bare = client.get("/api/registry/visible")
+    assert bare.status_code == 400, bare.text
+    assert bare.json()["detail"] == "project_id is required"
+
+    # A Clip names its Project; an unknown Clip has none to name.
+    scoped = client.get("/api/registry/visible", params={"clip_id": "CLIPA"})
+    assert scoped.status_code == 200, scoped.text
+    missing = client.get("/api/registry/visible", params={"clip_id": "NOPE"})
+    assert missing.status_code == 404, missing.text
+    assert missing.json()["detail"] == "Clip not found: NOPE"
+
+
 def test_promoting_a_candidate_turns_it_into_a_global_id(tmp_path: Path) -> None:
     client, settings = _admin(tmp_path)
     project_id = list_projects(db_path(settings))[0].id

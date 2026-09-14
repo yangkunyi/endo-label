@@ -21,8 +21,11 @@ from endo_label.coordination import (
     create_project,
     db_path,
     list_accounts,
+    list_project_members,
+    remove_project_member,
     set_clip_tags,
     set_disabled,
+    set_project_members,
     set_roles,
     update_project_hospital,
 )
@@ -60,6 +63,10 @@ class UpdateProjectBody(BaseModel):
 
 class TagsBody(BaseModel):
     tags: list[str] = Field(default_factory=list)
+
+
+class MembersBody(BaseModel):
+    members: list[str] = Field(default_factory=list)
 
 
 def _path(request: Request):
@@ -147,6 +154,43 @@ def update_project_route(project_id: int, body: UpdateProjectBody, request: Requ
     except ProjectNotFound:
         raise HTTPException(status_code=404, detail="Project not found") from None
     return {"project": _project(project)}
+
+
+def _members(project_id: int, request: Request) -> list[str]:
+    """404 for an unknown Project, so the Projects page can tell it from an empty list."""
+    try:
+        return list_project_members(_path(request), project_id)
+    except ProjectNotFound:
+        raise HTTPException(status_code=404, detail="Project not found") from None
+
+
+@router.get("/api/admin/projects/{project_id}/members", dependencies=_admin_only)
+def list_project_members_route(project_id: int, request: Request) -> dict:
+    return {"members": _members(project_id, request)}
+
+
+@router.put("/api/admin/projects/{project_id}/members", dependencies=_admin_only)
+def replace_project_members(project_id: int, body: MembersBody, request: Request) -> dict:
+    """Replace the member list. One unknown Account refuses the whole write."""
+    try:
+        members = set_project_members(_path(request), project_id, body.members)
+    except ProjectNotFound:
+        raise HTTPException(status_code=404, detail="Project not found") from None
+    except UnknownAccount as exc:
+        raise HTTPException(status_code=404, detail=f"Account not found: {exc}") from None
+    return {"members": members}
+
+
+@router.delete("/api/admin/projects/{project_id}/members/{username}", dependencies=_admin_only)
+def remove_project_member_route(project_id: int, username: str, request: Request) -> dict:
+    """An Account that is not a member is already out: a no-op, not a 404."""
+    try:
+        members = remove_project_member(_path(request), project_id, username)
+    except ProjectNotFound:
+        raise HTTPException(status_code=404, detail="Project not found") from None
+    except UnknownAccount as exc:
+        raise HTTPException(status_code=404, detail=f"Account not found: {exc}") from None
+    return {"members": members}
 
 
 @router.get("/api/tags")

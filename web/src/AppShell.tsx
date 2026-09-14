@@ -3,6 +3,7 @@ import useSWR, { mutate } from "swr";
 import { getJson, mePath, sendJson, type Me } from "./api";
 import { Button } from "./components/ui/button";
 import { ChangePassword } from "./ChangePassword";
+import { DESK_PATH, MY_TASKS_PATH } from "./routes";
 import { useWorkflowEvents } from "./workflowEvents";
 
 export function AppShell() {
@@ -27,12 +28,12 @@ export function AppShell() {
     <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-3 py-2">
         <nav className="flex items-center gap-3 text-sm">
-          <Link to="/">Desk</Link>
+          <Link to={DESK_PATH}>Desk</Link>
           <Link to="/clips">Clips</Link>
           {data.roles.admin ? <Link to="/admin/users">Users</Link> : null}
           {data.roles.admin ? <Link to="/admin/projects">Projects</Link> : null}
           {data.capabilities?.annotate || data.capabilities?.review ? (
-            <Link to="/tasks">My Tasks</Link>
+            <Link to={MY_TASKS_PATH}>My Tasks</Link>
           ) : null}
           {data.roles.admin ? <Link to="/admin/vocab">Vocab</Link> : null}
           {data.roles.admin ? <Link to="/admin/assignments">Assignments</Link> : null}

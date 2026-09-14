@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from endo_label.app import create_app
 from endo_label.config import Settings
 from endo_label.coordination import create_account, db_path
-from tests.sitting_http import ensure_registered, login, seed_admin
+from tests.sitting_http import ensure_members, ensure_registered, login, seed_admin
 
 _PHASE = "Preparation"
 _PHASE_TWO = "CalotTriangleDissection"
@@ -36,6 +36,7 @@ def _shared_app(tmp_path: Path):
     ensure_registered(settings)
     create_account(db_path(settings), "alice", "pw", annotator=True)
     create_account(db_path(settings), "bob", "pw", annotator=True)
+    ensure_members(settings, "alice", "bob")
     return create_app(settings)
 
 

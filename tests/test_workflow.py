@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from endo_label.app import create_app
 from endo_label.config import Settings
 from endo_label.coordination import create_account, db_path
-from tests.sitting_http import ensure_registered, login, seed_admin
+from tests.sitting_http import ensure_members, ensure_registered, login, seed_admin
 
 
 def _settings(tmp_path: Path, clip_ids: tuple[str, ...] = ("CLIPA", "CLIPB")) -> Settings:
@@ -39,6 +39,7 @@ def _shared(
     create_account(path, "alice", "pw", annotator=True)
     create_account(path, "bob", "pw", annotator=True)
     create_account(path, "carol", "pw", reviewer=True)
+    ensure_members(settings, "alice", "bob", "carol")
     return settings, create_app(settings)
 
 
