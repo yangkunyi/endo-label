@@ -41,7 +41,10 @@ class ClipEntry:
     id: str
     kind: str
     path: Path
-    tags: tuple[str, ...] = ()
+    # Tri-state: `None` is an entry that says nothing about tags, so registering it leaves
+    # whatever `clip_tags` already holds. A tuple — empty included — is the Clip's tags
+    # stated in full, so a tag missing from it leaves the store (ADR 0028).
+    tags: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -133,9 +136,17 @@ def _parse_clips(value: object, path: Path, base: Path) -> tuple[ClipEntry, ...]
     return tuple(entries)
 
 
-def _parse_tags(value: object, path: Path) -> tuple[str, ...]:
+def _parse_tags(value: object, path: Path) -> tuple[str, ...] | None:
+    """A Clip entry's `tags:` as stated, or `None` when the entry states none.
+
+    The distinction is the point: it tells `register_clip` apart "this entry says the
+    Clip has no tags" (`tags: []`, clear them) from "this entry has no opinion" (the
+    key absent, or left bare and so null, leave the store's tags alone). Only an
+    explicit empty list clears, so a key left dangling in a config never deletes what
+    the admin wrote.
+    """
     if value is None:
-        return ()
+        return None
     if isinstance(value, str):
         return tuple(tag.strip() for tag in value.split(",") if tag.strip())
     if isinstance(value, list):

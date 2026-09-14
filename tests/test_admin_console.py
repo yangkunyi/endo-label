@@ -293,8 +293,8 @@ def test_admin_creates_projects_and_edits_the_hospital_field(tmp_path: Path) -> 
     assert admin.patch("/api/projects/9999", json={"hospital": "Nowhere"}).status_code == 404
 
 
-def _sitting_with_tags(tmp_path: Path, media: Path, tags: list[str]) -> Path:
-    """One sitting YAML whose single Clip carries `tags` (no key at all when empty)."""
+def _sitting_with_tags(tmp_path: Path, media: Path, tags: list[str] | None) -> Path:
+    """One sitting YAML whose single Clip carries `tags` — stated as `[]` when empty, no key for None."""
     lines = [
         f"frames_root: {media.parent}",
         f"labels_root: {tmp_path / 'labels'}",
@@ -307,9 +307,8 @@ def _sitting_with_tags(tmp_path: Path, media: Path, tags: list[str]) -> Path:
         "        kind: jpeg",
         f"        path: {media}",
     ]
-    if tags:
-        lines.append("        tags:")
-        lines.extend(f"          - {tag}" for tag in tags)
+    if tags is not None:
+        lines.append(f"        tags: [{', '.join(tags)}]")
     yaml_path = tmp_path / "sitting.yaml"
     yaml_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return yaml_path
@@ -330,7 +329,7 @@ def test_sitting_config_registers_clip_tags_for_filtering(tmp_path: Path) -> Non
 
 
 def test_a_tag_dropped_from_the_config_leaves_the_clip(tmp_path: Path) -> None:
-    """Re-registering a Clip states its tags in full, so dropping one drops it."""
+    """A stated `tags:` is the Clip's tags in full, so dropping one drops it."""
     media = _jpeg_clip(tmp_path / "frames", "CASE01")
     yaml_path = _sitting_with_tags(tmp_path, media, ["west", "chole"])
     client = authed_client(load_settings(yaml_path))
@@ -344,7 +343,8 @@ def test_a_tag_dropped_from_the_config_leaves_the_clip(tmp_path: Path) -> None:
     assert client.get("/api/items", params={"tag": "chole"}).json()["items"] == []
     assert all(row["tags"] == ["west"] for row in client.get("/api/items").json()["items"])
 
-    # The last tag goes: the Clip keeps its labels and loses its tags.
+    # The last tag goes: an explicitly empty `tags: []` still states the list, so the
+    # Clip loses it (a bare or absent key would instead say nothing).
     yaml_path = _sitting_with_tags(tmp_path, media, [])
     client = authed_client(load_settings(yaml_path))
     assert client.get("/api/tags").json()["tags"] == []
@@ -352,9 +352,45 @@ def test_a_tag_dropped_from_the_config_leaves_the_clip(tmp_path: Path) -> None:
     assert all(row["tags"] == [] for row in client.get("/api/items").json()["items"])
 
 
-def test_register_clip_cli_accepts_repeated_tags(tmp_path: Path, capsys) -> None:
-    frames = tmp_path / "frames"
-    media = _jpeg_clip(frames, "CASE02")
+def _boot(yaml_path: Path) -> TestClient:
+    """One desk boot over a YAML file — the restart that re-reads it on every `create_app`."""
+    return authed_client(load_settings(yaml_path))
+
+
+def test_a_config_entry_without_tags_keeps_the_tags_the_api_wrote(tmp_path: Path) -> None:
+    """A registration with no `tags:` says nothing, so the API's write survives the restart."""
+    media = _jpeg_clip(tmp_path / "frames", "CASE01")
+    yaml_path = _sitting_with_tags(tmp_path, media, None)
+    admin = _boot(yaml_path)
+    assert admin.get("/api/tags").json()["tags"] == []
+    assert admin.put("/api/clips/CASE01/tags", json={"tags": ["chole"]}).status_code == 200
+
+    # Each restart re-registers CASE01 from the same file, which states no tags:
+    # the tags written through the API are still the Clip's.
+    for _ in range(2):
+        admin = _boot(yaml_path)
+        assert admin.get("/api/tags").json()["tags"] == ["chole"]
+        tagged = admin.get("/api/clips", params={"tag": "chole"}).json()["clips"]
+        assert [row["id"] for row in tagged] == ["CASE01"]
+        assert all(row["tags"] == ["chole"] for row in admin.get("/api/items").json()["items"])
+
+
+def test_a_config_entry_that_states_tags_owns_them_again(tmp_path: Path) -> None:
+    """Stating tags again is a statement about the Clip, so it outranks the earlier API write."""
+    media = _jpeg_clip(tmp_path / "frames", "CASE01")
+    admin = _boot(_sitting_with_tags(tmp_path, media, None))
+    assert admin.put("/api/clips/CASE01/tags", json={"tags": ["chole"]}).status_code == 200
+    assert admin.get("/api/tags").json()["tags"] == ["chole"]
+
+    admin = _boot(_sitting_with_tags(tmp_path, media, ["west", "chole"]))
+    assert admin.get("/api/tags").json()["tags"] == ["chole", "west"]
+    assert all(
+        row["tags"] == ["chole", "west"] for row in admin.get("/api/items").json()["items"]
+    )
+
+
+def _plain_sitting(tmp_path: Path, frames: Path) -> Path:
+    """A sitting YAML with no `projects:`, so only the CLI registers Clips into it."""
     yaml_path = tmp_path / "sitting.yaml"
     yaml_path.write_text(
         "\n".join(
@@ -367,27 +403,73 @@ def test_register_clip_cli_accepts_repeated_tags(tmp_path: Path, capsys) -> None
         + "\n",
         encoding="utf-8",
     )
+    return yaml_path
+
+
+def _register_cli(
+    yaml_path: Path, media: Path, clip_id: str, tags: list[str] | None
+) -> None:
+    """`endo_label register-clip`, with one `--tag` per tag — or none at all for `None`."""
+    argv = [
+        "register-clip",
+        clip_id,
+        "--project",
+        "East Study",
+        "--kind",
+        "jpeg",
+        "--path",
+        str(media),
+    ]
+    for tag in tags or ():
+        argv += ["--tag", tag]
+    main([*argv, "--config", str(yaml_path)])
+
+
+def test_register_clip_cli_accepts_repeated_tags(tmp_path: Path, capsys) -> None:
+    frames = tmp_path / "frames"
+    media = _jpeg_clip(frames, "CASE02")
+    yaml_path = _plain_sitting(tmp_path, frames)
     main(["create-project", "East Study", "--hospital", "Huashan", "--config", str(yaml_path)])
-    main(
-        [
-            "register-clip",
-            "CASE02",
-            "--project",
-            "East Study",
-            "--kind",
-            "jpeg",
-            "--path",
-            str(media),
-            "--tag",
-            "east",
-            "--tag",
-            "chole",
-            "--config",
-            str(yaml_path),
-        ]
-    )
+    _register_cli(yaml_path, media, "CASE02", ["east", "chole"])
     capsys.readouterr()
-    client = authed_client(load_settings(yaml_path))
+    client = _boot(yaml_path)
     assert client.get("/api/tags").json()["tags"] == ["chole", "east"]
     tagged = client.get("/api/clips", params={"tag": "east"}).json()["clips"]
     assert [row["id"] for row in tagged] == ["CASE02"]
+
+
+def test_register_clip_cli_states_tags_only_when_it_is_given_some(
+    tmp_path: Path, capsys
+) -> None:
+    """No `--tag` says nothing; `--tag` states the Clip's tags in full."""
+    frames = tmp_path / "frames"
+    media = _jpeg_clip(frames, "CASE03")
+    yaml_path = _plain_sitting(tmp_path, frames)
+    main(["create-project", "East Study", "--hospital", "Huashan", "--config", str(yaml_path)])
+    _register_cli(yaml_path, media, "CASE03", ["west", "chole"])
+    admin = _boot(yaml_path)
+    assert admin.get("/api/tags").json()["tags"] == ["chole", "west"]
+
+    # The admin re-tags the Clip; re-registering the same Clip without --tag is not
+    # a statement about tags, so it must not undo that.
+    assert admin.put("/api/clips/CASE03/tags", json={"tags": ["east"]}).status_code == 200
+    _register_cli(yaml_path, media, "CASE03", None)
+    capsys.readouterr()
+    admin = _boot(yaml_path)
+    assert admin.get("/api/tags").json()["tags"] == ["east"]
+    tagged = admin.get("/api/clips", params={"tag": "east"}).json()["clips"]
+    assert [row["id"] for row in tagged] == ["CASE03"]
+
+    # `--tag` again is the Clip's tags in full, so the API's tag leaves the store.
+    _register_cli(yaml_path, media, "CASE03", ["chole"])
+    capsys.readouterr()
+    admin = _boot(yaml_path)
+    assert admin.get("/api/tags").json()["tags"] == ["chole"]
+    assert admin.get("/api/clips", params={"tag": "east"}).json()["clips"] == []
+
+    # `--tag ''` is a stated empty list, which is how the CLI clears them.
+    _register_cli(yaml_path, media, "CASE03", [""])
+    capsys.readouterr()
+    admin = _boot(yaml_path)
+    assert admin.get("/api/tags").json()["tags"] == []
+    assert admin.get("/api/clips", params={"tag": "chole"}).json()["clips"] == []

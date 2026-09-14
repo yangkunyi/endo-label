@@ -1,4 +1,4 @@
-# Project membership is an explicit stored relation and it gates assignment; config only seeds it
+# Project membership is an explicit stored relation and it gates assignment; config only seeds what it states
 
 The pilot's desk was one labeler at a time; multi-user (ADR 0026) makes Projects plural, and an
 Account who does not work on a study must not show up in that study's assignment pickers, nor be
@@ -21,6 +21,15 @@ restart — a UI that undoes itself is worse than no UI. For the same reason the
 creation from the Accounts already holding an Assignment in that Project: an existing install (the
 pilot) must stay assignable across the change, without anyone re-typing its members.
 
+A Clip's tags follow the same rule one table over: **a registration states a Clip's tags only when it
+was given some.** A registration *is* given tags by a config Clip entry whose `tags:` holds a list —
+an explicitly empty `tags: []` included — or by one or more `--tag` on `register-clip`; that list is
+then the Clip's tags in full, rewritten on every boot, so a tag dropped from it leaves the store and
+its filters. A registration given no tag list at all — `tags:` absent (or left bare, which is the same
+null value), no `--tag` — says nothing about tags and leaves `clip_tags` as it stands, so the next
+`create_app` does not undo `PUT /api/clips/{clip_id}/tags`. Two writers over one table is fine as long
+as the weaker one only speaks when spoken to.
+
 ## Considered Options
 
 - **Derive membership from assignment history** — rejected. It makes a hidden state change ride on a
@@ -32,6 +41,10 @@ pilot) must stay assignable across the change, without anyone re-typing its memb
   is about who may be *given* work.
 - **Config as the source of truth, re-read every boot** — rejected; a UI edit must not be reverted by
   a restart. Config is an import path for a new Project, not the ongoing owner.
+- **Config as the ongoing owner of a Clip's tags** — rejected; it is the same loss one table over,
+  and a Clip entry that names tags only for its first registration would have to say so. A stated
+  `tags:` is therefore a full statement, re-applied every boot, while a registration that states none
+  has no say at all.
 - **Membership as a role flag on the Account** — rejected; membership is per (Account, Project) pair,
   while roles are desk-wide capabilities.
 - **Per-Task-type or per-Clip membership** — rejected as finer than the question asked; one
@@ -49,3 +62,5 @@ pilot) must stay assignable across the change, without anyone re-typing its memb
   `create-admin` / `create-project`.
 - The backfill is one derived-to-explicit migration; after it, an install's membership is whatever the
   database says.
+- `clip_tags` has two writers — the config/CLI registration and `PUT /api/clips/{clip_id}/tags` — and
+  the registration one keeps its hands off a Clip whose entry states no `tags:`.

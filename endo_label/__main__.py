@@ -151,8 +151,12 @@ def _register_clip(argv: list[str]) -> None:
     parser.add_argument(
         "--tag",
         action="append",
-        default=[],
-        help="Clip tag for cross-cutting filtering (repeatable)",
+        default=None,
+        help=(
+            "Clip tag for cross-cutting filtering (repeatable). Stating any --tag "
+            "replaces the Clip's tags in full (--tag '' clears them); passing none "
+            "leaves the stored tags as they are"
+        ),
     )
     parser.add_argument(
         "--config",
