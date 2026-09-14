@@ -9,7 +9,10 @@ import { CLIP_FILTERS_STORAGE_KEY } from "../src/clipFilters";
  * The server decides whose Clips these are: an Account only ever gets the
  * Clips it holds an Assignment on, and `all` is refused for anyone but an
  * admin. The page's filters (Project, tag, scope) are stored, so the rail —
- * which reads the same selection — lists exactly what the page lists.
+ * which reads the same selection — lists exactly what the page lists. A stored
+ * value the server would refuse is corrected before it is asked with
+ * (pilot-ux/13): the browser outlives an admin flag, and neither surface may
+ * answer with a refusal sentence over a list nobody can fix.
  */
 
 test.describe.configure({ mode: "serial" });
@@ -20,6 +23,28 @@ const listedClips = (page: Page) => page.locator('main a[href^="/clips/"]');
 
 const railClips = (page: Page) =>
   page.getByRole("navigation", { name: "Clips" }).locator('a[href^="/clips/"]');
+
+/** The stored selection's scope, as this browser holds it right now. */
+const storedScope = (page: Page): Promise<string | null> =>
+  page.evaluate(
+    (key) => JSON.parse(window.localStorage.getItem(key) ?? "null")?.scope ?? null,
+    CLIP_FILTERS_STORAGE_KEY,
+  );
+
+/**
+ * A stored selection this Account may not hold, kept in place across every
+ * navigation — what a shared browser, or an Account that lost its admin flag,
+ * leaves behind.
+ */
+async function storeScopeOnEveryLoad(page: Page, scope: string): Promise<void> {
+  await page.addInitScript(
+    ([key, value]: [string, string]) => window.localStorage.setItem(key, value),
+    [
+      CLIP_FILTERS_STORAGE_KEY,
+      JSON.stringify({ project: "", tag: "", scope }),
+    ] as [string, string],
+  );
+}
 
 async function tagClip(
   request: APIRequestContext,
@@ -112,29 +137,52 @@ test("project and tag filters narrow the list, combine, and survive a reload", a
   ).toBeVisible();
 });
 
-test("a refused scope shows the sentence, not a bare status", async ({ page }) => {
+test("a stored scope the server refuses is corrected, never shown as a refusal", async ({
+  page,
+}) => {
   await loginApi(page.request);
   await resetItems(page.request);
   await ensureAccount(page.request, ANNOTATOR, { annotator: true });
+  await assign(page.request, "CLIP_E2E", "phase", ANNOTATOR.username);
   await loginAs(page.request, ANNOTATOR);
-  // A stored choice left behind by an admin's session in this browser: this
-  // Account may not ask for it, and the server's answer is a sentence.
-  await page.addInitScript(
-    ([key, value]: [string, string]) => window.localStorage.setItem(key, value),
-    [
-      CLIP_FILTERS_STORAGE_KEY,
-      JSON.stringify({ project: "", tag: "", scope: "all" }),
-    ] as [string, string],
-  );
+  // Left behind by an admin's session in this browser: this Account may not ask
+  // for it, and asking is the refusal no surface may show.
+  await storeScopeOnEveryLoad(page, "all");
 
   await page.goto("/clips");
-  const alert = page.getByRole("alert");
-  await expect(alert).toHaveText(REFUSAL);
-  await expect(alert).not.toContainText("403");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(listedClips(page)).toHaveText(["CLIP_E2E"]);
+  await expect(page.getByRole("status")).toContainText("showing your own Clips");
+  // The browser's entry is put right, so the next reader starts from it.
+  await expect.poll(() => storedScope(page)).toBe("mine");
 
-  // The rail is a surface of the same request, and says the same sentence.
+  // The rail reads the same entry and clears it too: the desk is not a place
+  // from which this needs a detour through the Clips directory.
   await page.goto("/clips/CLIP_E2E");
-  await expect(
-    page.getByRole("navigation", { name: "Clips" }).getByText(REFUSAL),
-  ).toBeVisible();
+  const rail = page.getByRole("navigation", { name: "Clips" });
+  await expect(railClips(page)).toHaveText(["CLIP_E2E 2 Frames"]);
+  await expect(rail.getByText(REFUSAL)).toHaveCount(0);
+  await expect(rail.getByRole("status")).toContainText("showing your own Clips");
+  await expect.poll(() => storedScope(page)).toBe("mine");
+});
+
+test("the admin may change the scope from the desk rail, without leaving the desk", async ({
+  page,
+}) => {
+  await loginApi(page.request);
+  await resetItems(page.request);
+
+  await page.goto("/clips/CLIP_E2E");
+  const rail = page.getByRole("navigation", { name: "Clips" });
+  // The admin's own Clips are none of them: the scope starts at mine.
+  await expect(rail.getByLabel("Show every Clip")).not.toBeChecked();
+
+  await rail.getByLabel("Show every Clip").check();
+  await expect(railClips(page)).toHaveCount(3);
+  await expect.poll(() => storedScope(page)).toBe("all");
+
+  // The Clips directory reads the same selection, so the change reaches it.
+  await page.goto("/clips");
+  await expect(page.getByLabel("Show every Clip")).toBeChecked();
+  await expect(listedClips(page)).toHaveCount(3);
 });
