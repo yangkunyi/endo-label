@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import type { AnnotationSummary } from "./api";
 import {
   coverageSegments,
+  maskCoverageCounts,
   maskCoverageSummary,
   maskCoveredFrames,
   trackLaneKey,
@@ -56,6 +57,21 @@ test("coverage folds into filled runs and gaps, in Frame order", () => {
 
 test("the strip's readout names mask and counts the covered Frames", () => {
   expect(maskCoverageSummary(2, 5)).toBe("Mask coverage: 2 of 5 Frames have a Track mask");
+});
+
+test("the mask Submit counts come off the same covered Frames the strip draws", () => {
+  const doc = summary([
+    { frame_stem: "0", frame_index: 0, mask_count: 1, track_ids: [1] },
+    { frame_stem: "2", frame_index: 2, mask_count: 1, track_ids: [2] },
+  ]);
+  expect(maskCoverageCounts(doc, 5)).toEqual({ task: "mask", unlabeled: 3, total: 5 });
+  // A mask on a Frame the Clip does not have is not coverage of this Clip.
+  const beyondTheClip = summary([
+    { frame_stem: "9", frame_index: 9, mask_count: 1, track_ids: [1] },
+  ]);
+  expect(maskCoverageCounts(beyondTheClip, 5)).toEqual({ task: "mask", unlabeled: 5, total: 5 });
+  expect(maskCoverageCounts(null, 5)).toEqual({ task: "mask", unlabeled: 5, total: 5 });
+  expect(maskCoverageCounts(doc, 0)).toEqual({ task: "mask", unlabeled: 0, total: 0 });
 });
 
 test("each Track lane spans the Frames its masks cover, and is read-only", () => {

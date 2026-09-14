@@ -1,6 +1,6 @@
 import type { AnnotationSummary, AnnotationSummaryFrame } from "./api";
 import { laneIsVisible, laneVisibilityKey, type LaneKind } from "./deskStore";
-import { foldValues, type TimelineLane } from "./timeline";
+import { foldValues, type CoverageCounts, type TimelineLane } from "./timeline";
 
 /**
  * The mask answer to "标到哪了", folded from the Annotation summary
@@ -76,6 +76,16 @@ export function trackMaskFrames(
     frames.sort((a, b) => a - b);
   }
   return byTrack;
+}
+
+/** The mask row's Submit counts: the same covered Frames the mask strip draws. */
+export function maskCoverageCounts(
+  summary: AnnotationSummary | null | undefined,
+  frameCount: number,
+): CoverageCounts {
+  const total = Math.max(0, frameCount);
+  const covered = maskCoveredFrames(summary).filter((index) => index < total).length;
+  return { task: "mask", unlabeled: total - covered, total };
 }
 
 /** Every covered Frame as a filled run, every other Frame as a gap, in Frame order. */

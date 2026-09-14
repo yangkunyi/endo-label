@@ -3,6 +3,7 @@ import useSWR, { mutate } from "swr";
 import {
   deliverPath,
   getJson,
+  itemActionPath,
   itemsPath,
   projectsPath,
   sendJson,
@@ -13,6 +14,7 @@ import {
 } from "./api";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
+import { clipSubmitHint } from "./submitHint";
 
 type AssignmentItem = {
   clip_id: string;
@@ -93,6 +95,7 @@ function ItemRow({
   onSelect,
   canDeliver,
   itemsKey,
+  onNotice,
 }: {
   item: AssignmentItem;
   action: "assign" | "reassign" | "reviewer" | null;
@@ -100,10 +103,17 @@ function ItemRow({
   onSelect: (key: string, checked: boolean) => void;
   canDeliver: boolean;
   itemsKey: string;
+  /** The board's one Submit hint line, above the columns. */
+  onNotice: (notice: string | null) => void;
 }) {
   const [username, setUsername] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const reviewerAction = action === "reviewer";
+  // An admin may submit on the holder's behalf: the server's `submit`
+  // capability is `Labeling and (assignee or admin)`, and this board is
+  // admin-only (capabilities.item_capabilities).
+  const canSubmit = item.state === "Labeling";
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -117,6 +127,27 @@ function ItemRow({
       await mutate(itemsKey);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not update Assignment");
+    }
+  }
+
+  /**
+   * Submitting with gaps succeeds (coverage is not completion, ADR 0029): the
+   * Clip's own coverage is read first so the desk-wide sentence can name how
+   * much is missing, and a coverage read that fails says nothing rather than
+   * standing between the admin and the submit.
+   */
+  async function submit() {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const hint = await clipSubmitHint(item.clip_id, item.task_type).catch(() => null);
+      onNotice(hint);
+      await sendJson(itemActionPath(item.clip_id, item.task_type, "submit"), "POST");
+      await mutate(itemsKey);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not submit");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -151,6 +182,18 @@ function ItemRow({
       ) : null}
       {item.note ? <p className="text-xs text-muted-foreground">Note: {item.note}</p> : null}
       <DeliveredMarker item={item} canDeliver={canDeliver} itemsKey={itemsKey} />
+      {canSubmit ? (
+        <Button
+          type="button"
+          size="sm"
+          className="self-start"
+          disabled={submitting}
+          title={`Submit ${item.clip_id} ${item.task_type} for review`}
+          onClick={() => void submit()}
+        >
+          Submit
+        </Button>
+      ) : null}
       {action ? (
         <form className="flex gap-2" onSubmit={onSubmit}>
           <Input
@@ -238,6 +281,7 @@ export function AssignmentsBoard() {
   const { data: tags } = useSWR(tagsPath(), getJson<TagsResponse>);
   const { data: me } = useSWR("/api/me", getJson<Me>);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [submitNotice, setSubmitNotice] = useState<string | null>(null);
   const canDeliver = Boolean(me?.roles.admin || me?.roles.reviewer);
 
   if (!data && !error) {
@@ -303,6 +347,13 @@ export function AssignmentsBoard() {
           </select>
         </label>
       </div>
+      {/* The Submit hint's own line: it outlives the row it was said about, which
+          moves to the Submitted column the moment the submit lands. */}
+      {submitNotice ? (
+        <p role="status" data-submit-hint="" className="mt-4 text-xs text-muted-foreground">
+          {submitNotice}
+        </p>
+      ) : null}
       <div className="mt-4 grid grid-cols-5 gap-4">
         {COLUMNS.map((column) => {
           const items = data.items.filter((item) => item.state === column.state);
@@ -321,6 +372,7 @@ export function AssignmentsBoard() {
                     onSelect={onSelect}
                     canDeliver={canDeliver}
                     itemsKey={itemsKey}
+                    onNotice={setSubmitNotice}
                   />
                 ))}
               </ul>

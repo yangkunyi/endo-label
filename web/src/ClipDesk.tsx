@@ -1,4 +1,4 @@
-import { useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useMemo, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useParams } from "react-router-dom";
 import { ClipRail } from "./desk/ClipRail";
 import { DeskItemActions } from "./desk/DeskItemActions";
@@ -14,6 +14,7 @@ import { useLaneVisibility } from "./desk/lanes";
 import type { DeskNotice } from "./desk/notice";
 import { useIdentityWriter } from "./desk/writer";
 import { useDeskStore, type EditorKind } from "./deskStore";
+import { foldCoverage } from "./timeline";
 
 /**
  * A mouse click must not leave focus on a control: with focus on a button,
@@ -64,6 +65,22 @@ export function ClipDesk() {  const { clipId } = useParams();
     notify: setNotice,
   });
 
+  // One derived coverage map per Task type, for the whole desk: the Coverage
+  // Strip draws it, `n` walks its gaps, and Submit names its count. Nothing
+  // reads a second source of coverage (ADR 0029). A desk with no Clip simply
+  // has no Frames to cover.
+  const coverage = useMemo(
+    () =>
+      foldCoverage({
+        task: taskFocus,
+        frameCount: clip?.frame_count ?? 0,
+        phaseFrames: desk.phaseDoc?.frames ?? {},
+        classFrames: desk.classDoc?.frames ?? {},
+        tripletFrames: desk.tripletDoc?.frames ?? {},
+      }),
+    [clip?.frame_count, desk.classDoc, desk.phaseDoc, desk.tripletDoc, taskFocus],
+  );
+
   return (
     <main
       className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground"
@@ -73,8 +90,13 @@ export function ClipDesk() {  const { clipId } = useParams();
         <span className="text-sm font-semibold tracking-wide">endo_label</span>
         <span className="text-muted-foreground" aria-hidden="true">/</span>
         <h1 className="text-sm font-semibold">{clip?.id ?? "Workbench"}</h1>
-        {clip ? <DeskItemActions clipId={clip.id} taskType={taskFocus} /> : null}
+        {clip ? (
+          <DeskItemActions clipId={clip.id} taskType={taskFocus} coverage={coverage} />
+        ) : null}
       </header>
+      {/* The Frame controls bar belongs to the playback context: `[`/`]`/`i`/`o`
+          and the `n` jump are Frame moves, and the notice line they answer on
+          lives here. */}
       <PlaybackProvider clip={clip} frameIndex={frameIndex}>
         <MaskSessionProvider
           clipId={clipId}
@@ -114,6 +136,7 @@ export function ClipDesk() {  const { clipId } = useParams();
                   classFrames={desk.classDoc?.frames ?? {}}
                   tripletFrames={desk.tripletDoc?.frames ?? {}}
                   annotation={desk.annotation}
+                  coverage={coverage}
                   writer={writer}
                   notify={setNotice}
                 />
@@ -146,24 +169,25 @@ export function ClipDesk() {  const { clipId } = useParams();
             />
           </div>
         </MaskSessionProvider>
+        <ResizeHandle
+          label="Resize Frame controls"
+          direction="vertical"
+          value={layout.bottomBarHeight}
+          reverse
+          onResize={(value) => setLayout({ bottomBarHeight: value })}
+        />
+        <FrameControls
+          clip={clip}
+          frameIndex={frameIndex}
+          focus={taskFocus}
+          vocab={vocab}
+          writer={writer}
+          notify={setNotice}
+          notice={notice}
+          coverage={coverage}
+          height={layout.bottomBarHeight}
+        />
       </PlaybackProvider>
-      <ResizeHandle
-        label="Resize Frame controls"
-        direction="vertical"
-        value={layout.bottomBarHeight}
-        reverse
-        onResize={(value) => setLayout({ bottomBarHeight: value })}
-      />
-      <FrameControls
-        clip={clip}
-        frameIndex={frameIndex}
-        focus={taskFocus}
-        vocab={vocab}
-        writer={writer}
-        notify={setNotice}
-        notice={notice}
-        height={layout.bottomBarHeight}
-      />
     </main>
   );
 }

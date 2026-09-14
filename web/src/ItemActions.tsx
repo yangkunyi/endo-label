@@ -8,6 +8,7 @@ import {
 } from "./api";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
+import type { SubmitHintSource } from "./submitHint";
 import { rejectNoteIsValid, taskActions } from "./taskList";
 
 const NOTE_PLACEHOLDER = "What needs fixing?";
@@ -16,6 +17,10 @@ const NOTE_PLACEHOLDER = "What needs fixing?";
 
 Both the desk header and the task list render this: the buttons are the same
 server-derived set, and a reject collects its one short note before it posts.
+
+`submitNotice` is the Submit hint's source: where the desk knows the focused
+Task type's coverage map it names the gap, and the submit it names still goes
+through (ADR 0029).
 */
 export function ItemActions({
   clipId,
@@ -23,22 +28,44 @@ export function ItemActions({
   item,
   onCompleted,
   className,
+  submitNotice,
 }: {
   clipId: string;
   taskType: string;
   item: MyItem;
   onCompleted: () => unknown;
   className?: string;
+  submitNotice?: SubmitHintSource;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [note, setNote] = useState("");
+  const [submitHint, setSubmitHint] = useState<string | null>(null);
+
+  /**
+   * Read the hint at submit time, never letting it stand in the way: a coverage
+   * map that cannot be read says nothing rather than blocking the submit.
+   */
+  async function announceSubmitHint() {
+    if (!submitNotice) {
+      return;
+    }
+    try {
+      setSubmitHint((await submitNotice()) ?? null);
+    } catch {
+      setSubmitHint(null);
+    }
+  }
 
   async function run(action: ItemAction, body?: unknown) {
     setError(null);
     setBusy(true);
     try {
+      if (action === "submit") {
+        // How much is missing, said before the submit it does not stop.
+        await announceSubmitHint();
+      }
       await sendJson(itemActionPath(clipId, taskType, action), "POST", body);
       setRejecting(false);
       setNote("");
@@ -90,6 +117,11 @@ export function ItemActions({
             </Button>
           ),
         )}
+        {submitHint ? (
+          <span role="status" data-submit-hint="" className="text-xs text-muted-foreground">
+            {submitHint}
+          </span>
+        ) : null}
       </div>
       {rejecting ? (
         <form className="mt-2 flex flex-wrap items-center gap-2" onSubmit={submitReject}>

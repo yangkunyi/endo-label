@@ -4,15 +4,16 @@ import useSWR from "swr";
 import { getJson, healthPath, type ClipMeta, type HealthResponse, type Vocab } from "../api";
 import { Button } from "../components/ui/button";
 import { useDeskStore, type EditorKind } from "../deskStore";
-import { labelColor } from "../timeline";
+import { labelColor, type FrameCoverage } from "../timeline";
 import { WORKER_LOADING_LABEL, workerStatusIsLoading } from "../workerStatus";
 import { isEditableTarget } from "./keyboard";
 import { brushColorKey, brushLabel, useBrushRange } from "./lanes";
 import type { DeskNotice } from "./notice";
+import { useUnlabeledJump } from "./unlabeledJump";
 import type { IdentityWriter } from "./writer";
 
 /** The Frame controls bar: the Brush contents, the range actions that paint
- * with them, and the desk's notice line. */
+ * with them, the Next-unlabeled jump, and the desk's notice line. */
 export function FrameControls({
   clip,
   frameIndex,
@@ -21,6 +22,7 @@ export function FrameControls({
   writer,
   notify,
   notice,
+  coverage,
   height,
 }: {
   clip: ClipMeta | undefined;
@@ -30,6 +32,8 @@ export function FrameControls({
   writer: IdentityWriter;
   notify: (notice: DeskNotice) => void;
   notice: DeskNotice;
+  /** The focused Task type's coverage: the `n` jump's map, shared with the strip. */
+  coverage: FrameCoverage;
   height: number;
 }) {
   const { markedFrom, rangeFrom, rangeTo, focusedBrush, hasBrush } = useBrushRange({
@@ -44,6 +48,7 @@ export function FrameControls({
     refreshInterval: 5000,
   });
   const workerLoading = workerStatusIsLoading(health?.worker);
+  const jumpToNextUnlabeled = useUnlabeledJump({ coverage, frameIndex, notify });
 
   const applyRange = useCallback(async (remove: boolean) => {
     if (!clip || focusedBrush.length === 0) {
@@ -101,6 +106,31 @@ export function FrameControls({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [applyRange, clip, frameIndex, hasBrush, notify, setSpanStart]);
+
+  // "n" walks to the next Frame with no label of the focused Task type (ADR 0029):
+  // the next desk shortcut, next to the Brackets that paint. "Nothing left" is a
+  // notice rather than silence, and a letter typed into a Vocab field is a letter.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== "n") {
+        return;
+      }
+      // The browser keeps its own Ctrl/Cmd+N; Alt+N belongs to the window manager.
+      if (event.ctrlKey || event.metaKey || event.altKey) {
+        return;
+      }
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+      if (!clip || clip.frame_count <= 0) {
+        return;
+      }
+      event.preventDefault();
+      jumpToNextUnlabeled();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [clip, jumpToNextUnlabeled]);
 
   return (
       <footer aria-label="Player controls" className="flex shrink-0 items-center gap-3 overflow-x-auto border-t border-border bg-card px-4 py-2" style={{ height }}>
