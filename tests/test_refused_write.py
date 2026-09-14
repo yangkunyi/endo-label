@@ -57,8 +57,15 @@ def _settings(tmp_path: Path) -> Settings:
     )
 
 
-def _world(tmp_path: Path) -> tuple[Settings, TestClient, TestClient, TestClient, TestClient]:
-    """One Clip, an admin, two annotators and a reviewer — all on the Project."""
+def _world(
+    tmp_path: Path,
+) -> tuple[Settings, TestClient, TestClient, TestClient, TestClient, TestClient]:
+    """One Clip, an admin, two annotators and two reviewers — all on the Project.
+
+    carol ends up this item's assigned reviewer; dan carries the same role flag
+    while holding nothing, which is the claim the Done-state refusals have to turn
+    away.
+    """
     settings = _settings(tmp_path)
     seed_admin(settings)
     ensure_registered(settings)
@@ -66,15 +73,17 @@ def _world(tmp_path: Path) -> tuple[Settings, TestClient, TestClient, TestClient
     create_account(path, "alice", "pw", annotator=True)
     create_account(path, "bob", "pw", annotator=True)
     create_account(path, "carol", "pw", reviewer=True)
-    ensure_members(settings, "alice", "bob", "carol")
+    create_account(path, "dan", "pw", reviewer=True)
+    ensure_members(settings, "alice", "bob", "carol", "dan")
 
     app = create_app(settings)
-    admin, alice, bob, carol = (TestClient(app) for _ in range(4))
+    admin, alice, bob, carol, dan = (TestClient(app) for _ in range(5))
     login(admin)
     login(alice, "alice", "pw")
     login(bob, "bob", "pw")
     login(carol, "carol", "pw")
-    return settings, admin, alice, bob, carol
+    login(dan, "dan", "pw")
+    return settings, admin, alice, bob, carol, dan
 
 
 def _drive(admin: TestClient, alice: TestClient, carol: TestClient, state: str) -> None:
@@ -146,7 +155,7 @@ def _state_of(client: TestClient) -> str:
 def test_a_refused_write_carries_the_state_s_own_sentence(
     tmp_path: Path, state: str, actor: str, sentence: str
 ) -> None:
-    _settings_obj, admin, alice, bob, carol = _world(tmp_path)
+    _settings_obj, admin, alice, bob, carol, _dan = _world(tmp_path)
     _drive(admin, alice, carol, state)
 
     refused = _write({"alice": alice, "bob": bob}[actor])
@@ -158,7 +167,7 @@ def test_a_refused_write_carries_the_state_s_own_sentence(
 
 
 def test_a_write_refusal_names_the_task_type_it_was_asked_for(tmp_path: Path) -> None:
-    _settings_obj, admin, alice, bob, _carol = _world(tmp_path)
+    _settings_obj, admin, alice, bob, _carol, _dan = _world(tmp_path)
     for task_type in ("class", "triplet"):
         assigned = admin.post(
             f"/api/items/CLIPA/{task_type}/assign", json={"assignee": "alice"}
@@ -183,7 +192,7 @@ def test_a_write_refusal_names_the_task_type_it_was_asked_for(tmp_path: Path) ->
 
 def test_the_admin_is_no_special_writer_and_reads_the_holder_s_sentence(tmp_path: Path) -> None:
     """An admin may hand work out; the sentence, not a bypass, is what they get back."""
-    _settings_obj, admin, alice, _bob, carol = _world(tmp_path)
+    _settings_obj, admin, alice, _bob, carol, _dan = _world(tmp_path)
     _drive(admin, alice, carol, "Labeling")
 
     refused = _write(admin)
@@ -202,7 +211,7 @@ def test_the_admin_is_no_special_writer_and_reads_the_holder_s_sentence(tmp_path
 
 def test_a_mask_write_is_refused_in_the_same_words(tmp_path: Path) -> None:
     """Predict and save go through the same guard, so they speak the same sentence."""
-    _settings_obj, admin, alice, bob, _carol = _world(tmp_path)
+    _settings_obj, admin, alice, bob, _carol, _dan = _world(tmp_path)
     assigned = admin.post("/api/items/CLIPA/mask/assign", json={"assignee": "alice"})
     assert assigned.status_code == 200, assigned.text
     held_by_alice = "This Clip's mask is assigned to alice: only alice writes its labels."
@@ -254,11 +263,32 @@ def test_a_mask_write_is_refused_in_the_same_words(tmp_path: Path) -> None:
             "alice",
             "Only the assigned reviewer or an admin can reject this item.",
         ),
+        # Done's two re-opening calls name the same authority: its assigned reviewer
+        # or an admin. alice holds neither; dan holds the reviewer flag and nothing
+        # else, which is the claim that used to work and must not.
+        (
+            "POST reject",
+            "Done",
+            "alice",
+            "Only the assigned reviewer or an admin can reject this item.",
+        ),
+        (
+            "POST reject",
+            "Done",
+            "dan",
+            "Only the assigned reviewer or an admin can reject this item.",
+        ),
         (
             "POST re-review",
             "Done",
             "alice",
-            "Only a reviewer or an admin can send this item back for review.",
+            "Only the assigned reviewer or an admin can send this item back for review.",
+        ),
+        (
+            "POST re-review",
+            "Done",
+            "dan",
+            "Only the assigned reviewer or an admin can send this item back for review.",
         ),
         (
             "POST deliver",
@@ -277,11 +307,11 @@ def test_a_mask_write_is_refused_in_the_same_words(tmp_path: Path) -> None:
 def test_a_refused_transition_names_who_may_make_it(
     tmp_path: Path, action: str, state: str, actor: str, sentence: str
 ) -> None:
-    _settings_obj, admin, alice, bob, carol = _world(tmp_path)
+    _settings_obj, admin, alice, bob, carol, dan = _world(tmp_path)
     _drive(admin, alice, carol, state)
 
     method, route = action.split()
-    client = {"alice": alice, "bob": bob}[actor]
+    client = {"alice": alice, "bob": bob, "dan": dan}[actor]
     refused = client.request(
         method,
         f"/api/items/CLIPA/phase/{route}",
@@ -307,7 +337,7 @@ def test_a_row_nobody_holds_says_nobody_holds_it(tmp_path: Path) -> None:
     A hand-made row is one of the two shapes `_write_refusal` words separately from
     the five states, so it is made by hand rather than driven.
     """
-    settings, admin, alice, bob, carol = _world(tmp_path)
+    settings, admin, alice, bob, carol, _dan = _world(tmp_path)
     _drive(admin, alice, carol, "Labeling")
 
     _sql(
@@ -344,7 +374,7 @@ def test_a_row_nobody_holds_says_nobody_holds_it(tmp_path: Path) -> None:
 
 
 def test_a_clip_with_no_item_for_the_task_type_asks_for_an_assignment(tmp_path: Path) -> None:
-    settings, admin, alice, _bob, _carol = _world(tmp_path)
+    settings, admin, alice, _bob, _carol, _dan = _world(tmp_path)
     _sql(settings, "DELETE FROM assignments WHERE clip_id='CLIPA' AND task_type='phase'")
 
     refused = _write(alice)

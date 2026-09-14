@@ -243,7 +243,14 @@ export async function clearLabels(
   }
 }
 
-/** Put one item back to Unassigned, clearing its note and reviewer on the way. */
+/**
+ * Put one item back to Unassigned, clearing its note and reviewer on the way.
+ *
+ * Every step rides the admin's authority, which is why this lever survives the
+ * ownership rules: a Done item is reopened by its assigned reviewer or an admin,
+ * and its caller is always the admin (`loginApi`) — the reviewer flag alone never
+ * carries it.
+ */
 export async function resetItem(
   request: APIRequestContext,
   clipId: string,
@@ -255,7 +262,9 @@ export async function resetItem(
       return;
     }
     if (state === "Done") {
-      // The capability is `re_review`; the route spells it `re-review`.
+      // An item's assigned reviewer or an admin may reopen it, not a reviewer flag;
+      // this lever is the admin's. The capability is `re_review`; the route spells
+      // it `re-review`.
       await postItem(request, clipId, taskType, "re-review");
     } else if (state === "Reviewing") {
       await postItem(request, clipId, taskType, "pass");
