@@ -18,5 +18,6 @@ reviewer actions the server can never produce.
 
 **Recommendation:** 1 — one rule is easier to hold in the head than two, and the UI already promises it.
 
-**Answer needed:** which option. Answering closes this question; if 1, the one-call change is either
-handed to a drain as a small ticket or done by hand with the answer.
+**Answered (2026-09-14, owner): option 1.** A Project's membership is who works on it and reviewing is
+work on it, so membership gates the reviewer as well; the desk's pickers already behave that way and the
+server is the only place that does not. The change is ticketed as `pilot-ux/16`.
