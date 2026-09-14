@@ -16,6 +16,10 @@ From this checkout:
 archon workflow run beads-dag-drain --detach
 ```
 
+The run's nodes are bun scripts, so `bun` must be on the PATH of whatever launches it (`~/.bun/bin`,
+exported by an interactive shell) — and the store path is pinned in `.scratch/beads-dag.yaml` for the
+same reason. A run that cannot find `bd` fails at `open`, naming what it looked for and where.
+
 `beads-dag-execute` is the per-issue executor, not an entry point — by hand it is
 `--input issue=<feature>/<NN>`. **One drain at a time**: `open` takes a run lock
 (`.git/beads-dag-run.lock`) and refuses a second run against this Target rather than waiting.
@@ -62,6 +66,9 @@ configured (this repo's origin is), the one-command backup from the Target is:
 ```bash
 bun ~/.archon/workflows/beads-dag/beads-dag-drain/backup.ts
 ```
+
+The store is not committed to git — `.beads/embeddeddolt/` is ignored — so this push, to
+`refs/dolt/data` on the origin, is the only copy off this machine. It is known to work from here.
 
 ## State of this repo's tracker
 
