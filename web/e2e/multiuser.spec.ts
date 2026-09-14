@@ -79,7 +79,7 @@ test("admin assigns on the board; the annotator's desk turns writable and the li
   const unassigned = boardColumn(adminPage, "Unassigned");
   const row = unassigned.locator("li").filter({ hasText: "CLIP_E2E_B · phase" });
   await expect(row).toBeVisible();
-  await row.getByLabel("Username for CLIP_E2E_B phase").fill(ANNOTATOR.username);
+  await row.getByLabel("Account for CLIP_E2E_B phase").selectOption(ANNOTATOR.username);
   await row.getByRole("button", { name: "Assign" }).click();
 
   // The board's own columns move with the assignment.
@@ -128,7 +128,7 @@ test("a full round on the board: assign, submit, assign reviewer, pass", async (
 
   const unassigned = boardColumn(adminPage, "Unassigned");
   const row = unassigned.locator("li").filter({ hasText: "CLIP_E2E_B · class" });
-  await row.getByLabel("Username for CLIP_E2E_B class").fill(ANNOTATOR.username);
+  await row.getByLabel("Account for CLIP_E2E_B class").selectOption(ANNOTATOR.username);
   await row.getByRole("button", { name: "Assign" }).click();
 
   // The annotator submits from My Tasks.
@@ -141,7 +141,7 @@ test("a full round on the board: assign, submit, assign reviewer, pass", async (
   await adminPage.reload();
   const submitted = boardColumn(adminPage, "Submitted").locator("li").filter({ hasText: "CLIP_E2E_B · class" });
   await expect(submitted).toBeVisible();
-  await submitted.getByLabel("Reviewer for CLIP_E2E_B class").fill(REVIEWER.username);
+  await submitted.getByLabel("Reviewer for CLIP_E2E_B class").selectOption(REVIEWER.username);
   await submitted.getByRole("button", { name: "Assign reviewer" }).click();
   await expect.poll(async () => stateOf(request, "CLIP_E2E_B", "class")).toBe("Reviewing");
 

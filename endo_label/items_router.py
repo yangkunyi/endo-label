@@ -17,6 +17,7 @@ from endo_label.coordination import (
     assign_item,
     assign_reviewer,
     auto_assign_items,
+    batch_assign_items,
     db_path,
     deliver_item,
     items_payload,
@@ -60,6 +61,15 @@ class AutoAssignBody(BaseModel):
     clip_ids: list[str] | None = None
     task_type: str | None = None
     project: str | None = None
+
+
+class BatchAssignBody(BaseModel):
+    """One gesture's items, and the one Account — or reviewer — they go to."""
+
+    items: list[AutoAssignItem] = Field(..., min_length=1)
+    assignee: str | None = None
+    reviewer: str | None = None
+    allow_reassign: bool = False
 
 
 def _path(request: Request):
@@ -130,6 +140,29 @@ def auto_assign(body: AutoAssignBody, request: Request) -> dict:
     for row in payload["assigned"]:
         # Balanced auto-assign only ever moves an item Unassigned -> Labeling.
         publish_transition(request.app, "auto_assign", {**row, "state": "Labeling"})
+    return payload
+
+
+@router.post("/api/items/batch-assign", dependencies=_admin_only)
+def batch_assign(body: BatchAssignBody, request: Request) -> dict:
+    """Hand many items to one Account; the answer is per item, never all-or-nothing."""
+    if (body.assignee is None) == (body.reviewer is None):
+        raise HTTPException(
+            status_code=400, detail="Give exactly one of assignee or reviewer"
+        )
+    payload = _mutate(
+        lambda: batch_assign_items(
+            _path(request),
+            items=[(item.clip_id, item.task_type) for item in body.items],
+            assignee=body.assignee,
+            reviewer=body.reviewer,
+            allow_reassign=body.allow_reassign,
+            account_id=_account_id(request),
+        )
+    )
+    for row in payload["assigned"]:
+        # One transition per item, named the way its single-item route names it.
+        publish_transition(request.app, str(row["action"]), row)
     return payload
 
 
