@@ -1,15 +1,18 @@
 import { useCallback, useRef, useState, type PointerEvent, type ReactNode } from "react";
-import { labelColor, frameFromClientX, type TimelineLane } from "../timeline";
+import { labelColor, frameFromClientX, type FrameCoverage, type TimelineLane } from "../timeline";
 import type { LaneBar } from "./writer";
+import { CoverageStrip } from "./CoverageStrip";
 import { usePlayback } from "./playback";
 
-/** The timeline: the Ruler, the transport row and the Lane well. Gestures are
- * pointer-driven; every span write goes back out through the panel's callbacks. */
+/** The timeline: the Ruler, the Coverage Strip, the transport row and the Lane
+ * well. Gestures are pointer-driven; every span write goes back out through the
+ * panel's callbacks. */
 export function TimelineBand({
   clipRailWidth,
   frameCount,
   frameIndex,
   lanes,
+  coverage,
   previewRange,
   brushKeys,
   barSelection,
@@ -23,6 +26,7 @@ export function TimelineBand({
   frameCount: number;
   frameIndex: number;
   lanes: TimelineLane[];
+  coverage: FrameCoverage;
   previewRange: { from: number; to: number } | null;
   brushKeys: string[];
   barSelection: LaneBar[];
@@ -259,6 +263,7 @@ export function TimelineBand({
           </div>
         </div>
       </div>
+      <CoverageStrip clipRailWidth={clipRailWidth} coverage={coverage} />
       <div
         role="region"
         aria-label="Lane well"
