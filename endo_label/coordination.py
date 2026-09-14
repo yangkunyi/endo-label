@@ -862,8 +862,18 @@ def register_clip(
     clip_id: str,
     kind: str,
     media_path: Path,
-    tags: tuple[str, ...] | list[str] = (),
+    tags: tuple[str, ...] | list[str] | None = None,
 ) -> RegisteredClip:
+    """Register a Clip, or re-state one already registered under the same media.
+
+    ``tags`` is tri-state, and that is the whole rule: **a registration states the
+    Clip's tags only when it was given some.** ``None`` — no tag list was handed
+    over — says nothing about tags and leaves `clip_tags` as it stands, so a tag
+    written through the admin API survives the next boot's re-registration. A list,
+    empty or not, is the Clip's tags stated in full: whatever is missing from it
+    leaves the store, so a tag dropped from `config.yaml` stops matching the tag
+    filters. See ADR 0028.
+    """
     clip_id = _valid_clip_id(clip_id)
     kind = kind.strip()
     if not kind:
@@ -882,11 +892,11 @@ def register_clip(
                 and existing["path"] == stored
             ):
                 _ensure_assignment_rows(con, clip_id)
-                # A re-registration states the Clip's tags in full, so a tag
-                # dropped from the config leaves the store instead of lingering
-                # to match the tag filter forever.
-                con.execute("DELETE FROM clip_tags WHERE clip_id=?", (clip_id,))
-                _write_tags(con, clip_id, tags)
+                # Only a registration that was given tags speaks about them; one
+                # that was not leaves the admin's `PUT /api/clips/{id}/tags` alone.
+                if tags is not None:
+                    con.execute("DELETE FROM clip_tags WHERE clip_id=?", (clip_id,))
+                    _write_tags(con, clip_id, tags)
                 con.commit()
                 return _clip_from_row(existing)
             raise ClipExists(clip_id)
@@ -895,7 +905,7 @@ def register_clip(
             (clip_id, project_id, kind, stored),
         )
         _ensure_assignment_rows(con, clip_id)
-        _write_tags(con, clip_id, tags)
+        _write_tags(con, clip_id, tags or ())
         con.commit()
         return RegisteredClip(
             id=clip_id, project_id=project_id, kind=kind, path=Path(stored)

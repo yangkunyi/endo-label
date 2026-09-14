@@ -66,6 +66,7 @@ def ensure_registered(settings: Settings) -> None:
             clip_id=entry.id,
             kind=entry.kind,
             media_path=entry.path,
+            tags=entry.tags,
         )
 
 
