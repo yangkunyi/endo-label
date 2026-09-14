@@ -3,6 +3,7 @@ import { clipsPath } from "./api";
 import {
   CLIP_FILTERS_STORAGE_KEY,
   DEFAULT_CLIP_FILTERS,
+  chooseClipFilters,
   emptyClipsNotice,
   normalizeClipFilters,
   readStoredClipFilters,
@@ -104,6 +105,19 @@ test("a caller not yet known is narrowed for the request but corrects nothing", 
   expect(unknown.filters.scope).toBe("mine");
   expect(unknown.corrected).toBe(false);
   expect(unknown.notice).toBeNull();
+
+  // The same holds field by field for a Project or tag a loaded list does not
+  // carry: the request leaves it out — never ask for what cannot be proved —
+  // while nothing is corrected, named or written back. The stored value is found
+  // dead again once the flag answers.
+  const deadValues = resolveClipFilters(
+    WEST_ALL,
+    { isAdmin: null },
+    { projects: ["East Study"], tags: ["chole"] },
+  );
+  expect(deadValues.filters).toEqual({ project: "", tag: "", scope: "mine" });
+  expect(deadValues.corrected).toBe(false);
+  expect(deadValues.notice).toBeNull();
 });
 
 test("a Project or tag no option list carries any more is dropped and named", () => {
@@ -156,12 +170,53 @@ test("the corrected selection is the one a later read gets", () => {
   });
   const first = resolveClipFilters(readStoredClipFilters(storage), { isAdmin: false }, {});
   expect(first.corrected).toBe(true);
+  // The stored value is named once, to the read that finds it stale.
+  expect(first.notice).toContain("showing your own Clips");
   saveStoredClipFilters(first.filters, storage);
 
-  // The corrected entry lists Clips for the next reader too: no sentence left.
+  // The corrected entry lists Clips for the next reader too, and for the
+  // corrected value there is nothing left to say: the sentence does not return.
   const next = resolveClipFilters(readStoredClipFilters(storage), { isAdmin: false }, {});
   expect(next.filters).toEqual({ project: "West Study", tag: "west", scope: "mine" });
   expect(next.corrected).toBe(false);
   expect(next.notice).toBeNull();
   expect(clipsPath(next.filters)).toBe("/api/clips?project=West+Study&tag=west&scope=mine");
+});
+
+test("a choice is a patch of the corrected selection, so a dropped value cannot come back", () => {
+  const storage = fakeStorage({
+    [CLIP_FILTERS_STORAGE_KEY]: JSON.stringify(WEST_ALL),
+  });
+  const caller = { isAdmin: false };
+  const options = { projects: ["West Study"], tags: ["west", "east"] };
+
+  // One source of truth: the corrected selection is what the state holds and
+  // what the entry gets, so the reader is no longer looking at `scope: "all"`.
+  const shown = resolveClipFilters(readStoredClipFilters(storage), caller, options).filters;
+  saveStoredClipFilters(shown, storage);
+  expect(shown).toEqual({ project: "West Study", tag: "west", scope: "mine" });
+
+  // Picking a tag changes one field of that selection. The scope the correction
+  // dropped is not in hand, so it is not written back to the browser's entry.
+  const chosen = chooseClipFilters(shown, { tag: "east" });
+  saveStoredClipFilters(chosen, storage);
+  expect(readStoredClipFilters(storage)).toEqual({
+    project: "West Study",
+    tag: "east",
+    scope: "mine",
+  });
+  // Where a patch of the stored value — the resurrection this replaces — writes
+  // the refused scope straight back into the entry.
+  expect(chooseClipFilters(WEST_ALL, { tag: "east" })).toEqual({
+    project: "West Study",
+    tag: "east",
+    scope: "all",
+  });
+
+  // And the next read of what was stored has nothing left to correct.
+  expect(resolveClipFilters(readStoredClipFilters(storage), caller, options)).toEqual({
+    filters: { project: "West Study", tag: "east", scope: "mine" },
+    notice: null,
+    corrected: false,
+  });
 });

@@ -9,9 +9,13 @@
  * and the desk rail are pinned to the *corrected* request, not only to a
  * correct pure function.
  *
- * What a browser does with the corrected entry (writing it back) is an effect,
- * which a server render does not run; `clipFilters.test.ts` pins the pure
- * instruction and the end-to-end spec pins the write.
+ * Each rendering here is the read that finds the stored value stale, and the one
+ * sentence it has to say belongs to it: a reader is told about a corrected value
+ * once, and a read of the corrected selection says nothing. What a browser does
+ * with the correction — holding it in state and writing it to the entry — is an
+ * effect, which a server render does not run; `clipFilters.test.ts` pins the pure
+ * instruction behind it and the end-to-end spec pins the write, and the quiet
+ * after it.
  */
 
 import { createElement, type ReactElement } from "react";
@@ -129,7 +133,7 @@ test("the Clips page asks with the scope the server would answer, not the stored
   expect(html).not.toContain("Show every Clip");
 });
 
-test("the desk rail clears the same stored scope, on the desk", () => {
+test("the desk rail corrects the same stored scope, on the desk", () => {
   const html = renderWithStored(
     createElement(ClipRail, { activeClipId: "CLIP_A", width: 280 }),
     STORED_ALL,
@@ -141,6 +145,19 @@ test("the desk rail clears the same stored scope, on the desk", () => {
   expect(html).not.toContain(REFUSAL);
   expect(html).toContain("showing your own Clips");
   expect(html).not.toContain("Show every Clip");
+});
+
+test("the corrected entry is read quietly: the sentence is told once", () => {
+  // What the browser holds once the correction has settled — the read that comes
+  // after the one the sentence belongs to.
+  const html = renderWithStored(
+    createElement(ClipList),
+    { ...DEFAULT_CLIP_FILTERS, scope: "mine" },
+    ANNOTATOR,
+  );
+
+  expect(html).toContain("CLIP_A");
+  expect(html).not.toContain("showing your own Clips");
 });
 
 test("the admin keeps every Clip, and the rail carries the control to change it", () => {
