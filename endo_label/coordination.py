@@ -684,9 +684,11 @@ def register_clip(
                 and existing["path"] == stored
             ):
                 _ensure_assignment_rows(con, clip_id)
-                if tags:
-                    con.execute("DELETE FROM clip_tags WHERE clip_id=?", (clip_id,))
-                    _write_tags(con, clip_id, tags)
+                # A re-registration states the Clip's tags in full, so a tag
+                # dropped from the config leaves the store instead of lingering
+                # to match the tag filter forever.
+                con.execute("DELETE FROM clip_tags WHERE clip_id=?", (clip_id,))
+                _write_tags(con, clip_id, tags)
                 con.commit()
                 return _clip_from_row(existing)
             raise ClipExists(clip_id)

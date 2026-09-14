@@ -163,6 +163,31 @@ def test_every_transition_class_publishes_its_item_identity_and_new_state(
                 assert _transition(lines) == (action, "CLIPA", "phase", state)
 
 
+def test_one_transition_reaches_every_subscriber_at_once(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    _accounts(settings)
+    with live_server(settings) as base:
+        admin = account_client(base, "admin", "secret")
+        alice = account_client(base, "alice", "pw")
+
+        # Two Accounts watch the same channel at once, each on its own stream.
+        with admin.stream("GET", _STREAM) as first, alice.stream("GET", _STREAM) as second:
+            first_lines = first.iter_lines()
+            second_lines = second.iter_lines()
+            _resync(first_lines)
+            _resync(second_lines)
+
+            assigned = admin.post(
+                "/api/items/CLIPA/phase/assign", json={"assignee": "alice"}
+            )
+            assert assigned.status_code == 200, assigned.text
+
+            # Neither subscriber takes the transition from the other's stream:
+            # both receive the same published event on their own.
+            assert _transition(first_lines) == ("assign", "CLIPA", "phase", "Labeling")
+            assert _transition(second_lines) == ("assign", "CLIPA", "phase", "Labeling")
+
+
 def test_a_dropped_subscriber_reconnects_into_a_full_refetch(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     _accounts(settings)
