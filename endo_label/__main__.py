@@ -16,6 +16,8 @@ from endo_label.coordination import (
     ClipExists,
     ProjectExists,
     ProjectNotFound,
+    UnknownAccount,
+    add_project_member,
     create_account,
     create_project,
     db_path,
@@ -34,6 +36,9 @@ def main(argv: list[str] | None = None) -> None:
         return
     if argv and argv[0] == "register-clip":
         _register_clip(argv[1:])
+        return
+    if argv and argv[0] == "add-member":
+        _add_member(argv[1:])
         return
     parser = argparse.ArgumentParser(prog="endo_label")
     parser.add_argument(
@@ -176,6 +181,33 @@ def _register_clip(argv: list[str]) -> None:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1) from exc
     print(f"Registered Clip '{clip.id}' in Project '{project.name}'")
+
+
+def _add_member(argv: list[str]) -> None:
+    """Bootstrap a Project's membership without the console: endo_label add-member."""
+    parser = argparse.ArgumentParser(prog="endo_label add-member")
+    parser.add_argument("project", help="Project name")
+    parser.add_argument("username", help="Account to add to the Project")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="YAML sitting config (default: repo-root config.yaml)",
+    )
+    args = parser.parse_args(argv)
+    settings = _load_sitting(args.config)
+    path = db_path(settings)
+    try:
+        project = get_project_by_name(path, args.project)
+    except ProjectNotFound:
+        print(f"Project not found: {args.project}", file=sys.stderr)
+        raise SystemExit(1) from None
+    try:
+        add_project_member(path, project.id, args.username)
+    except UnknownAccount:
+        print(f"Account not found: {args.username}", file=sys.stderr)
+        raise SystemExit(1) from None
+    print(f"Added Account '{args.username.strip()}' to Project '{project.name}'")
 
 
 if __name__ == "__main__":
