@@ -10,9 +10,8 @@ data/
 *.log
 .runtime/
 node_modules/
-.archon/workflows/matt/ticket-dag/
 worktrees/
-.scratch/orchestrator/runs/
+/.beads/interactions.jsonl
 
 # Beads / Dolt files (added by bd init)
 .dolt/

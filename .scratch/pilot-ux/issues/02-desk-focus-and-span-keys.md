@@ -1,4 +1,4 @@
-# 02 — Desk focus, span keys, empty Brush
+# pilot-ux/02 — Desk focus, span keys, empty Brush
 
 **What to build:** the keyboard must reach the desk, not the last-clicked control. Trial
 feedback: "键盘输入不要被按钮截获了，现在 io/[] 都会到按钮上".
@@ -19,16 +19,7 @@ Code:
 
 Verified: `desk.spec.ts` + `mask-desk.spec.ts` 68 passed after the change.
 
-**Blocked by:** —
-
-Status: MERGED
-
 - [x] a mouse click leaves no focused button
 - [x] `[`/`]` act from inside a Vocab field; `i`/`o` do not
 - [x] an empty Brush explains itself
 - [x] no spec pins these three behaviours yet — see 12
-
-## Comments
-
-Delivered by hand as commit `e7287f2` (`fix(desk): focus, Ruler progress and the transport above
-the Ruler`).

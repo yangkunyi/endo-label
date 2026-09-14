@@ -1,7 +1,4 @@
-# 07 SAM GPU 争用对策
-
-Type: grilling
-Status: resolved
+# multi-user/07 — SAM GPU 争用对策
 
 ## Question
 

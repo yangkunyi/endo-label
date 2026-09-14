@@ -1,4 +1,4 @@
-# 05 — Coverage Strip for the focused Task type
+# pilot-ux/05 — Coverage Strip for the focused Task type
 
 **What to build:** the first answer this product has ever had to "标到哪了" — a read-only strip
 showing which Frames carry a label of the **focused** Task type, with click-to-jump into the gaps.
@@ -21,10 +21,6 @@ Code:
   drag-select, no trim, no painting; `aria-label` on the strip carries the count, e.g.
   `Coverage: class, 84 of 120 frames labeled`.
 - Empty Clip / no Clip: the strip still renders (Ruler and Lane well already do).
-
-**Blocked by:** —
-
-Status: ready-for-agent
 
 - [ ] the strip follows Task focus (phase/class/triplet) and re-renders without a refetch
 - [ ] covered Frames vs Unlabeled gaps are visually distinct and switch with the focus

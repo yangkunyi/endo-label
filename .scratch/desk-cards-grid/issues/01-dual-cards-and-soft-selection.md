@@ -1,10 +1,6 @@
-# 01 — Dual Editor Cards and soft Library selection
+# desk-cards-grid/01 — Dual Editor Cards and soft Library selection
 
 **What to build:** Wrap Now and Library in the right editor rail into distinct, bounded Editor Cards with micro-headers and count badge pills (`NOW · 1`, `LIBRARY · 5`), replacing bare text headings and hairlines. In Now, display compact colored badges and calm muted empty states (`No phase on frame N`, `No class tags on frame N`) when current Frame has no labels. In Library rows (Phase and Class), replace harsh blue stripes and flat gray fills with soft 12%–15% semantic-tint backgrounds matching the label's color, delicate matching borders, crisp text, and a right-aligned checkmark icon (`✓`). Keep trash buttons dimmed at low opacity until row hover, and anchor Add Vocab inputs as a permanent compact footer inside the Library Card.
-
-**Blocked by:** None — can start immediately.
-
-Status: MERGED
 
 - [x] Now and Library render as two distinct bounded Editor Cards with subtle surface background and fine border (`rounded-lg p-3`)
 - [x] Card headers display uppercase titles and item count badge pills (`NOW · N`, `LIBRARY · N`)

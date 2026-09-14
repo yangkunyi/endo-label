@@ -1,10 +1,6 @@
-# 07 — Local Playwright drives the desk
+# phase-class-triplet/07 — Local Playwright drives the desk
 
 **What to build:** A labeler-shaped Chromium check that opens the Clip list, opens a Clip, sees phase / class / triplet on one Frame (Tailwind chrome actually applied), and writes one of each kind. Isolated process — not sitting `:7880`, not the operator Frame Pool, not CI.
-
-**Blocked by:** 06 — Sitting is one process
-
-Status: MERGED
 
 - [x] `cd web && npm run test:e2e` starts isolated FastAPI `:7881` and Vite `:5174`
 - [x] Fixture Clip `CLIP_E2E` (tiny JPEGs) and `web/e2e/config.yaml`; labels under `web/e2e/.work/`

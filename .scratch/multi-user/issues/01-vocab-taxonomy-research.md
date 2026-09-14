@@ -1,7 +1,4 @@
-# 01 词表体系方案调研
-
-Type: research
-Status: resolved
+# multi-user/01 — 词表体系方案调研
 
 ## Question
 

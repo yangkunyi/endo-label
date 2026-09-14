@@ -1,8 +1,4 @@
-# 08 管理员/审阅/标注员三侧界面范围
-
-Type: grilling
-Status: resolved
-Blocked by: 03, 04
+# multi-user/08 — 管理员/审阅/标注员三侧界面范围
 
 ## Question
 

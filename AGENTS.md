@@ -2,17 +2,15 @@
 
 ### Issue tracker
 
-Issues live as local markdown under `.scratch/<feature>/`. See `docs/agents/issue-tracker.md`.
+Issues live in this repo's beads store (`.beads/`), driven with `bd`; the prose stays as a frozen body under `.scratch/<feature>/issues/`, and identity, status, edges and comments are the store's. Never write state into a body. See `docs/agents/issue-tracker.md`.
 
-### Archon ticket drain
-
-After `/to-tickets`:
+### The drain
 
 ```bash
-archon workflow run matt-implement-tickets
+archon workflow run beads-dag-drain --detach
 ```
 
-Do not use `/implement-tickets`. See `docs/agents/archon-matt.md`.
+The pack is global (`~/.archon/workflows/beads-dag`), not in this repo; `beads-dag-execute` is the per-issue executor, not an entry point. See `docs/agents/beads-dag.md`.
 
 ### Triage labels
 

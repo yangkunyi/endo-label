@@ -1,10 +1,6 @@
-# 07 — Desk Playwright closeout (only e2e ticket)
+# mask-desk/07 — Desk Playwright closeout (only e2e ticket)
 
 **What to build:** All mask sitting Playwright lives here — tickets 02–06 ship compose/Vitest only. On `:7892`/`:5192`, walk the desk: point → Track overlay and rail; leftover pin delete; scribble drag; Undo; short Propagate; pending drop on scrub; Clip change closes Session; phase then a point stay independent stores. Vocab e2e still green. Full local suite green (pytest, vitest, tsc, Playwright).
-
-**Blocked by:** 02 — Click a point, see a Track, Annotation is on disk; 03 — Leftover points stay; click a pin to delete; 04 — Drag is Scribble; Mask Handoff to SAM; 05 — Undo this Frame’s last committed mask edit; 06 — Propagate Job from this Frame; Protected stay
-
-Status: MERGED
 
 - [x] Point on picture → silhouette + Track row; click picture does not play; Space does
 - [x] Leftover pin visible; click pin deletes; Active Track from the rail only

@@ -1,10 +1,6 @@
-# 04 — Toggle class on the desk
+# phase-class-triplet/04 — Toggle class on the desk
 
 **What to build:** On the current Frame, the labeler toggles stackable class flags (chips), including several at once (e.g. `grasper` and `blurred`). Empty stack is unlabeled. Unknown names rejected. Labeler can add a class name to the desk list and then toggle it. Flags do not copy to the next Frame. Phase and triplet on this Frame stay put. Session stays off.
-
-**Blocked by:** 03 — Paint phase on the desk
-
-Status: MERGED
 
 - [x] Toggle a class name on and off for the current Frame; several names can be on at once
 - [x] Same name at most once on a Frame; all off → unlabeled for class

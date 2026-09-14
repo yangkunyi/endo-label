@@ -1,10 +1,6 @@
-# 02 — Hand-built transport replaces media-chrome
+# desk-player-fixes/02 — Hand-built transport replaces media-chrome
 
 **What to build:** Remove media-chrome from the desk. The player is a native `<video>` plus a hand-built transport row of shadcn controls, always visible, on one line directly under the Ruler and above the Lane well: play/pause, `elapsed / duration` time display, rate menu (`0.25 0.5 1 1.5 2`, click opens a list, never cycles), mute, volume, fullscreen via the native Fullscreen API. The embedded progress range is gone — the Ruler is the only progress and seek surface, frame-snapped. No autohide, no fade anywhere: while playing, moving the mouse away never darkens the picture, and a freshly opened Clip shows its first frame without any hover. Space toggles playback; `i`/`[` and `o`/`]` semantics unchanged; JPEG and video Clips share the transport. Player column order stays picture, Ruler, transport row, Lane well. Error and empty Clip states keep working. Rewrite every `media-*` browser assertion for the new controls and add the black-fade regressions.
-
-**Blocked by:** None — can start immediately.
-
-Status: MERGED
 
 - [x] media-chrome is gone from dependencies; no `media-*` element renders in the desk
 - [x] Transport row sits under the Ruler, always visible; player column order picture / Ruler / transport / Lane well; the picture never jumps when the row appears

@@ -1,10 +1,6 @@
-# 03 — Several identities in one Apply; Ruler and ghost preview
+# desk-brush-lanes/03 — Several identities in one Apply; Ruler and ghost preview
 
 **What to build:** Class and triplet Brushes may hold several identities; one Apply writes all of them across the inclusive range (several existing span POSTs, Library/Vocab order, stop and toast on first failure). Phase Brush holds at most one name; picking a second replaces the first. While Mark from is set and Brush is non-empty, the Ruler highlights from–to (Playhead accent, not one identity’s color when several are armed). Visible Brush Lanes show ghost bars for that same range, distinct from committed bars (lower opacity or outline), with no pointer hit. Footer lists every armed identity. Do not run or edit Playwright; ticket 06 covers two-tag Apply and ghosts in the browser.
-
-**Blocked by:** 02 — Brush replaces the paint chip; Library name stays this-Frame.
-
-Status: MERGED
 
 - [x] Class Brush can hold several tags; one Apply turns each of them on across the range and leaves other flags untouched
 - [x] Triplet Brush can hold several exact triples; one Apply adds each of them across the range

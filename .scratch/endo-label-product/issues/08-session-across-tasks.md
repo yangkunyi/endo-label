@@ -1,8 +1,4 @@
-# One Session per Clip for all task types, or not
-
-Type: grilling
-Status: resolved
-Blocked by: 06
+# endo-label-product/08 — One Session per Clip for all task types, or not
 
 ## Question
 

@@ -1,10 +1,6 @@
-# 04 — Drag is Scribble; Mask Handoff to SAM
+# mask-desk/04 — Drag is Scribble; Mask Handoff to SAM
 
 **What to build:** Same tool as points: a drag (relative extent ≥ 0.005) is a Scribble Prompt (left positive, right negative). Width 1–40, default 8, stamped per pending stroke. Strokes run the Scribble Model then Mask Handoff of the complete silhouette into SAM 3.1. A positive stroke may create a Track; a negative stroke alone may not. Scribble worker down → stroke Predict 503, Track-on-Frame unchanged; point-only Predict still works. Empty SAM after Scribble rolls back Scribble Memory. Visible mask is SAM's return; no edge polish after Predict. Immediate Annotation write as in 02.
-
-**Blocked by:** 02 — Click a point, see a Track, Annotation is on disk
-
-Status: MERGED
 
 - [x] Click vs drag split; right-click/drag does not open the browser menu
 - [x] Width slider 1–40 default 8; each pending stroke keeps the width it was drawn with

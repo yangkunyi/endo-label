@@ -1,10 +1,6 @@
-# 19 — Mask multi-user
+# multi-user/19 — Mask multi-user
 
 **What to build:** SessionManager moves from "one per process" to keyed by (user, Clip): auto-opened on first mask action, kept across Clip switches, resumable on return; LRU caps of 2 per user / 8 global (config-driven, evicting the least recently used — same cost as a manual close today); a global inference lock around the inference entry point (hard constraint from predictor instance state); Predict waits synchronously on the lock with an "inferring…" hint and a 30-second timeout message; the mask write ownership check (same mechanism as 11); Propagate keeps its single-active-job + polling unchanged.
-
-**Blocked by:** 11.
-
-Status: MERGED
 
 Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
 

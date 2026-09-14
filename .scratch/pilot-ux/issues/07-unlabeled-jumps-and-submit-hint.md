@@ -1,4 +1,4 @@
-# 07 — Unlabeled jumps and the Submit hint
+# pilot-ux/07 — Unlabeled jumps and the Submit hint
 
 **What to build:** the two workflow touches that make coverage useful on a 120-Frame Clip.
 
@@ -17,9 +17,7 @@ Code:
 - `web/src/desk/DeskItemActions.tsx` — the Submit path; `web/src/AssignmentsBoard.tsx` mirrors it.
 - Counts come from 05's strip data; do not recompute from a second source.
 
-**Blocked by:** 05
-
-Status: ready-for-agent
+**Found by:** 05
 
 - [ ] `n` jumps to the next Frame missing a label of the focused Task type
 - [ ] `n` reports when there is nothing left instead of doing nothing silently

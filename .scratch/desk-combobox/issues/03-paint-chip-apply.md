@@ -1,10 +1,6 @@
-# 03 — Paint chip, Mark from, Apply/Remove
+# desk-combobox/03 — Paint chip, Mark from, Apply/Remove
 
 **What to build:** The last this-Frame write is a visible paint chip. Mark from (`[` / `I`) pins one slider end; the current Frame is the other; fill + `from → to` numbers. **Apply to frames** and **Remove from frames** POST that chip (real writes, numbers in the label). No chip: Mark from, Apply, Remove, and the keys do nothing. `]` / `O` always Apply, never Remove. Success: toast + slider flash; from clears; chip stays. Failure: red toast, no flash. No direction-toggle button that does not write. No “span mode” copy. Play pauses on a successful interval write.
-
-**Blocked by:** 02 — shadcn Pick+Create desk; HeroUI gone
-
-Status: MERGED
 
 - [x] Chip shows Task type + payload from the last this-Frame Pick+Create; a later pick replaces the chip and does not clear Mark from
 - [x] Mark from + scrub + Apply writes the chip across the inclusive range via existing span HTTP; Remove posts the inverse for that chip

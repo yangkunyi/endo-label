@@ -1,10 +1,6 @@
-# 04 — Class interval painting
+# desk-workbench/04 — Class interval painting
 
 **What to build:** The labeler can arm one class flag for interval painting as either on or off. When the span gesture closes, the desk sends one class span request that unions the selected tag onto every Frame or removes only that tag, preserving all other flags. Current-Frame chip toggles and class-name creation remain separate immediate writes.
-
-**Blocked by:** 03 — Span gesture and phase painting
-
-Status: MERGED
 
 - [x] The class backend accepts an inclusive, order-insensitive span with a tag and on/off operation
 - [x] Class span writes are one durable document update per request and reject out-of-range Frames or unknown class names without partial changes

@@ -1,4 +1,4 @@
-# 03 — Ruler progress and the transport above it
+# pilot-ux/03 — Ruler progress and the transport above it
 
 **What to build:** the picture's under-strip should read as progress, and the playback controls
 belong directly under the picture. Trial feedback: "进度条没有颜色，只有点…把进度条和播放控制条交换
@@ -18,15 +18,7 @@ Code:
 "progress bar"; 11 fixes the wording (the decision was to keep the Ruler a seek track that
 *shows* progress, not to turn it into a completion meter).
 
-**Blocked by:** —
-
-Status: MERGED
-
 - [x] the Ruler shows the played span, keeping dot and range preview
 - [x] the transport sits between the picture and the Ruler
 - [x] Lane well ordering and the reserved strip height are unchanged
 - [x] glossary wording updated — tracked in 11
-
-## Comments
-
-Delivered by hand as commit `e7287f2`, together with 02.

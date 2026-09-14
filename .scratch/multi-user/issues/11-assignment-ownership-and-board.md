@@ -1,10 +1,6 @@
-# 11 — Assignment ownership and board
+# multi-user/11 — Assignment ownership and board
 
 **What to build:** assignments table ((Clip, Task type) key; state, assignee, reviewer, note, reviewed_by, reviewed_at, delivered_at; clip version); assign / reassign / unassign APIs — labels physically stay on the Clip, assignment only decides who may write; label-write endpoints gain the fine permission check (current user is assignee and state allows) + optimistic version (mismatch 409); `/admin/assignments` board v1: Unassigned / Labeling columns, in-row assign and reassign. Initial transition: assignment means Labeling.
-
-**Blocked by:** 10.
-
-Status: MERGED
 
 Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
 

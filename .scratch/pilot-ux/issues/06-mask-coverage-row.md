@@ -1,4 +1,4 @@
-# 06 — Mask coverage: its own row and Track lanes
+# pilot-ux/06 — Mask coverage: its own row and Track lanes
 
 **What to build:** mask's own answer to "标到哪了". It is **not** part of 05's strip ("mask 不管，
 mask 单独一条"): mask has no Task focus tab, so it gets a row of its own plus per-Track spans.
@@ -19,10 +19,6 @@ Code:
 - Where: the strip joins the timeline region's strip area; the Track lanes go into the Lane well
   next to the vocab Lanes, reusing `data-lane-head` / `data-timeline-lane` markup so the geometry
   tests keep working.
-
-**Blocked by:** —
-
-Status: ready-for-agent
 
 - [ ] the mask strip marks every Frame that has any Track mask, and gaps for the rest
 - [ ] one Track lane per Track, spans matching the stored Annotation

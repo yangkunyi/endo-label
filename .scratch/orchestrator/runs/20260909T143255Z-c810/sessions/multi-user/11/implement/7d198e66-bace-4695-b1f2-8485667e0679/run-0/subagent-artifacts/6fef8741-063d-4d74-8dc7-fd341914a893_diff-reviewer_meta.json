@@ -1,0 +1,245 @@
+{
+  "runId": "6fef8741-063d-4d74-8dc7-fd341914a893",
+  "agent": "diff-reviewer",
+  "task": "[prompt redacted]",
+  "exitCode": 0,
+  "model": "xai/grok-4.6:high",
+  "attemptedModels": [
+    "xai/grok-4.6:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "xai/grok-4.6:high",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 115131,
+        "output": 16778,
+        "cacheRead": 191232,
+        "cacheWrite": 0,
+        "cost": 0.426546,
+        "turns": 9
+      }
+    }
+  ],
+  "usage": {
+    "input": 115131,
+    "output": 16778,
+    "cacheRead": 191232,
+    "cacheWrite": 0,
+    "cost": 0.426546,
+    "turns": 9
+  },
+  "acceptance": {
+    "status": "review-required",
+    "evidenceStatus": "checked",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "checked",
+      "explicit": false,
+      "inferredReason": [
+        "async write-capable or risky run"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Implement the requested change without widening scope",
+          "evidence": [
+            "changed-files",
+            "tests-added",
+            "commands-run",
+            "residual-risks",
+            "no-staged-files"
+          ],
+          "severity": "required"
+        },
+        {
+          "id": "criterion-2",
+          "must": "Return evidence sufficient for an independent acceptance review",
+          "evidence": [
+            "changed-files",
+            "tests-added",
+            "commands-run",
+            "residual-risks",
+            "no-staged-files"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "changed-files",
+        "tests-added",
+        "commands-run",
+        "residual-risks",
+        "no-staged-files"
+      ],
+      "verify": [],
+      "review": {
+        "agent": "reviewer",
+        "required": true
+      },
+      "stopRules": []
+    },
+    "inferredReason": [
+      "async write-capable or risky run"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Implement the requested change without widening scope",
+        "evidence": [
+          "changed-files",
+          "tests-added",
+          "commands-run",
+          "residual-risks",
+          "no-staged-files"
+        ],
+        "severity": "required"
+      },
+      {
+        "id": "criterion-2",
+        "must": "Return evidence sufficient for an independent acceptance review",
+        "evidence": [
+          "changed-files",
+          "tests-added",
+          "commands-run",
+          "residual-risks",
+          "no-staged-files"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [
+      {
+        "id": "criterion:criterion-1",
+        "status": "passed",
+        "message": "Required criterion 'criterion-1' satisfied."
+      },
+      {
+        "id": "criterion:criterion-2",
+        "status": "passed",
+        "message": "Required criterion 'criterion-2' satisfied."
+      },
+      {
+        "id": "evidence:changed-files",
+        "status": "not-applicable",
+        "message": "changed-files evidence explicitly reported as not applicable."
+      },
+      {
+        "id": "evidence:tests-added",
+        "status": "not-applicable",
+        "message": "tests-added evidence explicitly reported as not applicable."
+      },
+      {
+        "id": "evidence:commands-run",
+        "status": "passed",
+        "message": "commands-run evidence present."
+      },
+      {
+        "id": "evidence:residual-risks",
+        "status": "passed",
+        "message": "residual-risks evidence present."
+      },
+      {
+        "id": "evidence:no-staged-files",
+        "status": "passed",
+        "message": "no-staged-files evidence present."
+      },
+      {
+        "id": "no-staged-files",
+        "status": "passed",
+        "message": "No staged files detected."
+      }
+    ],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "Review only; no edits, no extra files, no commits."
+        },
+        {
+          "id": "criterion-2",
+          "status": "satisfied",
+          "evidence": "git rev-parse/log/status/diff vs 56c73d57; read ticket, spec, ADR, CONTEXT, untracked files, changed routers."
+        }
+      ],
+      "changedFiles": [],
+      "testsAddedOrUpdated": [],
+      "commandsRun": [
+        {
+          "command": "git rev-parse 56c73d575beb704754ef2440ba0c5d06396ed3ac",
+          "result": "passed",
+          "summary": "56c73d575beb704754ef2440ba0c5d06396ed3ac"
+        },
+        {
+          "command": "git log 56c73d575beb704754ef2440ba0c5d06396ed3ac..HEAD --oneline",
+          "result": "passed",
+          "summary": "empty; HEAD == fixed point"
+        },
+        {
+          "command": "git status",
+          "result": "passed",
+          "summary": "10 modified, 3 untracked, nothing staged"
+        },
+        {
+          "command": "git diff 56c73d575beb704754ef2440ba0c5d06396ed3ac",
+          "result": "passed",
+          "summary": "assignments schema, items API, label-write gate+version, board UI"
+        }
+      ],
+      "validationOutput": [
+        "HEAD 56c73d575beb704754ef2440ba0c5d06396ed3ac; no commits; unstaged M app/auth/coordination/phase/class/triplet routers, sitting_http, test_mask_session, App.tsx, AppShell.tsx; ?? items_router.py test_assignments.py AssignmentsBoard.tsx"
+      ],
+      "residualRisks": [
+        "Omitted version + version COMMIT before JSON write leaves lost-update window vs ADR 0027.",
+        "Non-assignee invalid vocab → 400 not 403.",
+        "Assign 404/409 untested."
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "Working tree vs 56c73d57: assignments table+version, admin /api/items assign/reassign/unassign, phase/class/triplet ownership+optional version, occupy_registered for old tests, /admin/assignments board.",
+      "reviewFindings": [
+        "partial: spec L68/ADR 0027 require version on saves; omit skips check (parent note 3).",
+        "partial: spec L83 save responses omit version; GET only.",
+        "partial: triplet DELETE version is query param not body.",
+        "issue: phase/class/triplet vocab check before require_label_write → 400 not 403 (ticket L11).",
+        "issue: authorize_label_write commits version then save_clip outside txn (ADR 0027 race).",
+        "issue: unknown assignee after wrong state → 409 not 404 (parent note 2).",
+        "scope: GET /api/items extra review/delivery fields; no extra transitions."
+      ],
+      "manualNotes": "Uncommitted review only. Ticket compose tests exist (ownership + 409) on one create_app. Playwright not run."
+    },
+    "reviewResult": {
+      "status": "review-required",
+      "findings": [
+        {
+          "severity": "non-blocking",
+          "issue": "Independent review has not been supplied.",
+          "rationale": "The run cannot be marked reviewed from child evidence alone."
+        }
+      ]
+    }
+  },
+  "launchContractDigest": "af389f271ceb1fa8e09141cd516a6cedca14db437acd986b286e77c5f4450008",
+  "launchResolvedExtensions": {
+    "version": 1,
+    "source": "launch-resolved",
+    "disableAmbientExtensions": false,
+    "runtime": [
+      "sha256:66734f1d6715580a"
+    ],
+    "configured": [],
+    "effective": [
+      "sha256:66734f1d6715580a"
+    ],
+    "omitted": {
+      "runtime": 0,
+      "configured": 0,
+      "effective": 0
+    }
+  },
+  "transcriptPath": "/data3/yky/endo_label/.scratch/orchestrator/runs/20260909T143255Z-c810/sessions/multi-user/11/implement/7d198e66-bace-4695-b1f2-8485667e0679/run-0/subagent-artifacts/6fef8741-063d-4d74-8dc7-fd341914a893_diff-reviewer_transcript.jsonl",
+  "skills": [],
+  "timestamp": 1788966024506
+}

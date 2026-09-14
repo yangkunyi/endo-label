@@ -1,10 +1,6 @@
-# 22 — Playwright closeout
+# multi-user/22 — Playwright closeout
 
 **What to build:** the remaining multi-user Playwright run after product tickets 11–21 are on Main. Isolated e2e sitting (`7881` / Vite `5174` / worker-down `7893`). This is the only remaining Ticket that runs `npm run test:e2e`. Add or adapt `web/e2e` specs for the scenarios below. Existing desk specs stay green.
-
-**Blocked by:** 15, 20, 21.
-
-Status: MERGED
 
 - [x] e2e: admin assigns on the board → annotator's desk becomes writable; board row states match the lists
 - [x] e2e: a full round on the board — assign → submit → assign reviewer → pass / reject

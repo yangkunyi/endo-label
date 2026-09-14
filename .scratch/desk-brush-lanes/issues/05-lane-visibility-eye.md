@@ -1,10 +1,6 @@
-# 05 — Library eye shows or hides a Lane; unused start hidden
+# desk-brush-lanes/05 — Library eye shows or hides a Lane; unused start hidden
 
 **What to build:** Each Library row gets an eye control, distinct from the name (this-Frame), the Brush control, and trash. Copy: `Show lane` / `Hide lane`. Identities already present on this Clip start with the eye on; unused Vocab identities start off. Turning the eye on for an unused name shows an empty Lane that can be drag-painted (ticket 04). A labeled Lane may be hidden; hide is not Vocab trash and not unlabeled. Now, Library Selection, and Brush ignore the eye. Apply/Remove of a hidden Brush identity still writes disk. Visibility persists in localStorage on this machine, keyed by Task type + identity. Missing key: visible if present on this Clip, else hidden. A stored hide wins over “present on this Clip”. A newly added Vocab name starts hidden. Do not run or edit Playwright; ticket 06 covers hide/show and unused empty-Lane paint in the browser.
-
-**Blocked by:** 01 — Lane well is a reserved strip; picture height does not follow Lanes. 04 — Lane bars seek under the pointer, paint on empty drag, Shift-select, trim, Backspace.
-
-Status: MERGED
 
 - [x] Eye is a separate control from name, Brush, and trash; English `Show lane` / `Hide lane`
 - [x] Present-on-Clip identities start visible; unused start hidden; `+` a new Vocab name does not dump an empty Lane

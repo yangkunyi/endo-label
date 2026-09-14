@@ -1,10 +1,6 @@
-# 17 — Label id migration (contract)
+# multi-user/17 — Label id migration (contract)
 
 **What to build:** label file content switches from bare strings to registry id references (existing validation data is not migrated — see spec Out of Scope); a rename writes only the registry row and every read endpoint reflects it immediately; delete = archive (labels kept), hard delete refused for referenced names and allowed for zero-reference ones; typeahead semantics kept (drawn from existing triples); `test_compose` vocab assertions migrated to the new semantics; the multi-file rename/delete rewrite transactions in the labels store are deleted.
-
-**Blocked by:** 16.
-
-Status: MERGED
 
 Do not run `npm run test:e2e`. Playwright for this drain is ticket 22.
 

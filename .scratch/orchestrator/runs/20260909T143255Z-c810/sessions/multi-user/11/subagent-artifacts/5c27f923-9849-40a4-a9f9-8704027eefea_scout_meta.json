@@ -1,0 +1,76 @@
+{
+  "runId": "5c27f923-9849-40a4-a9f9-8704027eefea",
+  "agent": "scout",
+  "task": "[prompt redacted]",
+  "exitCode": 0,
+  "model": "xai/grok-4.6:low",
+  "attemptedModels": [
+    "xai/grok-4.6:low"
+  ],
+  "modelAttempts": [
+    {
+      "model": "xai/grok-4.6:low",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 80298,
+        "output": 5576,
+        "cacheRead": 78592,
+        "cacheWrite": 0,
+        "cost": 0.233348,
+        "turns": 8
+      }
+    }
+  ],
+  "usage": {
+    "input": 80298,
+    "output": 5576,
+    "cacheRead": 78592,
+    "cacheWrite": 0,
+    "cost": 0.233348,
+    "turns": 8
+  },
+  "acceptance": {
+    "status": "not-required",
+    "evidenceStatus": "not-required",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "none",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [],
+      "evidence": [],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [],
+    "runtimeChecks": [],
+    "verifyRuns": []
+  },
+  "launchContractDigest": "ca4a786a2cb45a6ea1bc89a5e7b0d2f4ee6921e5598bce658f309cbbe8bee7a1",
+  "launchResolvedExtensions": {
+    "version": 1,
+    "source": "launch-resolved",
+    "disableAmbientExtensions": false,
+    "runtime": [
+      "sha256:66734f1d6715580a"
+    ],
+    "configured": [],
+    "effective": [
+      "sha256:66734f1d6715580a"
+    ],
+    "omitted": {
+      "runtime": 0,
+      "configured": 0,
+      "effective": 0
+    }
+  },
+  "transcriptPath": "/data3/yky/endo_label/.scratch/orchestrator/runs/20260909T143255Z-c810/sessions/multi-user/11/subagent-artifacts/5c27f923-9849-40a4-a9f9-8704027eefea_scout_transcript.jsonl",
+  "skills": [],
+  "timestamp": 1788964537485
+}

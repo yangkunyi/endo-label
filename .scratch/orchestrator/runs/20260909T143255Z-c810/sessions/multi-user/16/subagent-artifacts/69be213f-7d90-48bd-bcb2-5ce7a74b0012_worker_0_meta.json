@@ -1,0 +1,90 @@
+{
+  "runId": "69be213f-7d90-48bd-bcb2-5ce7a74b0012",
+  "agent": "worker",
+  "task": "[prompt redacted]",
+  "exitCode": 0,
+  "usage": {
+    "input": 13370,
+    "output": 1712,
+    "cacheRead": 56192,
+    "cacheWrite": 0,
+    "cost": 0.06510799999999999,
+    "turns": 8
+  },
+  "model": "xai/grok-4.6:high",
+  "attemptedModels": [
+    "xai/grok-4.6:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "xai/grok-4.6:high",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 13370,
+        "output": 1712,
+        "cacheRead": 56192,
+        "cacheWrite": 0,
+        "cost": 0.06510799999999999,
+        "turns": 8
+      }
+    }
+  ],
+  "durationMs": 117582,
+  "toolCount": 14,
+  "launchContractDigest": "fd99d170c0b22320864cac6b233ae6ac4433726bed48c7c12fba6355a2193f94",
+  "launchResolvedExtensions": {
+    "version": 1,
+    "source": "launch-resolved",
+    "disableAmbientExtensions": true,
+    "runtime": [
+      "sha256:66734f1d6715580a"
+    ],
+    "configured": [],
+    "effective": [
+      "sha256:66734f1d6715580a"
+    ],
+    "omitted": {
+      "runtime": 0,
+      "configured": 0,
+      "effective": 0
+    }
+  },
+  "acceptance": {
+    "status": "not-required",
+    "evidenceStatus": "not-required",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "none",
+      "explicit": false,
+      "inferredReason": [
+        "read-only task wording"
+      ],
+      "criteria": [],
+      "evidence": [],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only task wording"
+    ],
+    "criteria": [],
+    "runtimeChecks": [],
+    "verifyRuns": []
+  },
+  "effects": {
+    "fileMutation": {
+      "status": "not-applicable",
+      "expected": false,
+      "attempted": true,
+      "evidence": {
+        "source": "tracked-files",
+        "trackedOnly": true,
+        "changedFiles": [],
+        "attemptedMutation": false
+      }
+    }
+  },
+  "transcriptPath": "/data3/yky/endo_label/.scratch/orchestrator/runs/20260909T143255Z-c810/sessions/multi-user/16/subagent-artifacts/69be213f-7d90-48bd-bcb2-5ce7a74b0012_worker_0_transcript.jsonl",
+  "timestamp": 1788965204738
+}

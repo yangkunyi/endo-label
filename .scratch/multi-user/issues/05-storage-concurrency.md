@@ -1,7 +1,4 @@
-# 05 存储与并发架构
-
-Type: grilling
-Status: resolved
+# multi-user/05 — 存储与并发架构
 
 ## Question
 

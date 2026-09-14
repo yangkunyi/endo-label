@@ -1,10 +1,6 @@
-# 02 — Empty vocab seed
+# desk-dark/02 — Empty vocab seed
 
 **What to build:** A new sitting has empty phases, class_tags, instruments, verbs, and targets. The labeler adds names with plus or by typing. An existing `vocab.json` is not wiped on startup. Compose and desk tests that assumed seed names such as Preparation or grasper add those names themselves.
-
-**Blocked by:** None — can start immediately.
-
-Status: MERGED
 
 - [x] Fresh vocab (no file, or missing list keys) returns empty lists for all five names; old seed strings are not injected
 - [x] Plus on phase/class and typing a new triplet word still add a name to the matching list and can write this Frame

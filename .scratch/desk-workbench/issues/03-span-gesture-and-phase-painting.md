@@ -1,10 +1,6 @@
-# 03 — Span gesture and phase painting
+# desk-workbench/03 — Span gesture and phase painting
 
 **What to build:** The labeler paints phase intervals with keyboard gestures instead of numeric bounds. `[` or `I` marks the current Frame as the start; `]` or `O` writes the inclusive range, swapping reversed bounds. Pressing `]` without a start writes only the current Frame. The gesture pauses any active playback, shows the pending target in a slider HUD, and is ignored in editable controls. Phase remains an exclusive immediate write and keeps its existing validation and independence rules.
-
-**Blocked by:** 01 — Single-page HeroUI workbench
-
-Status: MERGED
 
 - [x] Phase no longer requires numeric from/to fields; the keyboard gesture paints the selected phase over an inclusive, order-insensitive range
 - [x] A closing key with no marked start writes exactly the current Frame; a one-Frame range also succeeds

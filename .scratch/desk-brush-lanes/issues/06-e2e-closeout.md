@@ -1,10 +1,6 @@
-# 06 — Full desk e2e closeout
+# desk-brush-lanes/06 — Full desk e2e closeout
 
 **What to build:** This is the only ticket that runs or edits Playwright. Walk the whole desk after 01–05 and rewrite `web/e2e/desk.spec.ts` so the new sitting is green. Cover: Lane well height vs player (empty Clip still has the well; picture height stays put when a Lane appears); Brush arm does not write this Frame; `i`/`o` with Brush; two class tags in one Apply; Ruler from–to and ghost bars; click-bar seeks to the pointer Frame; Shift-click + Backspace; drag-empty paint; trim selected ends; eye hide/show; unused empty Lane. The well shows only visible Lanes of the focused Task type. Switching Task focus rebuilds the well, clears bar selection, and keeps each kind’s Brush. Library name click, double-click rename, and trash confirm stay. Now stays read-only. Space, rate menu, and media-chrome transport stay. `i`/`o`/`[`/`]`/Backspace/Delete are ignored while typing in an input or combobox. English copy on the new controls. Adapt or retire every story that armed a paint chip by toggling this Frame, treated bars as display-only, sought to a bar’s first Frame, or treated an empty Clip as Ruler-only. Ticket 01 may already have rewritten the empty-Clip well case; keep that and finish the rest. This tree’s Playwright webServer stays isolated API `7891` + Vite `5191` (sitting `7880` / `5173` untouched; do not reuse `7881` / `5174`). Full suite green. No new Python span suite.
-
-**Blocked by:** 01 — Lane well is a reserved strip; picture height does not follow Lanes. 02 — Brush replaces the paint chip; Library name stays this-Frame. 03 — Several identities in one Apply; Ruler and ghost preview. 04 — Lane bars seek under the pointer, paint on empty drag, Shift-select, trim, Backspace. 05 — Library eye shows or hides a Lane; unused start hidden.
-
-Status: MERGED
 
 - [x] Lane well: empty Clip still has the strip; picture height is unchanged after a Lane appears
 - [x] Brush: arm does not change this-Frame JSON; `i`/`o` write the Brush; old paint-chip locators gone; tests that armed a chip via this-Frame now arm Brush

@@ -1,0 +1,217 @@
+{
+  "runId": "b0b0b589-a3e4-4622-b315-0cf39bacedb1",
+  "agent": "worker",
+  "task": "[prompt redacted]",
+  "exitCode": 0,
+  "usage": {
+    "input": 80436,
+    "output": 1569,
+    "cacheRead": 160000,
+    "cacheWrite": 0,
+    "cost": 0.250286,
+    "turns": 3
+  },
+  "model": "xai/grok-4.6:high",
+  "attemptedModels": [
+    "xai/grok-4.6:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "xai/grok-4.6:high",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 80436,
+        "output": 1569,
+        "cacheRead": 160000,
+        "cacheWrite": 0,
+        "cost": 0.250286,
+        "turns": 3
+      }
+    }
+  ],
+  "durationMs": 104730,
+  "toolCount": 2,
+  "launchContractDigest": "3cb265744789abf3ecbfb93031b29fe30b700deff90a8fca2a22ca80db7b7581",
+  "launchResolvedExtensions": {
+    "version": 1,
+    "source": "launch-resolved",
+    "disableAmbientExtensions": true,
+    "runtime": [
+      "sha256:66734f1d6715580a"
+    ],
+    "configured": [],
+    "effective": [
+      "sha256:66734f1d6715580a"
+    ],
+    "omitted": {
+      "runtime": 0,
+      "configured": 0,
+      "effective": 0
+    }
+  },
+  "acceptance": {
+    "status": "checked",
+    "evidenceStatus": "checked",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "checked",
+      "explicit": false,
+      "inferredReason": [
+        "write-capable worker/task"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Implement the requested change without widening scope",
+          "evidence": [
+            "changed-files",
+            "tests-added",
+            "commands-run",
+            "residual-risks",
+            "no-staged-files"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "changed-files",
+        "tests-added",
+        "commands-run",
+        "residual-risks",
+        "no-staged-files"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "write-capable worker/task"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Implement the requested change without widening scope",
+        "evidence": [
+          "changed-files",
+          "tests-added",
+          "commands-run",
+          "residual-risks",
+          "no-staged-files"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [
+      {
+        "id": "criterion:criterion-1",
+        "status": "passed",
+        "message": "Required criterion 'criterion-1' satisfied."
+      },
+      {
+        "id": "evidence:changed-files",
+        "status": "passed",
+        "message": "changed-files evidence present."
+      },
+      {
+        "id": "evidence:tests-added",
+        "status": "passed",
+        "message": "tests-added evidence present."
+      },
+      {
+        "id": "evidence:commands-run",
+        "status": "passed",
+        "message": "commands-run evidence present."
+      },
+      {
+        "id": "evidence:residual-risks",
+        "status": "passed",
+        "message": "residual-risks evidence present."
+      },
+      {
+        "id": "evidence:no-staged-files",
+        "status": "passed",
+        "message": "no-staged-files evidence present."
+      },
+      {
+        "id": "no-staged-files",
+        "status": "passed",
+        "message": "No staged files detected."
+      }
+    ],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "Committed only the 11 ticket-16 product files after pytest 167 passed; ticket Status file untouched; no extra files added."
+        }
+      ],
+      "changedFiles": [
+        "endo_label/app.py",
+        "endo_label/auth.py",
+        "endo_label/coordination.py",
+        "endo_label/registry.py",
+        "endo_label/registry_router.py",
+        "tests/test_registry.py",
+        "web/src/AdminVocab.tsx",
+        "web/src/App.tsx",
+        "web/src/AppShell.tsx",
+        "web/src/api.ts",
+        "web/src/api.test.ts"
+      ],
+      "testsAddedOrUpdated": [
+        "tests/test_registry.py",
+        "web/src/api.test.ts"
+      ],
+      "commandsRun": [
+        {
+          "command": ".venv/bin/pytest -q",
+          "result": "passed",
+          "summary": "167 passed, 1 skipped, 2 warnings in 71.20s"
+        },
+        {
+          "command": "git commit",
+          "result": "passed",
+          "summary": "6c0678b feat: add Vocab registry, per-Project enablement, and /admin/vocab"
+        }
+      ],
+      "validationOutput": [
+        "167 passed, 1 skipped, 2 warnings in 71.20s",
+        "working tree clean after commit 6c0678bdb2487ef1927a3be967315604d104e609"
+      ],
+      "residualRisks": [
+        "none"
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "Vocab registry tables and /api/registry CRUD, enablement, candidates/promote; /admin/vocab screen; compose tests.",
+      "reviewFindings": [
+        "no blockers"
+      ],
+      "manualNotes": "Ticket file Status left unchanged. Did not add web/node_modules."
+    }
+  },
+  "effects": {
+    "fileMutation": {
+      "status": "observed",
+      "expected": true,
+      "attempted": true,
+      "evidence": {
+        "source": "tracked-files",
+        "trackedOnly": true,
+        "changedFiles": [
+          "endo_label/app.py",
+          "endo_label/auth.py",
+          "endo_label/coordination.py",
+          "web/src/App.tsx",
+          "web/src/AppShell.tsx",
+          "web/src/api.test.ts",
+          "web/src/api.ts"
+        ],
+        "attemptedMutation": true
+      }
+    }
+  },
+  "transcriptPath": "/data3/yky/endo_label/.scratch/orchestrator/runs/20260909T143255Z-c810/sessions/multi-user/16/subagent-artifacts/b0b0b589-a3e4-4622-b315-0cf39bacedb1_worker_0_transcript.jsonl",
+  "timestamp": 1788965665709
+}

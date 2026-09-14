@@ -1,8 +1,4 @@
-# Which 2-3 task types the throwaway prototype runs
-
-Type: grilling
-Status: resolved
-Blocked by: 01
+# endo-label-product/04 — Which 2-3 task types the throwaway prototype runs
 
 ## Question
 

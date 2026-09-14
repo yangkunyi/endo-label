@@ -1,10 +1,6 @@
-# 06 — Playback and full sitting verification
+# desk-workbench/06 — Playback and full sitting verification
 
 **What to build:** The labeler can watch a Clip through the workbench. Space toggles play/pause outside editable controls; playback scrubs Frames on a timer using selectable 1, 10, or 25 fps and an optional skip-every-N setting. Playback stops at the final Frame, never loops, writes no labels, opens no Session, and pauses after a successful span write. The full sitting is covered by focused compose and Playwright checks.
-
-**Blocked by:** 03 — Span gesture and phase painting; 04 — Class interval painting; 05 — Triplet interval painting
-
-Status: MERGED
 
 - [x] Space toggles playback and is ignored in input, textarea, and select controls
 - [x] Playback offers fps values 1, 10, and 25, plus a skip-every-N control, with usable defaults and optional local persistence

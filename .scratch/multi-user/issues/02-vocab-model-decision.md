@@ -1,8 +1,4 @@
-# 02 词表模型决策
-
-Type: grilling
-Status: resolved
-Blocked by: 01
+# multi-user/02 — 词表模型决策
 
 ## Question
 

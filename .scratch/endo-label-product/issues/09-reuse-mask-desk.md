@@ -1,8 +1,4 @@
-# What to reuse from the current mask desk
-
-Type: grilling
-Status: resolved
-Blocked by: 07, 08
+# endo-label-product/09 — What to reuse from the current mask desk
 
 ## Question
 

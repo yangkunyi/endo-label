@@ -1,10 +1,6 @@
-# 01 — This worktree uses its own ports
+# mask-desk/01 — This worktree uses its own ports
 
 **What to build:** `dev2` sitting and Playwright must not steal `main` or `dev1` sockets. Default sitting API is **7882**, Vite dev **5175** (CORS allows that origin). `npm run test:e2e` is isolated API **7892** + Vite **5192**, `--strictPort`, do not reuse another worktree’s server. Existing phase/class/triplet Playwright still green on the new e2e pair. No mask overlay in this ticket.
-
-**Blocked by:** None — can start immediately.
-
-Status: MERGED
 
 - [x] `python -m endo_label` binds `127.0.0.1:7882` unless `--port` is passed
 - [x] `npm run dev` is Vite `5175` proxying `/api` to `7882`

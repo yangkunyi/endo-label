@@ -1,4 +1,4 @@
-# 12 — Test gaps from this feature
+# pilot-ux/12 — Test gaps from this feature
 
 **What to build:** the pins the two grill rounds left behind. 01–04 landed by hand with the
 existing suites green (`desk.spec.ts` + `mask-desk.spec.ts` 68 passed, backend 26 passed) but with
@@ -30,10 +30,6 @@ Backend (`tests/`):
 - Batch assign (10): per-item results, mixed state selection, Reviewing/Done skipped with a reason.
 - The 403 sentences (04): assert the wording for each Assignment state, since that text is now
   part of the product.
-
-**Blocked by:** —
-
-Status: ready-for-agent
 
 - [ ] the five e2e behaviours from 01–03 are pinned
 - [ ] the coverage/gap mapping and the `n` search are unit-tested

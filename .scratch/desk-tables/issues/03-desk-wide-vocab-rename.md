@@ -1,10 +1,6 @@
-# 03 — Desk-wide phase and class-tag rename
+# desk-tables/03 — Desk-wide phase and class-tag rename
 
 **What to build:** Double-click a phase or class-tag name in its table, commit a new string: that desk list is renamed and every Clip document of that kind that stored the old string is rewritten in one request. Empty and duplicate names are rejected and the old name stays on disk. A class-tag rename does not change triplet instrument (or verb/target) strings. Triplet cell edits stay this-row-on-this-Frame; typing a new triplet word still only adds to that list and uses it here.
-
-**Blocked by:** 01 — HeroUI tables write this Frame
-
-Status: MERGED
 
 - [x] One rename request per list (`phases` or `class_tags`) with `{from, to}` rewrites that list and every Clip document of that kind, or fails with no Clip left partially renamed
 - [x] Blank `to` and a `to` that already exists on that list are rejected; the old name remains on the list and on every Frame

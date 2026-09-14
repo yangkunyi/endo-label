@@ -1,0 +1,76 @@
+{
+  "runId": "37202cbe-b986-4536-bf74-2edc0189378f",
+  "agent": "diff-reviewer",
+  "task": "[prompt redacted]",
+  "exitCode": 0,
+  "model": "google/gemini-3.8-flash:high",
+  "attemptedModels": [
+    "google/gemini-3.8-flash:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "google/gemini-3.8-flash:high",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 130437,
+        "output": 13482,
+        "cacheRead": 422464,
+        "cacheWrite": 0,
+        "cost": 0.18007004999999998,
+        "turns": 19
+      }
+    }
+  ],
+  "usage": {
+    "input": 130437,
+    "output": 13482,
+    "cacheRead": 422464,
+    "cacheWrite": 0,
+    "cost": 0.18007004999999998,
+    "turns": 19
+  },
+  "acceptance": {
+    "status": "not-required",
+    "evidenceStatus": "not-required",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "none",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [],
+      "evidence": [],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [],
+    "runtimeChecks": [],
+    "verifyRuns": []
+  },
+  "launchContractDigest": "70c2f46af0798cdc08e58833a001598e7e48cfe3cdd10e5094ef77371dcab8d3",
+  "launchResolvedExtensions": {
+    "version": 1,
+    "source": "launch-resolved",
+    "disableAmbientExtensions": false,
+    "runtime": [
+      "sha256:66734f1d6715580a"
+    ],
+    "configured": [],
+    "effective": [
+      "sha256:66734f1d6715580a"
+    ],
+    "omitted": {
+      "runtime": 0,
+      "configured": 0,
+      "effective": 0
+    }
+  },
+  "transcriptPath": "/data3/yky/endo_label/.scratch/orchestrator/runs/20260909T115901Z-2673/sessions/multi-user/10/subagent-artifacts/37202cbe-b986-4536-bf74-2edc0189378f_diff-reviewer_transcript.jsonl",
+  "skills": [],
+  "timestamp": 1788957513216
+}

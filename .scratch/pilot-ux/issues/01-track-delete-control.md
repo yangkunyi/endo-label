@@ -1,4 +1,4 @@
-# 01 — Track delete control
+# pilot-ux/01 — Track delete control
 
 **What to build:** a way to drop a Track from the desk. `DELETE /api/session/tracks/{track_id}`
 has existed since the port, but the ClipDesk decomposition carried no control for it, so a Track —
@@ -18,15 +18,7 @@ Verified on the real pilot: session drops the Track immediately, the Track's mas
 persisted Annotation, and reopening the Session does not resurrect it. `mask-desk.spec.ts` 17
 passed.
 
-**Blocked by:** —
-
-Status: MERGED
-
 - [x] the rail row deletes a Track (with confirm) and its masks
 - [x] the deleted Track stops being the Active Track
 - [x] deleting is refused while a Predict or Propagate is running
 - [x] no e2e for the trash button yet — see 12
-
-## Comments
-
-Delivered by hand as commit `8d55638` (`feat(desk): a Track can be deleted from the rail`).

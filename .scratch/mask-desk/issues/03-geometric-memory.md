@@ -1,10 +1,6 @@
-# 03 — Leftover points stay; click a pin to delete
+# mask-desk/03 — Leftover points stay; click a pin to delete
 
 **What to build:** After a Geometric Predict, leftover pins stay on that Track on that Frame (Geometric Memory) and go out again on the next Predict with the current Mask Prior. A click (no drag) on a leftover pin deletes that pin and re-Predicts the rest plus Prior. Pins are not in Annotation. Active Track is chosen only from the right-rail list; New Track clears Active so the next positive prompt creates identity. Picture click never selects a Track.
-
-**Blocked by:** 02 — Click a point, see a Track, Annotation is on disk
-
-Status: MERGED
 
 - [x] GET Session for this Frame returns leftover points after Predict; Annotation GET has none
 - [x] Second Geometric Predict on the same Track-on-Frame resends leftovers + this request + Mask Prior

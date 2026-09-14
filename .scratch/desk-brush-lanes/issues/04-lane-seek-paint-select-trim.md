@@ -1,10 +1,6 @@
-# 04 — Lane bars seek under the pointer, paint on empty drag, Shift-select, trim, Backspace
+# desk-brush-lanes/04 — Lane bars seek under the pointer, paint on empty drag, Shift-select, trim, Backspace
 
 **What to build:** A Lane is a paint and edit surface, not display-only. Unmodified click on a colored bar seeks to the Frame under the pointer (not the bar’s first Frame) and clears bar selection. Click on empty track with no drag also seeks. Drag on empty track paints that Lane’s identity on the inclusive press–release range. Hold Shift and click a bar to toggle that folded segment in the selection with no seek; Shift-click adds or removes; selected bars show an outline. Backspace/Delete (not while typing) drops each selected segment of that identity only. Escape clears selection without disk writes. Drag either end of a **selected** bar, then release, trims that segment (expand paints, shrink removes). Drag the middle of a filled bar does not move it. No marquee. Bottom Remove stays the Brush + In–Out eraser. The player MediaTimeRange and the Ruler do not delete labels. No sticky select mode. Do not run or edit Playwright; ticket 06 rewrites the old “bars are display-only / click seeks to start” cases.
-
-**Blocked by:** 01 — Lane well is a reserved strip; picture height does not follow Lanes.
-
-Status: MERGED
 
 - [x] Click a colored bar (no Shift, no drag) seeks to the Frame under the pointer and clears bar selection
 - [x] Click empty Lane with no drag seeks; drag empty Lane paints that identity on min–max Frames inclusive

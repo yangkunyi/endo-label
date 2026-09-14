@@ -1,10 +1,6 @@
-# 10 — Project and Clip registration
+# multi-user/10 — Project and Clip registration
 
 **What to build:** projects table (name + hospital field); Clips registered into the DB, each belonging to exactly one Project; CLI/config-based batch registration (low-frequency operation, no UI — the screen comes in 15); the same source media registered into two Projects = two independent Clips (labels, assignments, states all separate; media shared read-only); catalog serves the Clip directory from the DB, retiring the clips list in config.yaml; GET /api/projects.
-
-**Blocked by:** 09.
-
-Status: MERGED
 
 - [x] compose seam: creating a project and registering media reflects correctly in /api/projects and the Clip directory
 - [x] compose seam: registering the same media into two Projects yields two Clip ids, each independently openable

@@ -1,0 +1,559 @@
+{
+  "updatedAt": "2026-09-09T15:20:02.547Z",
+  "nodes": [
+    {
+      "id": "desk-appearance/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-appearance/02",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-appearance/01 — Full"
+      ]
+    },
+    {
+      "id": "desk-brush-lanes/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-brush-lanes/02",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-brush-lanes/03",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-brush-lanes/02 — Brush replaces the paint chip; Library name stays this"
+      ]
+    },
+    {
+      "id": "desk-brush-lanes/04",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-brush-lanes/01 — Lane well is a reserved strip; picture height does not follow Lanes"
+      ]
+    },
+    {
+      "id": "desk-brush-lanes/05",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-brush-lanes/01 — Lane well is a reserved strip; picture height does not follow Lanes. 04 — Lane bars seek under the pointer",
+        "desk-brush-lanes/paint on empty drag",
+        "desk-brush-lanes/Shift",
+        "desk-brush-lanes/trim",
+        "desk-brush-lanes/Backspace"
+      ]
+    },
+    {
+      "id": "desk-brush-lanes/06",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-brush-lanes/01 — Lane well is a reserved strip; picture height does not follow Lanes. 02 — Brush replaces the paint chip; Library name stays this",
+        "desk-brush-lanes/paint on empty drag",
+        "desk-brush-lanes/Shift",
+        "desk-brush-lanes/trim",
+        "desk-brush-lanes/Backspace. 05 — Library eye shows or hides a Lane; unused start hidden"
+      ]
+    },
+    {
+      "id": "desk-cards-grid/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-cards-grid/02",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-cards-grid/01 — Dual Editor Cards and soft Library selection"
+      ]
+    },
+    {
+      "id": "desk-cards-grid/03",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-cards-grid/01 — Dual Editor Cards and soft Library selection",
+        "desk-cards-grid/02 — Triplet hairline grid",
+        "desk-cards-grid/in",
+        "desk-cards-grid/and Now capsule"
+      ]
+    },
+    {
+      "id": "desk-colored-library/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-colored-library/02",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-colored-library/03",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-colored-library/01 — Read"
+      ]
+    },
+    {
+      "id": "desk-combobox/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-combobox/02",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-combobox/01 — Triplet this"
+      ]
+    },
+    {
+      "id": "desk-combobox/03",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-combobox/02 — shadcn Pick+Create desk; HeroUI gone"
+      ]
+    },
+    {
+      "id": "desk-dark/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-dark/02",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-dark/03",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-dark/01 — Dark compact sitting; 02 — Empty vocab seed"
+      ]
+    },
+    {
+      "id": "desk-modern-player/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-modern-player/02",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-modern-player/01 — JPEG Clip lazily transcodes to mp4 with cache"
+      ]
+    },
+    {
+      "id": "desk-modern-player/03",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-modern-player/02 — Both Clip kinds play in one shadcn Video Player"
+      ]
+    },
+    {
+      "id": "desk-modern-player/04",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-modern-player/05",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-modern-player/01 — JPEG Clip lazily transcodes to mp4 with cache; 02 — Both Clip kinds play in one shadcn Video Player; 03 — Timeline under the player with a draggable Playhead",
+        "desk-modern-player/label once per lane; 04 — Linear"
+      ]
+    },
+    {
+      "id": "desk-player/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-player/02",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-player/01 — Catalog: kind + path"
+      ]
+    },
+    {
+      "id": "desk-player/03",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-player/02 — JPEG player chrome"
+      ]
+    },
+    {
+      "id": "desk-player/04",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-player/03 — Task",
+        "desk-player/Library",
+        "desk-player/summary"
+      ]
+    },
+    {
+      "id": "desk-player/05",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-player/01 — Catalog: kind + path; 02 — JPEG player chrome"
+      ]
+    },
+    {
+      "id": "desk-player-fixes/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-player-fixes/02",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-player-fixes/03",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-player-fixes/01 — Trash clears the Brush. 02 — Hand"
+      ]
+    },
+    {
+      "id": "desk-ruler/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-ruler/02",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-ruler/03",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-ruler/04",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-ruler/05",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-ruler/01 — Rate menu with slow speeds; 02 — Now fills with the label color; 03 — Ruler under the picture; timeline spans Clips+Player; Playhead drags on the Ruler; 04 — Hairlines between Now",
+        "desk-ruler/Library",
+        "desk-ruler/and List"
+      ]
+    },
+    {
+      "id": "desk-tables/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-tables/02",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-tables/01 — HeroUI tables write this Frame"
+      ]
+    },
+    {
+      "id": "desk-tables/03",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-tables/01 — HeroUI tables write this Frame"
+      ]
+    },
+    {
+      "id": "desk-vocab-library/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-vocab-library/02",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-vocab-library/03",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-vocab-library/02 — Triplet Vocab is the table of exact triples"
+      ]
+    },
+    {
+      "id": "desk-vocab-library/04",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-vocab-library/01 — Library is this",
+        "desk-vocab-library/Vocab trash",
+        "desk-vocab-library/and rename; List is gone; 02 — Triplet Vocab is the table of exact triples; 03 — Double"
+      ]
+    },
+    {
+      "id": "desk-workbench/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "desk-workbench/02",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-workbench/01 — Single"
+      ]
+    },
+    {
+      "id": "desk-workbench/03",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-workbench/01 — Single"
+      ]
+    },
+    {
+      "id": "desk-workbench/04",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-workbench/03 — Span gesture and phase painting"
+      ]
+    },
+    {
+      "id": "desk-workbench/05",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-workbench/03 — Span gesture and phase painting"
+      ]
+    },
+    {
+      "id": "desk-workbench/06",
+      "status": "MERGED",
+      "blockedBy": [
+        "desk-workbench/03 — Span gesture and phase painting; 04 — Class interval painting; 05 — Triplet interval painting"
+      ]
+    },
+    {
+      "id": "mask-desk/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "mask-desk/02",
+      "status": "MERGED",
+      "blockedBy": [
+        "mask-desk/01 — This worktree uses its own ports"
+      ]
+    },
+    {
+      "id": "mask-desk/03",
+      "status": "MERGED",
+      "blockedBy": [
+        "mask-desk/02 — Click a point",
+        "mask-desk/see a Track",
+        "mask-desk/Annotation is on disk"
+      ]
+    },
+    {
+      "id": "mask-desk/04",
+      "status": "MERGED",
+      "blockedBy": [
+        "mask-desk/02 — Click a point",
+        "mask-desk/see a Track",
+        "mask-desk/Annotation is on disk"
+      ]
+    },
+    {
+      "id": "mask-desk/05",
+      "status": "MERGED",
+      "blockedBy": [
+        "mask-desk/02 — Click a point",
+        "mask-desk/see a Track",
+        "mask-desk/Annotation is on disk; 03 — Leftover points stay; click a pin to delete"
+      ]
+    },
+    {
+      "id": "mask-desk/06",
+      "status": "MERGED",
+      "blockedBy": [
+        "mask-desk/02 — Click a point",
+        "mask-desk/see a Track",
+        "mask-desk/Annotation is on disk"
+      ]
+    },
+    {
+      "id": "mask-desk/07",
+      "status": "MERGED",
+      "blockedBy": [
+        "mask-desk/02 — Click a point",
+        "mask-desk/see a Track",
+        "mask-desk/Annotation is on disk; 03 — Leftover points stay; click a pin to delete; 04 — Drag is Scribble; Mask Handoff to SAM; 05 — Undo this Frame’s last committed mask edit; 06 — Propagate Job from this Frame; Protected stay"
+      ]
+    },
+    {
+      "id": "mask-desk/08",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "mask-desk/09",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "mask-desk/10",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "multi-user/09",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "multi-user/10",
+      "status": "MERGED",
+      "blockedBy": [
+        "multi-user/09"
+      ]
+    },
+    {
+      "id": "multi-user/11",
+      "status": "FAILED",
+      "blockedBy": [
+        "multi-user/10"
+      ]
+    },
+    {
+      "id": "multi-user/12",
+      "status": "BLOCKED",
+      "blockedBy": [
+        "multi-user/11"
+      ]
+    },
+    {
+      "id": "multi-user/13",
+      "status": "BLOCKED",
+      "blockedBy": [
+        "multi-user/12"
+      ]
+    },
+    {
+      "id": "multi-user/14",
+      "status": "BLOCKED",
+      "blockedBy": [
+        "multi-user/12",
+        "multi-user/13"
+      ]
+    },
+    {
+      "id": "multi-user/15",
+      "status": "BLOCKED",
+      "blockedBy": [
+        "multi-user/09",
+        "multi-user/11"
+      ]
+    },
+    {
+      "id": "multi-user/16",
+      "status": "MERGED",
+      "blockedBy": [
+        "multi-user/10"
+      ]
+    },
+    {
+      "id": "multi-user/17",
+      "status": "FAILED",
+      "blockedBy": [
+        "multi-user/16"
+      ]
+    },
+    {
+      "id": "multi-user/18",
+      "status": "BLOCKED",
+      "blockedBy": [
+        "multi-user/13",
+        "multi-user/17"
+      ]
+    },
+    {
+      "id": "multi-user/19",
+      "status": "BLOCKED",
+      "blockedBy": [
+        "multi-user/11"
+      ]
+    },
+    {
+      "id": "multi-user/20",
+      "status": "BLOCKED",
+      "blockedBy": [
+        "multi-user/14"
+      ]
+    },
+    {
+      "id": "multi-user/21",
+      "status": "BLOCKED",
+      "blockedBy": [
+        "multi-user/14",
+        "multi-user/17",
+        "multi-user/18",
+        "multi-user/19"
+      ]
+    },
+    {
+      "id": "multi-user/22",
+      "status": "BLOCKED",
+      "blockedBy": [
+        "multi-user/15",
+        "multi-user/20",
+        "multi-user/21"
+      ]
+    },
+    {
+      "id": "phase-class-triplet/01",
+      "status": "MERGED",
+      "blockedBy": []
+    },
+    {
+      "id": "phase-class-triplet/02",
+      "status": "MERGED",
+      "blockedBy": [
+        "phase-class-triplet/01 — Sitting starts from YAML"
+      ]
+    },
+    {
+      "id": "phase-class-triplet/03",
+      "status": "MERGED",
+      "blockedBy": [
+        "phase-class-triplet/02 — Clip list and Frame scrub"
+      ]
+    },
+    {
+      "id": "phase-class-triplet/04",
+      "status": "MERGED",
+      "blockedBy": [
+        "phase-class-triplet/03 — Paint phase on the desk"
+      ]
+    },
+    {
+      "id": "phase-class-triplet/05",
+      "status": "MERGED",
+      "blockedBy": [
+        "phase-class-triplet/04 — Toggle class on the desk"
+      ]
+    },
+    {
+      "id": "phase-class-triplet/06",
+      "status": "MERGED",
+      "blockedBy": [
+        "phase-class-triplet/05 — Triplet rows on the desk"
+      ]
+    },
+    {
+      "id": "phase-class-triplet/07",
+      "status": "MERGED",
+      "blockedBy": [
+        "phase-class-triplet/06 — Sitting is one process"
+      ]
+    }
+  ]
+}

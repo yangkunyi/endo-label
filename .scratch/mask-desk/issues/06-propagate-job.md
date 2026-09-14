@@ -1,10 +1,6 @@
-# 06 — Propagate Job from this Frame; Protected stay
+# mask-desk/06 — Propagate Job from this Frame; Protected stay
 
 **What to build:** When at least one Track has a mask on the current Frame, the rail can start Propagate: direction forward / backward / both, optional max frames (empty = to Clip edge), start = this Frame. Explicit button, never auto after Predict. Job is pollable; overlay geometry is off while it runs; Predict / Undo / pin delete / Clear / second Propagate are 409. Written Frames have `source=propagated`. `manual` and `refined` Track-on-Frames are not overwritten. Completed Job writes Annotation immediately (merge so Protected disk slots survive). Does not write phase, class, or triplet.
-
-**Blocked by:** 02 — Click a point, see a Track, Annotation is on disk
-
-Status: MERGED
 
 - [x] No seed mask on this Frame → Propagate disabled / 400
 - [x] Short forward Job fills neighbor Frames; seed Frame stays `manual`/`refined`

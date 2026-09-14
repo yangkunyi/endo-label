@@ -1,8 +1,4 @@
-# What word names a durable label across task types
-
-Type: grilling
-Status: resolved
-Blocked by: None
+# endo-label-product/03 — What word names a durable label across task types
 
 ## Question
 

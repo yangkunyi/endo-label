@@ -1,8 +1,4 @@
-# Which annotators host several task families in one project
-
-Type: research
-Status: resolved
-Blocked by: None
+# endo-label-product/02 — Which annotators host several task families in one project
 
 ## Question
 

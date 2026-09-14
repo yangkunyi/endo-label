@@ -1,8 +1,4 @@
-# Phase stored per Frame or as intervals
-
-Type: grilling
-Status: resolved
-Blocked by: 01
+# endo-label-product/05 — Phase stored per Frame or as intervals
 
 ## Question
 

@@ -1,10 +1,6 @@
-# 02 — Clip list and Frame scrub
+# phase-class-triplet/02 — Clip list and Frame scrub
 
 **What to build:** A new Vite desk (React, TypeScript, Tailwind only, SWR, Zustand, React Router, npm). The labeler sees allowlisted Clips at `/`, opens `/clips/:clipId`, sees that Clip’s JPEG and a filmstrip, and scrubs Frames. Scrub only changes the current Frame in Zustand — it does not write phase, class, or triplet, and it does not open a Session. Vite proxies `/api` to FastAPI. Do not copy the old mask desk sources.
-
-**Blocked by:** 01 — Sitting starts from YAML
-
-Status: MERGED
 
 - [x] `/` lists allowlisted Clips and Frame counts from the catalog
 - [x] Non-allowlisted / missing Clip fails clearly

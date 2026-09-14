@@ -1,10 +1,6 @@
-# 03 — Vocab delete with trash
+# desk-dark/03 — Vocab delete with trash
 
 **What to build:** Each phase and class vocab row has a trash control besides x. Trash deletes that desk name and rewrites every Clip of that kind (phase unlabeled, class flag dropped), or fails with no Clip left half-updated. Under the triplet instance table, three compact name lists (instrument, verb, target) each have trash: that request is refused while any triplet row still uses the string. x still means this Frame only (clear phase, turn a class flag off, delete a triplet instance). Leftover seed names on an old `vocab.json` go away only when trashed.
-
-**Blocked by:** 01 — Dark compact sitting; 02 — Empty vocab seed
-
-Status: MERGED
 
 - [x] Phase and class rows show trash next to x; x still clears or turns off this Frame only and does not change the desk list
 - [x] Trashing a phase or class-tag name is one request: the name leaves that list and every Clip document of that kind is rewritten, or the whole request fails with no partial Clip

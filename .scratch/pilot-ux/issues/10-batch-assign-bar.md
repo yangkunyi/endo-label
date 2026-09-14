@@ -1,4 +1,4 @@
-# 10 — Batch assign bar
+# pilot-ux/10 — Batch assign bar
 
 **What to build:** assigning must stop being one text input per item. Trial feedback: "assign 时候
 每个 clip 点有点麻烦了，做成那种选择用户然后多选的，就是可以批量选择的？…最后这个顺序怎么方便怎么
@@ -26,9 +26,7 @@ Code:
 - Feedback: `12 assigned · 3 skipped (Done)` in the notice, with the skipped rows readable on the
   board.
 
-**Blocked by:** 09
-
-Status: ready-for-agent
+**Found by:** 09
 
 - [ ] one gesture assigns many items, in either order, to one Account
 - [ ] the account picker groups Accounts by Project membership and hides non-members

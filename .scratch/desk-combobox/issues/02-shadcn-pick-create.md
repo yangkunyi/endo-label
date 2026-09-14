@@ -1,10 +1,6 @@
-# 02 — shadcn Pick+Create desk; HeroUI gone
+# desk-combobox/02 — shadcn Pick+Create desk; HeroUI gone
 
 **What to build:** The workbench is shadcn, always dark, no light switch. HeroUI is fully removed (no HeroUI components, no HeroUI package). Left Clip rail, contained JPEG, bottom slider and play/fps/skip, drag widths on a new localStorage key. Right rail is class → triplet → phase, fixed order, not tables: Pick+Create comboboxes write this Frame (type-to-add vocab, placeholder `Type to add`). Class chips toggle this Frame; re-picking a lit class tag turns it off. Phase re-picking the current name unlabeled this Frame. Triplet three comboboxes commit only when complete; same triple toggles off (needs ticket 01); instance × deletes that row. Closed List per editor: phase/class rename + trash; triplet three name lists trash only. × is never vocab delete. Interval Apply/chip/Mark from wait for ticket 03; this-Frame sitting must work without HeroUI.
-
-**Blocked by:** 01 — Triplet this-Frame unique toggle (HTTP)
-
-Status: MERGED
 
 - [x] `@heroui/*` (and HeroUI theme/plugin) are gone from the desk; no HeroUI component remains in the sitting
 - [x] Sitting is always dark; no light switch; Clip rail, JPEG contain, slider, play, fps, skip-N, and rail drag work; editor order is class, triplet, phase and is not drag-reorderable

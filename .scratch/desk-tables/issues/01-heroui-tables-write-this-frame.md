@@ -1,10 +1,6 @@
-# 01 — HeroUI tables write this Frame
+# desk-tables/01 — HeroUI tables write this Frame
 
 **What to build:** The workbench right rail is three always-open HeroUI Tables (default order class, triplet, phase; drag to reorder; no chevron fold). Phase and class rows are the desk vocab lists; triplet rows are this Frame’s instance rows (columns instrument, verb, target). Click, plus+Enter, x, and triplet cell edits persist this Frame immediately. Shell controls (slider, play, buttons) are HeroUI, not `stone-*` chrome. There is no Arm control. `[` / `I` then `]` / `O` paints the **selected** rows as Write using the existing span POSTs (one request per selected class tag and per selected complete triplet row). Play, fps, skip-N, Clip rail, contained JPEG, and localStorage split sizes / editor order stay.
-
-**Blocked by:** None — can start immediately.
-
-Status: MERGED
 
 - [x] Class, triplet, and phase editors are HeroUI Tables; they stay open (no fold state); they can be dragged to reorder; copy says phase, class, triplet, instrument, verb, target — never Arm, armed, operation on/off, subject–verb–object, or Annotation
 - [x] The sitting uses HeroUI Table, Select, Button, and Slider for these controls; it does not restyle them with `stone-*`; lucide plus/x mark add and remove

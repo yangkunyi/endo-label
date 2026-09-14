@@ -1,10 +1,6 @@
-# 03 — Paint phase on the desk
+# phase-class-triplet/03 — Paint phase on the desk
 
 **What to build:** On the current Clip, the labeler paints an exclusive phase span, clears this Frame, and adds a phase name to the desk list. Writes that use a name not on the list are rejected. Span is inclusive, order-insensitive, overwrites Frames in range, and does not touch class or triplet. Session stays off. Filmstrip shows each Frame’s phase (or unlabeled). Persist on each successful write.
-
-**Blocked by:** 02 — Clip list and Frame scrub
-
-Status: MERGED
 
 - [x] Paint span writes that phase on every Frame from `from` through `to` (swap if `from > to`; one Frame if equal)
 - [x] Overlapping later span overwrites those Frames only

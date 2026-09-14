@@ -1,4 +1,4 @@
-# 25 — Closeout minors and test gaps
+# multi-user/25 — Closeout minors and test gaps
 
 **What to build:** the smaller findings the 22 closeout review left behind.
 
@@ -12,10 +12,6 @@ Tests:
 - `Home()`'s annotate/review → My Tasks routing is new behaviour with no test, and cannot be one while it lives in a `.tsx`; a pure predicate in a `.ts` module would make it pinnable.
 - `EventBroker` fan-out to several subscribers at once is unverified (`tests/test_workflow_push.py` only ever opens one stream).
 - Uncovered branches: `/api/me`'s 404 for an unknown Clip+Task type, `registry_router.get_visible`'s `400 "project_id is required"`.
-
-**Blocked by:** —
-
-Status: ready-for-agent
 
 - [ ] dropping a tag from `config.yaml` removes it from `clip_tags`
 - [ ] the Desk nav link lands on the desk, not My Tasks

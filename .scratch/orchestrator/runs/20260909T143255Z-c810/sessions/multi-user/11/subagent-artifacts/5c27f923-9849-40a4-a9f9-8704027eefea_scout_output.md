@@ -1,0 +1,238 @@
+# Code Context — ticket 11 assignment ownership and board
+
+Worktree: `/data3/yky/endo_label/worktrees/multi-user-11-assignment-ownership-and-board`
+
+## 1. Git
+
+- Branch: `ticket/multi-user/11-assignment-ownership-and-board`
+- Status: clean (nothing to commit)
+- Ticket 10 **already in this tree**: `git merge-base --is-ancestor 200029a HEAD` → yes (0). Merge commit `200029a orchestrator: merge ticket/multi-user/10-project-and-clip-registration`; feature `f42f707 feat: register Projects and Clips in the coordination DB`; orchestrator `3c1f2a1 orchestrator: multi-user/10 Status MERGED`.
+
+Recent `git log -20 --oneline`:
+
+```
+56c73d5 orchestrator: multi-user/11 Status RUNNING
+238fd80 orchestrator: multi-user/16 Status READY
+01134e7 orchestrator: multi-user/11 Status READY
+79c7857 tickets: Playwright closeout is multi-user/22 after 15/20/21
+3f901d3 build: uv lock, all Python deps required
+3c1f2a1 orchestrator: multi-user/10 Status MERGED
+200029a orchestrator: merge ticket/multi-user/10-project-and-clip-registration
+f42f707 feat: register Projects and Clips in the coordination DB
+293b2d9 pytest: pythonpath = ["."] so worktrees import this tree
+7247b96 orchestrator: multi-user/10 Status RUNNING
+63cb5ef orchestrator: multi-user/10 Status READY
+4447764 chore(orchestrator): httpProxy clash 127.0.0.1:23379
+491a06e orchestrator: multi-user/10 Status FAILED
+7d8ed58 orchestrator: multi-user/10 Status RUNNING
+c1f055d orchestrator: reset multi-user/10-21 after empty merge
+0da660e orchestrator: multi-user/21 Status MERGED
+7869bb5 orchestrator: multi-user/21 Status MERGING
+ac38cd0 orchestrator: multi-user/20 Status MERGED
+f1672ec orchestrator: multi-user/20 Status MERGING
+afe1b69 orchestrator: multi-user/21 Status RUNNING
+```
+
+## 2. Directory layout (top two levels)
+
+**endo_label/**
+
+- `__init__.py`, `__main__.py`, `app.py`, `auth.py`, `catalog.py`, `config.py`, `coordination.py`, `labels_store.py`, `projects_router.py`, `vocab_router.py`
+- `frame_class/` (`router.py`)
+- `phase/` (`router.py`)
+- `triplet/` (`router.py`)
+- `mask/` (`http.py`, `session.py`, `predictor.py`, `annotations.py`, …)
+
+**tests/**
+
+- `sitting_http.py`, `test_auth.py`, `test_compose.py`, `test_mask_session.py`, `test_projects.py`, `test_sitting_config.py`, `test_sitting_desk.py`, `test_transcode.py`
+- `fixtures/tiny.mp4`
+
+**web/**
+
+- `src/` (App, AppShell, ClipDesk, ClipList, Login, api, deskStore, …)
+- `e2e/`, `public/`, `package.json`, `vite.config.ts`, `playwright.config.ts`
+
+No `assignments*` module. No `/admin` UI.
+
+## 3. Compose tests
+
+**Primary:** `tests/test_compose.py` — labels-only backends, no Session.
+
+**Related:** `tests/sitting_http.py` (auth+register helpers), `tests/test_auth.py`, `tests/test_projects.py`, `tests/test_mask_session.py`, `tests/test_sitting_desk.py`, `tests/test_sitting_config.py`, `tests/test_transcode.py`.
+
+**No** `test_assignment*.py`. No assignment/ownership tests.
+
+### TestClient setup
+
+`tests/sitting_http.py`:
+
+- `seed_admin(settings)` → `create_account(..., admin=True)` with cached argon2 hash
+- `ensure_registered(settings)` → `get_or_create_project("Test")` + `register_clip` for `clip_allowlist` / `clips` (unless `settings.projects`)
+- `authed_client(settings)` → seed + register + `TestClient(create_app(settings))` + `login` POST `/api/auth/login` (`admin`/`secret`)
+- Constants: `ADMIN_USERNAME="admin"`, `ADMIN_PASSWORD="secret"`
+
+`tests/test_compose.py` `_sitting`:
+
+```python
+return authed_client(
+    Settings(
+        frames_root=frames,
+        clip_allowlist=clip_ids,
+        annotations_root=tmp_path / "mask",
+        labels_root=tmp_path / "labels",
+        predictor_backend="fake",
+    )
+)
+@pytest.fixture
+def client(tmp_path: Path) -> TestClient:
+    return _sitting(tmp_path, ("CLIPA",))
+```
+
+`test_auth.py` uses **unauthed** `TestClient(create_app(_settings(...)))` then login; `_settings` still uses `clip_allowlist` (registration happens in `create_app` only via `apply_config_registrations` if `settings.projects` set — auth tests don't need clips registered for 401/login).
+
+`test_projects.py` uses `authed_client` / CLI `main(["create-project", ...])`.
+
+## 4. Assignment / auth / clip version / label-write (current)
+
+### Assign APIs
+
+**None.** No `/api/items`, no assign/reassign/unassign, no board API.
+
+### Assignment table/schema
+
+**None.** `coordination._init_schema` only:
+
+- `users` (id, username UNIQUE NOCASE, password_hash, admin/reviewer/annotator/disabled 0/1)
+- `login_sessions` (id PK, user_id FK, created_at)
+- `projects` (id, name UNIQUE, hospital)
+- `clips` (id PK, project_id FK, kind, path)
+
+No `assignments` table, no clip `version` column.
+
+### Permission checks
+
+Coarse only: `endo_label/auth.py` `install_auth` middleware `require_account`:
+
+- Public: OPTIONS, non-`/api/`, `/api/health`, `/api/auth/login`, `/api/auth/logout`
+- Else cookie `session_id` → `account_for_session`; missing/disabled → 401 JSON `{"detail": "Not authenticated"}`
+- Sets `request.state.account`
+
+Routes: `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/me`
+
+**No** role Depends, **no** assignee/state check on label writes.
+
+### Version / 409
+
+Label JSON: `labels_store.save_clip` atomic tmp+replace, **no version field**.
+
+409 today: vocab uniqueness (`vocab_router.py`); mask session conflicts (`mask/http.py`). **Not** clip optimistic concurrency.
+
+### Admin board routes
+
+**None.** Frontend `web/src/App.tsx` only `/login`, `/`, `/clips/:clipId`.
+
+### Coordination API (ticket 10, reuse)
+
+`Account`, `Project`, `RegisteredClip` dataclasses.
+
+`db_path`, `connect` (WAL, busy_timeout 5000, FK), `_init_schema`
+
+Accounts: `create_account`, `set_roles`, `set_disabled`, `authenticate`, `create_session`, `delete_session`, `account_for_session`, `hash_password`
+
+Projects/clips: `create_project`, `get_project_by_name`, `get_or_create_project`, `list_projects`, `list_registered_clips`, `projects_payload`, `register_clip`, `apply_config_registrations`
+
+`GET /api/projects` → `projects_router.get_projects`
+
+`create_app`: `apply_config_registrations` → mask app → `install_auth` → auth, projects, phase, class, triplet, vocab routers.
+
+## 5. Label-write endpoints (phase / class / triplet)
+
+Auth: global session middleware only. Writes always succeed if logged in.
+
+Storage: `labels_store` JSON `{labels_root}/{kind}/{clip_id}.json` with `{"clip_id", "frames": {...}}`. Kind dirs: phase, class, triplet.
+
+**Phase** `endo_label/phase/router.py` `make_router`:
+
+- `GET /api/phase/{clip_id}` → `get_clip_phase`
+- `PUT /api/phase/{clip_id}/frames/{frame_index}` → `put_frame_phase` (null clears)
+- `POST /api/phase/{clip_id}/span` → `paint_span` (`from`/`to`, optional null)
+
+**Class** `endo_label/frame_class/router.py`:
+
+- `GET /api/class/{clip_id}`
+- `PUT /api/class/{clip_id}/frames/{frame_index}` tags list
+- `POST /api/class/{clip_id}/span` tag + on bool
+
+**Triplet** `endo_label/triplet/router.py`:
+
+- `GET /api/triplet/{clip_id}`
+- `POST /api/triplet/{clip_id}/frames/{frame_index}` add/toggle
+- row PUT/DELETE + span add/remove (rest of file)
+
+Mask writes: `endo_label/mask/http.py` (409 = session busy, not clip version). Ticket 11 compose seam is phase/class/triplet ownership; mask multi-user is ticket 19.
+
+## 6. Frontend `/admin/assignments`
+
+**Absent.** Spec wants it (`spec.md` routes). Issue 08 lists routing. `App.tsx` has no admin routes.
+
+## 7. Ticket 10 issue file
+
+Path: `.scratch/multi-user/issues/10-project-and-clip-registration.md`
+
+Status: **MERGED**. Checkboxes: compose seams done; e2e still open (ticket 22).
+
+Assignments: **do not exist** in DB or code. Ticket 10 only projects+clips.
+
+## 8. ADRs
+
+- `docs/adr/0026-vocab-registry-project-enablement.md` — present
+- `docs/adr/0027-sqlite-coordination-files-payloads.md` — present; assignments + optimistic version on Clip DB row + 409; payloads stay files
+
+Also: `.scratch/multi-user/issues/03-assignment-model.md` (resolved: unit=(Clip, Task type); labels stay on Clip)
+
+Ticket 11 issue: `.scratch/multi-user/issues/11-assignment-ownership-and-board.md` Status RUNNING. Blocked by 10 (now merged). Do not run Playwright (ticket 22).
+
+Acceptance:
+
+- assignee writes OK; other user 403; reassign old 403 new OK labels survive; unassign nobody writes labels intact
+- interleaved A/B version: stale 409 then retry OK
+
+Initial transition: assign → **Labeling**. Board v1: Unassigned / Labeling columns, in-row assign/reassign.
+
+## 9. How to run compose tests
+
+`pyproject.toml`: `[tool.pytest.ini_options] pythonpath = ["."]`
+
+From worktree:
+
+```bash
+uv run pytest tests/test_compose.py tests/test_auth.py tests/test_projects.py
+# or
+uv run pytest tests/
+```
+
+Do **not** `npm run test:e2e`.
+
+## 10. Incomplete assignment implementation
+
+**None started.** No assignments table, no version on clips, no assign routes, no 403 ownership, no `/admin/assignments`.
+
+Implementer starts: extend `coordination._init_schema`; new assign router + ownership helper used by phase/class/triplet write paths; compose tests per issue 11; optional thin admin board.
+
+## Files Retrieved (high value)
+
+1. `endo_label/coordination.py` (1–110, 272–411) — schema + projects/clips; no assignments
+2. `endo_label/auth.py` (full) — cookie middleware only
+3. `endo_label/app.py` (56–73) — `create_app` compose
+4. `endo_label/phase/router.py`, `frame_class/router.py`, `triplet/router.py` — write APIs
+5. `endo_label/labels_store.py` (61–74) — JSON payload
+6. `tests/sitting_http.py` — authed TestClient
+7. `tests/test_compose.py` (38–66) — sitting fixture
+8. `web/src/App.tsx` — no admin
+9. `.scratch/multi-user/issues/11-assignment-ownership-and-board.md`
+10. `docs/adr/0027-sqlite-coordination-files-payloads.md`
+
+## Start Here
+
+`endo_label/coordination.py` `_init_schema` — add `assignments` + clip version; then write-path Depends in phase/class/triplet routers; tests in new `tests/test_assignments.py` or extra compose cases using `sitting_http.authed_client` + extra accounts via `create_account`.

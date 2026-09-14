@@ -1,8 +1,4 @@
-# 06 认证实现选型
-
-Type: grilling
-Status: resolved
-Blocked by: 05
+# multi-user/06 — 认证实现选型
 
 ## Question
 

@@ -1,10 +1,6 @@
-# 02 — Persistent layout and editor order
+# desk-workbench/02 — Persistent layout and editor order
 
 **What to build:** The labeler can shape the desktop workbench to fit the sitting: drag the Clip rail, editor rail, and bottom bar boundaries, and drag editor cards into a preferred order. The selected sizes and order are restored after refresh on the same machine, while invalid or missing saved values fall back to usable desktop defaults.
-
-**Blocked by:** 01 — Single-page HeroUI workbench
-
-Status: MERGED
 
 - [x] Clip rail width, editor rail width, and bottom-bar height can each be changed by pointer drag
 - [x] The three editor cards can be reordered by drag, with class, triplet, phase as the default order

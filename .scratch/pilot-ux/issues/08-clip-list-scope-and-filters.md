@@ -1,4 +1,4 @@
-# 08 — Clips: scope and filters
+# pilot-ux/08 — Clips: scope and filters
 
 **What to build:** the Clips page must answer "what is mine", and an Account must not be shown
 work that is not theirs. Trial feedback: "给 CLIPS 那里加个过滤，project 和 tag，然后管理员再额外多
@@ -21,10 +21,6 @@ Code:
 - Empty states: `No Clips assigned to you.` for `mine`; the existing allowlist sentence for `all`.
 - The desk's Clip rail reads `/api/clips` too: it must go through the same scope so the rail and
   the page agree.
-
-**Blocked by:** —
-
-Status: ready-for-agent
 
 - [ ] a non-admin's `/api/clips` returns only Clips they hold an Assignment on
 - [ ] a non-admin asking for `scope=all` is refused (403), not silently filtered

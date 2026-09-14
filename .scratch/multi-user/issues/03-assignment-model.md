@@ -1,7 +1,4 @@
-# 03 任务分配模型
-
-Type: grilling
-Status: resolved
+# multi-user/03 — 任务分配模型
 
 ## Question
 

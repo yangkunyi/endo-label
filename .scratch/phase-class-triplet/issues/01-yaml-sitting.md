@@ -1,10 +1,6 @@
-# 01 — Sitting starts from YAML
+# phase-class-triplet/01 — Sitting starts from YAML
 
 **What to build:** An operator can start the desk from a YAML file (repo-root default or a `--config` path). Missing file: the process refuses to start. Sitting does not read environment variables for Frame Pool, allowlist, or store roots. Empty allowlist means no Clips. Browser CORS for the Vite origin is tight. HTTP tests still inject settings in memory and stay green.
-
-**Blocked by:** None — can start immediately.
-
-Status: MERGED
 
 - [x] Sitting with repo-root config file uses that Frame Pool, allowlist, and label roots
 - [x] `--config` path overrides the default file

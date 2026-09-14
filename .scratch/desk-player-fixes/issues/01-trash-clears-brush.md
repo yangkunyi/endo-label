@@ -1,10 +1,6 @@
-# 01 — Trash clears the Brush
+# desk-player-fixes/01 — Trash clears the Brush
 
 **What to build:** Trashing a Vocab name (phase, class tag, or exact triple) drops that identity from its kind's Brush in the sitting store. The bottom-bar chip disappears immediately; only the matching kind and identity are removed; other kinds' Brushes stay. A failed trash request (HTTP error) leaves the Brush unchanged. An emptied Brush behaves like any empty Brush: Mark from / Apply / Remove and `i` `[` `o` `]` disabled. Trash does not touch the machine-local Lane-visibility store. Copy, ordering (Vocab order), ×-drop, and colors of surviving chips unchanged.
-
-**Blocked by:** None — can start immediately.
-
-Status: MERGED
 
 - [x] Trash on a Vocab name that is in the Brush removes exactly that identity from the focused kind's Brush; the footer chip disappears without reload
 - [x] Class, phase, and exact-triple trash each clear only their own kind's membership

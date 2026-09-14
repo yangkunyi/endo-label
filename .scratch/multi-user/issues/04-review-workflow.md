@@ -1,8 +1,4 @@
-# 04 审阅工作流状态机
-
-Type: grilling
-Status: resolved
-Blocked by: 03
+# multi-user/04 — 审阅工作流状态机
 
 ## Question
 

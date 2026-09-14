@@ -1,8 +1,4 @@
-# Which task types belong in v1
-
-Type: grilling
-Status: resolved
-Blocked by: 02, 06
+# endo-label-product/07 — Which task types belong in v1
 
 ## Question
 

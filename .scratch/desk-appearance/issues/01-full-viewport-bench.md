@@ -1,10 +1,6 @@
-# 01 — Full-viewport bench
+# desk-appearance/01 — Full-viewport bench
 
 **What to build:** The Clip desk fills the window as a desktop labeling bench instead of a scrolling article. Thin top bar (Clips link, Clip id, Frame index of count). Vertical filmstrip on the left: one thumb per Frame, index, phase name or empty; current Frame highlighted; click scrubs only. Current JPEG in the center, contained, never cropped. Editors in a right rail in order class, triplet, phase. Left and right columns scroll inside themselves; the JPEG stays. `/` is still allowlisted Clip id + Frame count, same stone/emerald type — no progress %. All three editors stay fully open (folds are ticket 02) so today’s sitting still writes phase span, class chips, and triplet rows with the same clicks. No Task-focus, no mask tools, no shadcn, no new HTTP.
-
-**Blocked by:** None — can start immediately.
-
-Status: MERGED
 
 - [x] `/clips/:clipId` fills the window under a thin top bar: Clips link, Clip id, `Frame {i}` and `of {N}` when the Clip has Frames
 - [x] Left filmstrip: one thumb per Frame, index, phase name or empty; current Frame highlighted; click scrubs (no label write, no Session)

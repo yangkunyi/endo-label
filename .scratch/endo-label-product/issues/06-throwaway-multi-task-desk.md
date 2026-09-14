@@ -1,8 +1,4 @@
-# Throwaway desk for all four tasks on one Clip
-
-Type: prototype
-Status: resolved
-Blocked by: 03, 04, 05
+# endo-label-product/06 — Throwaway desk for all four tasks on one Clip
 
 ## Question
 

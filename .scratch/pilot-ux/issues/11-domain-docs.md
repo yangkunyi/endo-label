@@ -1,4 +1,4 @@
-# 11 — Domain docs for these decisions
+# pilot-ux/11 — Domain docs for these decisions
 
 **What to build:** the vocabulary and the two decisions that need a record, written down the
 moment they were settled rather than after the code (the code for 05–10 depends on these words).
@@ -24,10 +24,6 @@ moment they were settled rather than after the code (the code for 05–10 depend
 - `0029-coverage-is-not-completion.md` — why coverage is "has ≥1 identity" with no Frame-level
   "checked, nothing here" record, why Submit stays unblocked, and what would have to change to add
   a cleared bit later.
-
-**Blocked by:** —
-
-Status: ready-for-agent
 
 - [ ] `CONTEXT.md` carries the four new terms and the corrected Ruler clause
 - [ ] no `CONTEXT.md` entry describes implementation detail

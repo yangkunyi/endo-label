@@ -1,0 +1,90 @@
+{
+  "runId": "9f943cde-007c-4bdc-8483-4da70ed78823",
+  "agent": "scout",
+  "task": "[prompt redacted]",
+  "exitCode": 0,
+  "usage": {
+    "input": 15751,
+    "output": 1039,
+    "cacheRead": 4736,
+    "cacheWrite": 0,
+    "cost": 0.040104,
+    "turns": 5
+  },
+  "model": "xai/grok-4.6:low",
+  "attemptedModels": [
+    "xai/grok-4.6:low"
+  ],
+  "modelAttempts": [
+    {
+      "model": "xai/grok-4.6:low",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 15751,
+        "output": 1039,
+        "cacheRead": 4736,
+        "cacheWrite": 0,
+        "cost": 0.040104,
+        "turns": 5
+      }
+    }
+  ],
+  "durationMs": 86351,
+  "toolCount": 4,
+  "launchContractDigest": "d42fbffd2a7585fd80df228721364ca43e76c3b00730da4712cddbe479b21d00",
+  "launchResolvedExtensions": {
+    "version": 1,
+    "source": "launch-resolved",
+    "disableAmbientExtensions": true,
+    "runtime": [
+      "sha256:66734f1d6715580a"
+    ],
+    "configured": [],
+    "effective": [
+      "sha256:66734f1d6715580a"
+    ],
+    "omitted": {
+      "runtime": 0,
+      "configured": 0,
+      "effective": 0
+    }
+  },
+  "acceptance": {
+    "status": "not-required",
+    "evidenceStatus": "not-required",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "none",
+      "explicit": false,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [],
+      "evidence": [],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [],
+    "runtimeChecks": [],
+    "verifyRuns": []
+  },
+  "effects": {
+    "fileMutation": {
+      "status": "not-applicable",
+      "expected": false,
+      "attempted": true,
+      "evidence": {
+        "source": "tracked-files",
+        "trackedOnly": true,
+        "changedFiles": [],
+        "attemptedMutation": false
+      }
+    }
+  },
+  "transcriptPath": "/data3/yky/endo_label/.scratch/orchestrator/runs/20260909T115901Z-2673/sessions/multi-user/10/subagent-artifacts/9f943cde-007c-4bdc-8483-4da70ed78823_scout_0_transcript.jsonl",
+  "timestamp": 1788956221170
+}

@@ -1,0 +1,242 @@
+{
+  "runId": "fa676648-fc0d-490c-b992-5bd3ba859115",
+  "agent": "diff-reviewer",
+  "task": "[prompt redacted]",
+  "exitCode": 0,
+  "model": "xai/grok-4.6:high",
+  "attemptedModels": [
+    "xai/grok-4.6:high"
+  ],
+  "modelAttempts": [
+    {
+      "model": "xai/grok-4.6:high",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 53088,
+        "output": 8681,
+        "cacheRead": 86656,
+        "cacheWrite": 0,
+        "cost": 0.20158999999999996,
+        "turns": 7
+      }
+    }
+  ],
+  "usage": {
+    "input": 53088,
+    "output": 8681,
+    "cacheRead": 86656,
+    "cacheWrite": 0,
+    "cost": 0.20158999999999996,
+    "turns": 7
+  },
+  "acceptance": {
+    "status": "review-required",
+    "evidenceStatus": "checked",
+    "explicit": false,
+    "effectiveAcceptance": {
+      "level": "checked",
+      "explicit": false,
+      "inferredReason": [
+        "async write-capable or risky run"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Implement the requested change without widening scope",
+          "evidence": [
+            "changed-files",
+            "tests-added",
+            "commands-run",
+            "residual-risks",
+            "no-staged-files"
+          ],
+          "severity": "required"
+        },
+        {
+          "id": "criterion-2",
+          "must": "Return evidence sufficient for an independent acceptance review",
+          "evidence": [
+            "changed-files",
+            "tests-added",
+            "commands-run",
+            "residual-risks",
+            "no-staged-files"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "changed-files",
+        "tests-added",
+        "commands-run",
+        "residual-risks",
+        "no-staged-files"
+      ],
+      "verify": [],
+      "review": {
+        "agent": "reviewer",
+        "required": true
+      },
+      "stopRules": []
+    },
+    "inferredReason": [
+      "async write-capable or risky run"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Implement the requested change without widening scope",
+        "evidence": [
+          "changed-files",
+          "tests-added",
+          "commands-run",
+          "residual-risks",
+          "no-staged-files"
+        ],
+        "severity": "required"
+      },
+      {
+        "id": "criterion-2",
+        "must": "Return evidence sufficient for an independent acceptance review",
+        "evidence": [
+          "changed-files",
+          "tests-added",
+          "commands-run",
+          "residual-risks",
+          "no-staged-files"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [
+      {
+        "id": "criterion:criterion-1",
+        "status": "passed",
+        "message": "Required criterion 'criterion-1' satisfied."
+      },
+      {
+        "id": "criterion:criterion-2",
+        "status": "passed",
+        "message": "Required criterion 'criterion-2' satisfied."
+      },
+      {
+        "id": "evidence:changed-files",
+        "status": "passed",
+        "message": "changed-files evidence present."
+      },
+      {
+        "id": "evidence:tests-added",
+        "status": "passed",
+        "message": "tests-added evidence present."
+      },
+      {
+        "id": "evidence:commands-run",
+        "status": "passed",
+        "message": "commands-run evidence present."
+      },
+      {
+        "id": "evidence:residual-risks",
+        "status": "passed",
+        "message": "residual-risks evidence present."
+      },
+      {
+        "id": "evidence:no-staged-files",
+        "status": "passed",
+        "message": "no-staged-files evidence present."
+      },
+      {
+        "id": "no-staged-files",
+        "status": "passed",
+        "message": "No staged files detected."
+      }
+    ],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "Standards-only review of git diff 4ed6689b..WORKTREE plus untracked registry files; no edits, no extra scope."
+        },
+        {
+          "id": "criterion-2",
+          "status": "satisfied",
+          "evidence": "HEAD, status, log, diff, and untracked file reads cited; hard vs judgement split; no documented-standard hard breach."
+        }
+      ],
+      "changedFiles": [
+        "endo_label/app.py",
+        "endo_label/auth.py",
+        "endo_label/coordination.py",
+        "endo_label/registry.py",
+        "endo_label/registry_router.py",
+        "tests/test_registry.py",
+        "web/src/AdminVocab.tsx",
+        "web/src/App.tsx",
+        "web/src/AppShell.tsx",
+        "web/src/api.test.ts",
+        "web/src/api.ts"
+      ],
+      "testsAddedOrUpdated": [
+        "tests/test_registry.py",
+        "web/src/api.test.ts"
+      ],
+      "commandsRun": [
+        {
+          "command": "git rev-parse HEAD && git status --short && git log 4ed6689b..HEAD --oneline && git diff 4ed6689b",
+          "result": "passed",
+          "summary": "HEAD=4ed6689b; unstaged 7 files; untracked registry.py/router/test/AdminVocab; empty log"
+        }
+      ],
+      "validationOutput": [
+        "No hard AGENTS/CONTEXT/ADR/ticket-16 breaches. Judgement smells: triple vs triplet; duplicated identity columns/helpers; kind=='triple' switches; slash-parsed triple drafts."
+      ],
+      "residualRisks": [
+        "Registry kind 'triple' vs Task type 'triplet' may mismatch at desk integration.",
+        "tripleDraft split('/') corrupts cells that contain '/'."
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "Vocab registry schema + admin-only /api/registry + /admin/vocab; legacy /api/vocab unchanged.",
+      "reviewFindings": [
+        "no blockers",
+        "judgement: Mysterious Name — kind 'triple' vs sibling backend 'triplet' (coordination.py schema, registry.py KINDS)",
+        "judgement: Duplicated Code — identity columns/dataclasses/create-rename twins in registry.py + schema",
+        "judgement: Repeated Switches — kind=='triple' in registry.py, api.ts registryLabel, AdminVocab.tsx",
+        "judgement: Primitive Obsession — AdminVocab.tsx tripleDraft split('/')"
+      ],
+      "manualNotes": "Ticket 16 admin-only writes override CONTEXT labeler-candidates for this increment."
+    },
+    "reviewResult": {
+      "status": "review-required",
+      "findings": [
+        {
+          "severity": "non-blocking",
+          "issue": "Independent review has not been supplied.",
+          "rationale": "The run cannot be marked reviewed from child evidence alone."
+        }
+      ]
+    }
+  },
+  "launchContractDigest": "c0c4013a5eb3cf976cd1a27592a4fb10f00df18927490814339cb9d7bd16faaf",
+  "launchResolvedExtensions": {
+    "version": 1,
+    "source": "launch-resolved",
+    "disableAmbientExtensions": false,
+    "runtime": [
+      "sha256:66734f1d6715580a"
+    ],
+    "configured": [],
+    "effective": [
+      "sha256:66734f1d6715580a"
+    ],
+    "omitted": {
+      "runtime": 0,
+      "configured": 0,
+      "effective": 0
+    }
+  },
+  "transcriptPath": "/data3/yky/endo_label/.scratch/orchestrator/runs/20260909T143255Z-c810/sessions/multi-user/16/subagent-artifacts/fa676648-fc0d-490c-b992-5bd3ba859115_diff-reviewer_transcript.jsonl",
+  "skills": [],
+  "timestamp": 1788965403113
+}

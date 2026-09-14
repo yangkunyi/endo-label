@@ -1,10 +1,6 @@
-# 02 — Click a point, see a Track, Annotation is on disk
+# mask-desk/02 — Click a point, see a Track, Annotation is on disk
 
 **What to build:** On the sitting player, a left click is a positive Geometric Prompt. After debounce (800 ms) or the rail Predict control, a Track appears as a silhouette on the overlay and in the right-rail Track list (visible even when Task focus is class). First Predict opens a Session with saved Annotation loaded; opening the Clip and painting phase still does not. Click on the picture does not play; Space / player button / Ruler still play. Successful Predict replaces Annotation immediately — reload the desk, no Save, silhouette still there. Non-empty boxes are rejected. Fake backends.
-
-**Blocked by:** 01 — This worktree uses its own ports
-
-Status: MERGED
 
 - [x] Picture overlay maps through the displayed image rect to relative `[0,1]`; playback pauses while marking
 - [x] Left click → Predict → overlay silhouette + Track row; default Track Label `track-N`

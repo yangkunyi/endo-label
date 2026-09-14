@@ -1,10 +1,6 @@
-# 05 — Triplet interval painting
+# desk-workbench/05 — Triplet interval painting
 
 **What to build:** The labeler can arm one triplet as either add or remove for interval painting. Closing the span gesture sends one triplet span request: add the exact triple only where it is missing, or remove matching triples by name across the inclusive range. Current-Frame Add row and Delete actions remain separate immediate writes.
-
-**Blocked by:** 03 — Span gesture and phase painting
-
-Status: MERGED
 
 - [x] The triplet backend accepts an inclusive, order-insensitive span with instrument, verb, target, and add/remove operation
 - [x] Triplet span writes are one durable document update per request and reject out-of-range Frames or unknown vocab names without partial changes

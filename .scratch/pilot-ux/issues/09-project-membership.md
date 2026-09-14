@@ -1,4 +1,4 @@
-# 09 — Project membership
+# pilot-ux/09 — Project membership
 
 **What to build:** an explicit, admin-owned answer to "who works on this Project". Decided
 (round 2, Q9=b): membership is a stored relation, **not** derived from assignment history, and it
@@ -25,10 +25,6 @@ Code:
 - Gating: `assign_item` and `auto_assign_items` refuse a non-member with 409 and a sentence
   (`alice is not a member of Project Pilot — add them first.`); `reassign_item` too. Membership does
   not gate reading labels.
-
-**Blocked by:** —
-
-Status: ready-for-agent
 
 - [ ] `project_members` exists, with a backfill that keeps an existing install assignable
 - [ ] an admin can add and remove members from the Projects page

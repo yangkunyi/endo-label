@@ -1,10 +1,6 @@
-# 01 — Single-page HeroUI workbench
+# desk-workbench/01 — Single-page HeroUI workbench
 
 **What to build:** The labeler uses one desktop workbench for Clip selection, Frame viewing, and phase, class, and triplet editing. The root route shows the workbench with an allowlisted Clip rail and an empty center; opening a Clip changes the URL without unloading the shell. The current JPEG is contained in the center, the right rail keeps all three editors available, and the bottom slider changes the current Frame without writing labels.
-
-**Blocked by:** None — can start immediately.
-
-Status: MERGED
 
 - [x] `/` and `/clips/:clipId` mount the same workbench shell, with a clear empty state before a Clip is selected
 - [x] The left rail lists only allowlisted Clips with Frame counts, supports scrolling, and contains no Frame thumbnail strip or coverage percentage

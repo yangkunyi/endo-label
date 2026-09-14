@@ -1,8 +1,4 @@
-# What task families endoscopic datasets annotate
-
-Type: research
-Status: resolved
-Blocked by: None
+# endo-label-product/01 — What task families endoscopic datasets annotate
 
 ## Question
 

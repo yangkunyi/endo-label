@@ -1,10 +1,6 @@
-# 05 — Triplet rows on the desk
+# phase-class-triplet/05 — Triplet rows on the desk
 
 **What to build:** On the current Frame, the labeler adds and deletes triplet rows (instrument, verb, target) with no Track. Several rows allowed, including duplicate triples. Unknown names rejected. Labeler can add instrument / verb / target names to the desk lists and then use them. Rows do not copy to the next Frame. Phase and class stay put. Session stays off.
-
-**Blocked by:** 04 — Toggle class on the desk
-
-Status: MERGED
 
 - [x] Add a row on the current Frame; several rows allowed; identical triples allowed
 - [x] Row has an id unique among current rows on that Frame; no Track field

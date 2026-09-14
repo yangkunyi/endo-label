@@ -1,10 +1,6 @@
-# 03 — Full desk e2e closeout
+# desk-player-fixes/03 — Full desk e2e closeout
 
 **What to build:** Walk the whole desk after 01–02. Trash-clears-Brush regression in the browser (trash a Brushed name, footer chip disappears, other kinds keep theirs). Transport walkthrough: Space, rate menu, mute/volume, fullscreen, time display, Ruler-only seek on both Clip kinds. Span paint flows keep working with the new chrome: `i`/`[` Mark from, `o`/`]` Apply, Remove, drag-empty paint, Shift-click + Backspace, eye hide/show. Lane well geometry and Task-focus behavior unchanged. Keyboard shortcuts ignored while typing. English copy on all new controls. Full suite green; no new Python tests.
-
-**Blocked by:** 01 — Trash clears the Brush. 02 — Hand-built transport replaces media-chrome.
-
-Status: MERGED
 
 - [x] Trash a Brushed identity in the browser: footer chip disappears, surviving kinds' chips and colors stay
 - [x] Transport walkthrough on JPEG and video: play/pause, rate list applies, mute/volume, fullscreen, time display; Ruler is the only seek
@@ -29,4 +25,3 @@ Span paint, Lane well, Task-focus Brush, typing-in-input, and the rest of the de
 Playwright webServer moved to API `127.0.0.1:7894` + Vite `5194` so this tree does not reuse `7891`/`5191` (those ports already serve `/data3/yky/endo_label_dev1`). Sitting `7880`/`5173` untouched.
 
 Validation: `tsc -b --noEmit` exit 0; oxlint 0 errors (1 pre-existing warning in `ClipDesk.tsx`); vitest 49 passed; Playwright desk suite 51 passed / 0 failed on `7894`/`5194`; pytest 106 passed, 1 skipped, no new Python tests.
-
