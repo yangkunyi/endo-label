@@ -1458,6 +1458,161 @@ def auto_assign_items(
         con.close()
 
 
+def _batch_targets(items: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """The batch's items in the order asked for, each one once.
+
+    A caller that sends the same (Clip, Task type) twice meant one item, not two:
+    the second write would only ever be a conflict against the first.
+    """
+    return list(dict.fromkeys((clip_id, task_type) for clip_id, task_type in items))
+
+
+def _batch_skip(clip_id: str, task_type: str, reason: str) -> dict:
+    """One item's refusal, as the batch reports it."""
+    return {"clip_id": clip_id, "task_type": task_type, "reason": reason}
+
+
+def _batch_item(path: Path, clip_id: str, task_type: str) -> dict | None:
+    """The item as it stands now, or None when no Assignment answers to that pair."""
+    if task_type not in TASK_TYPES:
+        return None
+    con = connect(path)
+    try:
+        row = con.execute(
+            _ITEM_SELECT + " WHERE a.clip_id=? AND a.task_type=?",
+            (clip_id, task_type),
+        ).fetchone()
+        if row is None:
+            return None
+        return _item_dict(row, _clip_tags(con, clip_id))
+    finally:
+        con.close()
+
+
+def _batch_state_refusal(
+    state: str, *, reviewer: bool, holder: str | None, allow_reassign: bool = False
+) -> str | None:
+    """Why this item's state refuses the batch, or None when it takes it.
+
+    One sentence per state, shared by the notice's tag (`Done`) and the row's own
+    reason, so the board never has to say two different things about one refusal.
+    `holder` names the Account the work would come from; taking a Labeling item
+    needs `allow_reassign`, which is the caller saying it has named that holder.
+    """
+    if reviewer:
+        if state == "Submitted":
+            return None
+        if state == "Unassigned":
+            return "Unassigned has nothing to review"
+        if state == "Labeling":
+            return "Labeling is not ready for review"
+        if state == "Reviewing":
+            return "Reviewing is not assignable"
+        return "Done is final"
+    if state == "Unassigned":
+        return None
+    if state == "Labeling":
+        if allow_reassign:
+            return None
+        return f"Labeling — {holder} holds it" if holder else "Labeling is already spoken for"
+    if state == "Submitted":
+        return "Submitted — assign a reviewer instead"
+    if state == "Reviewing":
+        return "Reviewing is not assignable"
+    return "Done is final"
+
+
+def batch_assign_items(
+    path: Path,
+    *,
+    items: list[tuple[str, str]],
+    assignee: str | None = None,
+    reviewer: str | None = None,
+    allow_reassign: bool = False,
+    account_id: int,
+) -> dict:
+    """Hand many items to one Account in one gesture; every item answers for itself.
+
+    `assignee` takes Unassigned items and — with `allow_reassign`, which is the
+    caller saying it has named the current holder — Labeling ones. `reviewer`
+    takes Submitted items whose annotator is somebody else. Everything else comes
+    back in `skipped` with one sentence naming the reason, and an item that lands
+    is never rolled back because a neighbour was refused: the answer is per item,
+    never all-or-nothing.
+
+    An unknown Account is the one request-level failure (a 404 upstream): it is
+    the same name for every item, so no row could answer it differently.
+    """
+    if (assignee is None) == (reviewer is None):
+        raise ValueError("exactly one of assignee or reviewer is required")
+    if assignee is not None:
+        account_by_username(path, assignee)
+    else:
+        account_by_username(path, reviewer)
+
+    assigned: list[dict] = []
+    skipped: list[dict] = []
+    for clip_id, task_type in _batch_targets(items):
+        item = _batch_item(path, clip_id, task_type)
+        if item is None:
+            skipped.append(_batch_skip(clip_id, task_type, "No such item"))
+            continue
+        state = str(item["state"])
+        holder = item["assignee"] if isinstance(item["assignee"], str) else None
+        refusal = _batch_state_refusal(
+            state,
+            reviewer=reviewer is not None,
+            holder=holder,
+            allow_reassign=allow_reassign,
+        )
+        if refusal is None and reviewer is not None and holder == reviewer:
+            refusal = f"{holder} is the assignee — pick another reviewer"
+        if refusal is not None:
+            skipped.append(_batch_skip(clip_id, task_type, refusal))
+            continue
+        try:
+            if assignee is not None and state == "Labeling":
+                action, moved = "reassign", reassign_item(path, clip_id, task_type, assignee)
+            elif assignee is not None:
+                action, moved = "assign", assign_item(path, clip_id, task_type, assignee)
+            else:
+                action, moved = "assign_reviewer", assign_reviewer(
+                    path, clip_id, task_type, reviewer, account_id=account_id
+                )
+        except NotAProjectMember as exc:
+            skipped.append(_batch_skip(clip_id, task_type, str(exc)))
+        except (AssignmentNotFound, UnknownClip):
+            skipped.append(_batch_skip(clip_id, task_type, "No such item"))
+        except AssignmentConflict:
+            # Somebody moved it between our read and our write; answer for the state
+            # it is in now rather than losing the item from the answer.
+            fresh = _batch_item(path, clip_id, task_type)
+            reason = "Changed while you were picking"
+            if fresh is not None:
+                fresh_holder = (
+                    fresh["assignee"] if isinstance(fresh["assignee"], str) else None
+                )
+                reason = (
+                    _batch_state_refusal(
+                        str(fresh["state"]),
+                        reviewer=reviewer is not None,
+                        holder=fresh_holder,
+                        allow_reassign=allow_reassign,
+                    )
+                    or reason
+                )
+            skipped.append(_batch_skip(clip_id, task_type, reason))
+        except ReviewerIsAnnotator:
+            skipped.append(
+                _batch_skip(
+                    clip_id, task_type, f"{reviewer} is the assignee — pick another reviewer"
+                )
+            )
+        else:
+            assigned.append({**moved, "action": action})
+    return {"assigned": assigned, "skipped": skipped}
+
+
 def clip_version(path: Path, clip_id: str) -> int:
     con = connect(path)
     try:
