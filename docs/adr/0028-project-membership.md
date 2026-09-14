@@ -1,13 +1,15 @@
-# Project membership is an explicit stored relation and it gates assignment; config only seeds what it states
+# Project membership is an explicit stored relation and it gates assignment for the annotator and the reviewer alike; config only seeds what it states
 
 The pilot's desk was one labeler at a time; multi-user (ADR 0026) makes Projects plural, and an
 Account who does not work on a study must not show up in that study's assignment pickers, nor be
 handed its work by mistake. So the relation is stored — **Project membership**: the Accounts who may
-be given work in a Project. It gates assignment and nothing else: `assign_item`, `auto_assign_items`
-and `reassign_item` refuse a non-member with a 409 and a sentence naming the Project (`alice is not a
-member of Project Pilot — add them first.`), the account pickers group by it, and it does **not** gate
-reading labels. It is not a role flag on the Account; the same person is a member of one study and a
-stranger to the next.
+be given work in a Project, as its annotator or as its reviewer. It gates assignment and nothing else:
+`assign_item`, `auto_assign_items`, `reassign_item` and `assign_reviewer` refuse a non-member with a
+409 and a sentence naming the Project (`alice is not a member of Project Pilot — add them first.`),
+the account pickers group by it, and it does **not** gate reading labels. Reviewing is work on the
+Project, so the reviewer is gated the same way as the annotator: an Account who may not be given this
+Project's work may not be given its review either. It is not a role flag on the Account; the same
+person is a member of one study and a stranger to the next.
 
 Membership is owned by the admin, not by the workflow. Adding or removing a member is a membership
 write — the Projects page, or `add-member` from the CLI — and never a side effect of assigning or
@@ -52,8 +54,9 @@ as the weaker one only speaks when spoken to.
 
 ## Consequences
 
-- Every assignment path checks membership — single assign, reassign, and auto-assign — so a non-member
-  cannot slip in through the balanced path.
+- Every path that hands work to an Account checks membership — assign, reassign, auto-assign, and
+  reviewer assignment, single or batch — so a non-member cannot slip in through the balanced path or
+  the review route.
 - The refusal reuses the refused-write sentence style: a 409 whose `detail` names the Project and the
   Account, not a bare status.
 - `GET /api/projects` carries `members` to admins; the Projects page and the batch-assign bar read

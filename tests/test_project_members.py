@@ -1,8 +1,8 @@
 """Compose seam: Project membership — the explicit answer to \"who works on this Project\".
 
 Membership is a stored relation (not assignment history) and it gates assignment:
-the pickers read `GET /api/projects`'s `members` for admins, and handing work to a
-non-member is a 409 whose sentence names the Project.
+the pickers read `GET /api/projects`'s `members` for admins, and handing work — or
+its review — to a non-member is a 409 whose sentence names the Project.
 """
 
 from __future__ import annotations
@@ -79,6 +79,18 @@ def _clients(settings: Settings) -> tuple[TestClient, TestClient, TestClient]:
 
 def _assign(client: TestClient, assignee: str, task_type: str = "phase"):
     return client.post(f"/api/items/CLIPA/{task_type}/assign", json={"assignee": assignee})
+
+
+def _reviewer(client: TestClient, reviewer: str, task_type: str = "phase"):
+    return client.post(f"/api/items/CLIPA/{task_type}/reviewer", json={"reviewer": reviewer})
+
+
+def _phase_item(client: TestClient) -> dict:
+    return next(
+        row
+        for row in client.get("/api/items").json()["items"]
+        if row["clip_id"] == "CLIPA" and row["task_type"] == "phase"
+    )
 
 
 def test_assigning_a_non_member_is_refused_with_a_sentence_naming_the_project(
@@ -198,6 +210,60 @@ def test_membership_gates_assignment_and_not_reading_or_holding(tmp_path: Path) 
     assert alice.get("/api/phase/CLIPA").json()["frames"] == {"0": "Preparation"}
     assert alice.get("/api/clips/CLIPA").status_code == 200
     assert admin.post("/api/items/CLIPA/phase/reassign", json={"assignee": "alice"}).status_code == 409
+
+
+def test_assigning_a_non_member_reviewer_is_refused_with_the_same_sentence(
+    tmp_path: Path,
+) -> None:
+    """Reviewing is work on the Project, so the reviewer is gated like the annotator."""
+    settings, _pilot_row = _pilot(tmp_path, members=("alice",))
+    admin, alice, _bob = _clients(settings)
+    path = db_path(settings)
+    create_account(path, "carol", "pw", reviewer=True)
+    assert _assign(admin, "alice").status_code == 200
+    assert alice.post("/api/items/CLIPA/phase/submit").status_code == 200
+
+    refused = _reviewer(admin, "carol")
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["detail"] == "carol is not a member of Project Pilot — add them first."
+    # Nothing moved: the item is still Submitted and has no reviewer.
+    submitted = _phase_item(admin)
+    assert (submitted["state"], submitted["reviewer"]) == ("Submitted", None)
+
+    # Adding her is what makes the same call land.
+    added = admin.put(
+        "/api/admin/projects/1/members", json={"members": ["alice", "carol"]}
+    )
+    assert added.status_code == 200, added.text
+    reviewing = _reviewer(admin, "carol")
+    assert reviewing.status_code == 200, reviewing.text
+    assert (reviewing.json()["state"], reviewing.json()["reviewer"]) == (
+        "Reviewing",
+        "carol",
+    )
+
+
+def test_the_membership_refusal_precedes_the_annotator_check(tmp_path: Path) -> None:
+    """An impossible reviewer is impossible whoever the annotator is: membership speaks first."""
+    settings, _pilot_row = _pilot(tmp_path, members=("alice",))
+    admin, alice, _bob = _clients(settings)
+    path = db_path(settings)
+    assert _assign(admin, "alice").status_code == 200
+    assert alice.post("/api/items/CLIPA/phase/submit").status_code == 200
+
+    # alice is the annotator and, having left the Project, a non-member: of the two
+    # refusals that hold for her, the membership sentence is the one she gets.
+    assert remove_project_member(path, 1, "alice") == []
+    refused = _reviewer(admin, "alice")
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["detail"] == _NOT_A_MEMBER
+
+    # Back in the Project, the annotator check is the one that speaks.
+    assert add_project_member(path, 1, "alice")
+    same = _reviewer(admin, "alice")
+    assert same.status_code == 409, same.text
+    assert same.json()["detail"] == "Conflict"
+    assert _phase_item(admin)["state"] == "Submitted"
 
 
 def test_a_fresh_database_has_no_members_and_the_upgrade_backfills_the_ones_working(
