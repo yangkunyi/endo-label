@@ -116,7 +116,7 @@ def _label_write_http(exc: Exception) -> NoReturn:
     if isinstance(exc, AssignmentNotFound):
         raise HTTPException(status_code=404, detail="Not Found") from None
     if isinstance(exc, LabelWriteForbidden):
-        raise HTTPException(status_code=403, detail="Forbidden") from None
+        raise HTTPException(status_code=403, detail=str(exc) or "Forbidden") from None
     if isinstance(exc, VersionConflict):
         raise HTTPException(status_code=409, detail="Version conflict") from None
     raise exc

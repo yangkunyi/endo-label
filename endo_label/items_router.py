@@ -83,8 +83,8 @@ def _mutate(fn):
         raise HTTPException(status_code=404, detail="Not Found") from None
     except (AssignmentConflict, ReviewerIsAnnotator):
         raise HTTPException(status_code=409, detail="Conflict") from None
-    except TransitionForbidden:
-        raise HTTPException(status_code=403, detail="Forbidden") from None
+    except TransitionForbidden as exc:
+        raise HTTPException(status_code=403, detail=str(exc) or "Forbidden") from None
     except NoteRequired:
         raise HTTPException(status_code=400, detail="A reject note is required") from None
 

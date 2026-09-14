@@ -961,7 +961,7 @@ def submit_item(path: Path, clip_id: str, task_type: str, *, account_id: int) ->
         if row["state"] != "Labeling":
             raise AssignmentConflict(row["state"])
         if not _actor_capabilities(con, row, account_id)["submit"]:
-            raise TransitionForbidden()
+            raise TransitionForbidden("Only the assignee or an admin can submit this item.")
         con.execute(
             "UPDATE assignments SET state='Submitted', note=NULL "
             "WHERE clip_id=? AND task_type=?",
@@ -979,7 +979,7 @@ def recall_item(path: Path, clip_id: str, task_type: str, *, account_id: int) ->
         if row["state"] != "Submitted":
             raise AssignmentConflict(row["state"])
         if not _actor_capabilities(con, row, account_id)["recall"]:
-            raise TransitionForbidden()
+            raise TransitionForbidden("Only the assignee or an admin can recall this item.")
         con.execute(
             "UPDATE assignments SET state='Labeling', note=NULL, reviewer_id=NULL "
             "WHERE clip_id=? AND task_type=?",
@@ -1000,7 +1000,7 @@ def assign_reviewer(
             # Non-admins never had this call; wrong state is a conflict for admins.
             admin, _reviewer = _actor_flags(con, account_id)
             if not admin:
-                raise TransitionForbidden()
+                raise TransitionForbidden("Only an admin can assign a reviewer.")
             raise AssignmentConflict(row["state"])
         reviewer_id = _account_id(con, username)
         if row["assignee_id"] is not None and int(row["assignee_id"]) == reviewer_id:
@@ -1022,7 +1022,7 @@ def pass_item(path: Path, clip_id: str, task_type: str, *, account_id: int) -> d
         if row["state"] != "Reviewing":
             raise AssignmentConflict(row["state"])
         if not _actor_capabilities(con, row, account_id)["pass"]:
-            raise TransitionForbidden()
+            raise TransitionForbidden("Only the assigned reviewer or an admin can pass this item.")
         con.execute(
             "UPDATE assignments SET state='Done', reviewed_by=?, reviewed_at=?, note=NULL "
             "WHERE clip_id=? AND task_type=?",
@@ -1047,7 +1047,7 @@ def reject_item(
         if state not in ("Reviewing", "Done"):
             raise AssignmentConflict(state)
         if not _actor_capabilities(con, row, account_id)["reject"]:
-            raise TransitionForbidden()
+            raise TransitionForbidden("Only the assigned reviewer or an admin can reject this item.")
         con.execute(
             "UPDATE assignments SET state='Labeling', note=?, reviewer_id=NULL, "
             "reviewed_by=NULL, reviewed_at=NULL WHERE clip_id=? AND task_type=?",
@@ -1065,7 +1065,7 @@ def rereview_item(path: Path, clip_id: str, task_type: str, *, account_id: int) 
         if row["state"] != "Done":
             raise AssignmentConflict(row["state"])
         if not _actor_capabilities(con, row, account_id)["re_review"]:
-            raise TransitionForbidden()
+            raise TransitionForbidden("Only a reviewer or an admin can send this item back for review.")
         con.execute(
             "UPDATE assignments SET state='Submitted', reviewer_id=NULL, note=NULL, "
             "reviewed_by=NULL, reviewed_at=NULL WHERE clip_id=? AND task_type=?",
@@ -1086,7 +1086,7 @@ def deliver_item(path: Path, clip_id: str, task_type: str, *, account_id: int) -
     def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
         admin, reviewer = _actor_flags(con, account_id)
         if not (admin or reviewer):
-            raise TransitionForbidden()
+            raise TransitionForbidden("Only an admin or a reviewer can mark delivery.")
         con.execute(
             "UPDATE assignments SET delivered_at=COALESCE(delivered_at, ?) "
             "WHERE clip_id=? AND task_type=?",
@@ -1103,7 +1103,7 @@ def undeliver_item(path: Path, clip_id: str, task_type: str, *, account_id: int)
     def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
         admin, reviewer = _actor_flags(con, account_id)
         if not (admin or reviewer):
-            raise TransitionForbidden()
+            raise TransitionForbidden("Only an admin or a reviewer can clear delivery.")
         con.execute(
             "UPDATE assignments SET delivered_at=NULL WHERE clip_id=? AND task_type=?",
             (clip_id, task_type),
@@ -1222,6 +1222,48 @@ def _write_allowed(row: sqlite3.Row | None, account_id: int) -> bool:
     )["edit_labels"]
 
 
+def _account_name(con: sqlite3.Connection, account_id: int | None) -> str | None:
+    if account_id is None:
+        return None
+    try:
+        row = con.execute("SELECT username FROM accounts WHERE id=?", (int(account_id),)).fetchone()
+    except sqlite3.OperationalError:  # a fixture DB with no accounts table
+        return None
+    return str(row["username"]) if row is not None else None
+
+
+def _write_refusal(
+    con: sqlite3.Connection, row: sqlite3.Row | None, task_type: str, account_id: int
+) -> str:
+    """Why this Account may not write these labels, in one sentence.
+
+    The desk shows this where it used to show a bare "Forbidden": during the
+    pilot an unexplained 403 read as a bug rather than as ownership.
+    """
+    if row is None:
+        return f"This Clip has no {task_type} item yet — ask the admin to assign one."
+    state = str(row["state"])
+    if state == "Labeling":
+        holder = _account_name(con, row["assignee_id"])
+        if holder is None:
+            return f"This Clip's {task_type} is not assigned to anyone — its assignee writes it."
+        if int(row["assignee_id"]) == account_id:
+            return f"This Clip's {task_type} is yours, but it is not in a writable state."
+        return (
+            f"This Clip's {task_type} is assigned to {holder}: only {holder} writes its labels."
+        )
+    if state == "Reviewing":
+        holder = _account_name(con, row["reviewer_id"])
+        who = f"its reviewer ({holder})" if holder else "its assigned reviewer"
+        return f"This Clip's {task_type} is in Review — only {who} may edit its labels."
+    if state in ("Submitted", "Done"):
+        return (
+            f"This Clip's {task_type} is {state}: its labels are frozen until it comes "
+            "back to Labeling."
+        )
+    return f"Assign this Clip's {task_type} to a labeler before writing its labels."
+
+
 def assert_label_writer(
     path: Path,
     *,
@@ -1239,7 +1281,7 @@ def assert_label_writer(
             (clip_id, task_type),
         ).fetchone()
         if not _write_allowed(row, account_id):
-            raise LabelWriteForbidden()
+            raise LabelWriteForbidden(_write_refusal(con, row, task_type, account_id))
     finally:
         con.close()
 
@@ -1263,7 +1305,7 @@ def authorize_label_write(
             (clip_id, task_type),
         ).fetchone()
         if not _write_allowed(row, account_id):
-            raise LabelWriteForbidden()
+            raise LabelWriteForbidden(_write_refusal(con, row, task_type, account_id))
         current = int(clip["version"])
         if version is not None and int(version) != current:
             raise VersionConflict()
