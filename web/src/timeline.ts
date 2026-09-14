@@ -175,6 +175,55 @@ export function coverageSummary(coverage: FrameCoverage): string {
   return `Coverage: ${coverage.task}, ${coverage.covered} of ${coverage.total} frames labeled`;
 }
 
+/** Just the gap numbers: what the `n` jump reports and what Submit names first. */
+export type CoverageCounts = {
+  task: string;
+  unlabeled: number;
+  total: number;
+};
+
+/**
+ * The next Frame after `from` carrying no identity of the focused Task type,
+ * wrapping once through the Clip, and `null` when every Frame is covered.
+ *
+ * One walk over the Coverage Strip's own folded runs, so the jump and the band
+ * can never disagree about where a gap is (ADR 0029). A Frame inside a gap but
+ * already behind the Playhead is reached by the wrap, not by a second search.
+ */
+export function nextUnlabeledFrame(coverage: FrameCoverage, from: number): number | null {
+  if (coverage.total <= 0 || coverage.unlabeled <= 0) {
+    return null;
+  }
+  const gaps = coverage.segs.filter((seg) => !seg.covered);
+  for (const gap of gaps) {
+    if (gap.end > from) {
+      return Math.max(gap.start, from + 1);
+    }
+  }
+  // Every Frame after the Playhead is covered, so the walk restarts at the top.
+  return gaps.length > 0 ? gaps[0].start : null;
+}
+
+/**
+ * What the desk says when `n` finds no gap left: not silence, and not a refusal
+ * (`n` seeks nothing, because there is nothing to seek to).
+ */
+export function everyFrameLabeledNotice(task: string): string {
+  return `Every Frame has a ${task} label`;
+}
+
+/**
+ * What Submit says first when coverage is incomplete, or `null` when the Clip is
+ * fully covered for this Task type. Coverage is not completion (ADR 0029): the
+ * sentence is named, and the submit it names goes through.
+ */
+export function submitGapNotice(counts: CoverageCounts): string | null {
+  if (counts.unlabeled <= 0) {
+    return null;
+  }
+  return `Submitting with ${counts.unlabeled} of ${counts.total} frames unlabeled for ${counts.task}`;
+}
+
 export function foldPhase(frameCount: number, frames: Record<string, string>): TimelineLane[] {
   const names = new Set<string>();
   for (const name of Object.values(frames)) {

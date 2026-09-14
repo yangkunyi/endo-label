@@ -17,6 +17,7 @@ import {
   errorDetail,
   frameClassTags,
   clipMediaPath,
+  clipMetaPath,
   frameJpegPath,
   framePhaseName,
   frameTripletRows,
@@ -159,6 +160,11 @@ test("clip desk path is /clips/:clipId", () => {
 test("frame JPEG path is catalog Frame URL", () => {
   expect(frameJpegPath("CLIPA", 0)).toBe("/api/clips/CLIPA/frames/0");
   expect(frameJpegPath("CLIPA", 3)).toBe("/api/clips/CLIPA/frames/3");
+});
+
+test("clip meta path is the one Clip URL, escaped", () => {
+  expect(clipMetaPath("CLIPA")).toBe("/api/clips/CLIPA");
+  expect(clipMetaPath("CASE 001/clip 2")).toBe("/api/clips/CASE%20001%2Fclip%202");
 });
 
 test("video media path is catalog media URL", () => {

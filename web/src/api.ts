@@ -341,6 +341,11 @@ export function frameJpegPath(clipId: string, frameIndex: number): string {
   return `/api/clips/${encodeURIComponent(clipId)}/frames/${frameIndex}`;
 }
 
+/** One Clip's metadata: its Frame count, kind and source. */
+export function clipMetaPath(clipId: string): string {
+  return `/api/clips/${encodeURIComponent(clipId)}`;
+}
+
 export function clipMediaPath(clipId: string): string {
   return `/api/clips/${encodeURIComponent(clipId)}/media`;
 }

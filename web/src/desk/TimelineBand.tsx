@@ -19,6 +19,7 @@ export function TimelineBand({
   brushKeys,
   barSelection,
   transport,
+  onNextUnlabeled,
   onToggleBar,
   onClearBars,
   onPaintLane,
@@ -35,6 +36,8 @@ export function TimelineBand({
   brushKeys: string[];
   barSelection: LaneBar[];
   transport: ReactNode;
+  /** The Next-unlabeled jump, shared with the `n` key: the Strip's button here. */
+  onNextUnlabeled: () => void;
   onToggleBar: (bar: LaneBar) => void;
   onClearBars: () => void;
   onPaintLane: (laneKey: string, from: number, to: number) => void;
@@ -291,7 +294,11 @@ export function TimelineBand({
           band above the well (05); mask, which is no Task focus tab, gets its own
           row above it. */}
       <MaskCoverageStrip clipRailWidth={clipRailWidth} frameCount={frameCount} covered={coveredFrames} />
-      <CoverageStrip clipRailWidth={clipRailWidth} coverage={coverage} />
+      <CoverageStrip
+        clipRailWidth={clipRailWidth}
+        coverage={coverage}
+        onNextUnlabeled={onNextUnlabeled}
+      />
       <div
         role="region"
         aria-label="Lane well"

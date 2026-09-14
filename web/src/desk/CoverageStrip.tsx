@@ -1,4 +1,6 @@
 import { useCallback, useRef, type PointerEvent } from "react";
+import { ChevronsRight } from "lucide-react";
+import { Button } from "../components/ui/button";
 import {
   coverageSummary,
   frameFromClientX,
@@ -15,13 +17,18 @@ import { usePlayback } from "./playback";
  *
  * Coverage is derived from the label documents the desk already fetched and is
  * never stored, so switching Task focus redraws this without a refetch.
+ *
+ * The chevron in the head is the `n` key's other half: the next Unlabeled gap,
+ * found by the same jump, walking the very runs drawn here.
  */
 export function CoverageStrip({
   clipRailWidth,
   coverage,
+  onNextUnlabeled,
 }: {
   clipRailWidth: number;
   coverage: FrameCoverage;
+  onNextUnlabeled: () => void;
 }) {
   const { seek } = usePlayback();
   const trackRef = useRef<HTMLDivElement>(null);
@@ -53,12 +60,24 @@ export function CoverageStrip({
     <div className="flex" data-coverage-strip="" data-coverage-task={coverage.task}>
       <div
         data-coverage-head=""
-        className="flex h-3.5 shrink-0 items-center overflow-hidden border-r border-border px-2"
+        className="flex h-3.5 shrink-0 items-center gap-1 overflow-hidden border-r border-border px-2"
         style={{ width: clipRailWidth }}
       >
-        <span className="truncate text-[10px] leading-none text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate text-[10px] leading-none text-muted-foreground">
           coverage · {coverage.task}
         </span>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          data-next-unlabeled=""
+          className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+          aria-label={`Next Frame with no ${coverage.task} label`}
+          title={`Next Frame with no ${coverage.task} label (n)`}
+          onClick={onNextUnlabeled}
+        >
+          <ChevronsRight size={10} />
+        </Button>
       </div>
       <div className="w-1 shrink-0" />
       <div
