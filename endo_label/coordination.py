@@ -1071,6 +1071,14 @@ def _item_payload_for(con: sqlite3.Connection, row: sqlite3.Row, account: Accoun
         account_id=account.id,
         admin=account.admin,
     )
+    # Why a label write would be refused, in the 403's own words, so a desk can say
+    # it before the click rather than after: one author for the sentence, and a
+    # control it disables cannot disagree with the call it would have made.
+    # `None` whenever this Account may write — including the assignee's own item.
+    writable = payload["capabilities"]["edit_labels"]
+    payload["write_refusal"] = (
+        None if writable else _write_refusal(con, row, str(row["task_type"]), account.id)
+    )
     return payload
 
 

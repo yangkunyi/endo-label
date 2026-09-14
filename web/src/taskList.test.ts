@@ -15,6 +15,7 @@ function item(over: Partial<MyItem> = {}): MyItem {
     delivered_at: null,
     version: 3,
     capabilities: {},
+    write_refusal: null,
     ...over,
   };
 }
