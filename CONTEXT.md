@@ -24,6 +24,10 @@ _Avoid_: task (that is Task type); one assignee per Clip across all Task types; 
 One study: the long-lived grouping a Clip belongs to (exactly one). Carries a hospital field and study name; scopes the enabled Vocab subset. One source media may be registered as separate Clips under different Projects — the Clip is the labeling unit, the media is shared read-only. Clips may carry extra free tags for cross-cutting filtering; tags never confer ownership or vocab.
 _Avoid_: import batch (an informal grouping, not an entity); hospital as Clip ownership; one Clip in two Projects; tags deciding vocab or assignment
 
+**Project membership**:
+The explicit relation between an Account and a Project — the Accounts who may be given work in that Project. It gates assignment, not reading labels; it is a relation, not a role.
+_Avoid_: deriving membership from assignment history; membership as a permission on reads; a role flag; per-Clip membership
+
 **Account**:
 One person's login, created by the admin (name + password, changed by its owner). Carries stacked role flags — admin, reviewer, annotator — any combination. Roles gate what the Account may call; being the item's assignee gates whether a given write is theirs.
 _Avoid_: Session (that is the mask working state); one role per person; self-signup; email recovery
@@ -139,8 +143,8 @@ Disk store of mask silhouettes only (`data/mask/`). Not an umbrella word.
 Read-only source media (JPEG Clip folders and video files). This service never writes into the pool. Transcoded JPEG caches live outside it (`data/video-cache/`).
 
 **Ruler**:
-The always-present unlabeled seek track directly under the picture. Not a label lane. An empty Clip still has this track; Lanes sit in the Lane well below it.
-_Avoid_: progress bar; MediaTimeRange; treating an unlabeled dim lane as the seek
+The always-present seek track directly under the transport row. Not a label lane. The fill behind it shows how far the Playhead has come; it is not a completion meter. An empty Clip still has this track; Lanes sit in the Lane well below it.
+_Avoid_: progress bar (the completion-meter reading); MediaTimeRange; treating an unlabeled dim lane as the seek
 
 **Playhead**:
 The cursor on the Ruler showing the current Frame. Draggable on the Ruler only, frame-snapped. A display-only stem may cross Lanes. Clicking a Lane bar seeks to the Frame under the pointer. A selected bar can be trimmed by dragging its ends. Play/pause is Space, the player button, or the Ruler — not a click on the picture. Picture clicks are Geometric Prompts or Scribble Prompts.
@@ -157,6 +161,18 @@ _Avoid_: growing the strip with each new identity; overlaying Lanes on the pictu
 **Lane visibility**:
 Sitting: whether a Vocab identity’s Lane is shown in the Lane well. Independent of Library Selection, Brush, and whether that identity is on the current Frame. Identities already present on the Clip start visible; unused ones start hidden (the labeler shows an empty Lane to paint them). A labeled Lane may still be hidden. Hiding does not delete labels or the Vocab name.
 _Avoid_: treating hide as Vocab trash; treating a hidden Lane as unlabeled
+
+**Track lane**:
+One row per Track in the Lane well; its spans are the Frames where that Track has a mask. Read-only: a click seeks, and nothing on it is painted or trimmed. It is never a vocab Lane, and Tracks answer for mask, which is not a Task focus tab.
+_Avoid_: a vocab Lane; mask as a Task focus tab; painting or trimming mask through a span write
+
+**Coverage Strip**:
+A thin read-only band directly above the Lane well: for the focused Task type, which Frames carry at least one of its identities, and where the Unlabeled gaps are. A click seeks the Playhead to the Frame under the pointer. Not a Lane, not a completion meter, not a Review state.
+_Avoid_: progress bar; a completion percentage; a Lane; editing or trimming on the strip; the mask coverage row
+
+**Unlabeled gap**:
+A maximal run of Frames with no identity of the Task type being asked about — on the desk, the focused one. Gaps are per Task type (one Frame may be covered for phase and inside a class gap); a Clip with no labels of that type at all is a single gap.
+_Avoid_: unlabeled Clip (a gap may be a single Frame); a gap as a stored record the labeler must clear; one coverage map for all Task types
 
 **Brush**:
 Sitting set of Vocab identities the next interval paint will write or remove. Independent of Library Selection (whether those identities are on the current Frame). Holds identities of one Task type at a time; class and triplet may hold several; phase at most one.
