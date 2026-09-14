@@ -32,9 +32,16 @@ export function labelColor(identity: string): string {
 export type TimelineLane = {
   key: string;
   segs: TimelineSeg[];
+  /** Row-head text when it is not the Lane key (Track Lanes show the Track Label). */
+  label?: string;
+  /** Row colour when the Lane is not a Vocab identity (Track Lanes: the Track colour). */
+  color?: string | null;
+  /** Read-only Lane: a click seeks, nothing paints or trims (Track Lanes). */
+  readOnly?: boolean;
 };
 
-function foldValues(frameCount: number, at: (index: number) => string | null): TimelineSeg[] {
+/** Maximal runs of equal value across `0..frameCount-1`: one Lane's spans, gaps included. */
+export function foldValues(frameCount: number, at: (index: number) => string | null): TimelineSeg[] {
   if (frameCount <= 0) {
     return [];
   }

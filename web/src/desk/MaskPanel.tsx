@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { Loader2, Lock, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, Lock, Trash2 } from "lucide-react";
 import { useSWRConfig, type KeyedMutator } from "swr";
 import {
   annotationFramePath,
@@ -46,6 +46,7 @@ import {
 import { hasMaskHandoff, isProtectedState, propagateTargetFrames, trackState } from "../trackState";
 import { formatElapsed, workerLoadingToast } from "../workerStatus";
 import { isEditableTarget } from "./keyboard";
+import { useTrackLaneVisibility } from "./maskLanes";
 import { MaskSessionContext, useMaskSession, type MaskSession } from "./maskSession";
 import type { DeskNotice } from "./notice";
 
@@ -663,6 +664,10 @@ export function MaskPanel() {
     onClearMask,
   } = useMaskSession();
 
+  // The Track Lanes live in the Lane well; their eye sits on the Track row, the
+  // same place and rule as a Library row's Lane visibility.
+  const { trackLaneVisibleFor, toggleTrackLane } = useTrackLaneVisibility();
+
   const [renaming, setRenaming] = useState<{ trackId: number; draft: string } | null>(null);
 
   function commitRename() {
@@ -851,6 +856,28 @@ export function MaskPanel() {
                   {protectedState ? <Lock aria-hidden="true" size={10} className="shrink-0" /> : null}
                   <span className="whitespace-nowrap">{badge}</span>
                 </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className={cn(
+                    "h-7 w-7 shrink-0 p-0",
+                    trackLaneVisibleFor(track.track_id) ? "text-foreground" : "text-muted-foreground",
+                  )}
+                  aria-label={trackLaneVisibleFor(track.track_id) ? "Hide lane" : "Show lane"}
+                  title={
+                    trackLaneVisibleFor(track.track_id)
+                      ? "Hide this Track's lane"
+                      : "Show this Track's lane"
+                  }
+                  onClick={() => toggleTrackLane(track.track_id)}
+                >
+                  {trackLaneVisibleFor(track.track_id) ? (
+                    <Eye aria-hidden="true" size={14} />
+                  ) : (
+                    <EyeOff aria-hidden="true" size={14} />
+                  )}
+                </Button>
                 <Button
                   type="button"
                   size="sm"
