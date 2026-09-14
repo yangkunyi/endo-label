@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { Loader2, Lock } from "lucide-react";
+import { Loader2, Lock, Trash2 } from "lucide-react";
 import { useSWRConfig, type KeyedMutator } from "swr";
 import {
   annotationFramePath,
@@ -478,6 +478,38 @@ export function MaskSessionProvider({
     }
   }, [clipId, frameIndex, loadSessionFrame, mutateAnnotation, notify]);
 
+  /** Drop the whole Track: its masks go with it, on every Frame. */
+  const onDeleteTrack = useCallback(async (trackId: number) => {
+    if (predicting.current || jobRunning) {
+      return;
+    }
+    predicting.current = true;
+    notify(null);
+    try {
+      await sendJson<SessionPublic>(sessionTrackPath(trackId, clipId ?? undefined), "DELETE");
+      sessionOpen.current = true;
+      if (activeTrackId === trackId) {
+        setActiveTrackId(null);
+      }
+      await loadSessionFrame(frameIndex);
+      await mutateAnnotation();
+      await mutateFrameAnn();
+    } catch (err) {
+      notify({ text: err instanceof Error ? err.message : "Track delete failed", error: true });
+    } finally {
+      predicting.current = false;
+    }
+  }, [
+    activeTrackId,
+    clipId,
+    frameIndex,
+    jobRunning,
+    loadSessionFrame,
+    mutateAnnotation,
+    mutateFrameAnn,
+    notify,
+  ]);
+
   useEffect(() => {
     const fromFrame = pendingFrame.current;
     pendingFrame.current = frameIndex;
@@ -565,6 +597,7 @@ export function MaskSessionProvider({
     onSelectTrack: (trackId) => setActiveTrackId(nextActiveTrack(activeTrackId, { kind: "rail", trackId })),
     onNewTrack: () => setActiveTrackId(nextActiveTrack(activeTrackId, { kind: "new" })),
     onRenameTrack,
+    onDeleteTrack,
     onClearMask: () => void onClearMask(),
     onClickPoint,
     onClickStroke,
@@ -626,6 +659,7 @@ export function MaskPanel() {
     onSelectTrack,
     onNewTrack,
     onRenameTrack,
+    onDeleteTrack,
     onClearMask,
   } = useMaskSession();
 
@@ -817,6 +851,22 @@ export function MaskPanel() {
                   {protectedState ? <Lock aria-hidden="true" size={10} className="shrink-0" /> : null}
                   <span className="whitespace-nowrap">{badge}</span>
                 </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                  aria-label={`Delete ${track.label}`}
+                  title={`Delete ${track.label} — its masks go too`}
+                  disabled={busy || predicting}
+                  onClick={() => {
+                    if (window.confirm(`Delete ${track.label} from this Clip? Its masks go with it.`)) {
+                      onDeleteTrack(track.track_id);
+                    }
+                  }}
+                >
+                  <Trash2 aria-hidden="true" size={12} />
+                </Button>
               </li>
             );
           })}

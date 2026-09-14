@@ -30,6 +30,7 @@ export type MaskSession = {
   onSelectTrack: (trackId: number) => void;
   onNewTrack: () => void;
   onRenameTrack: (trackId: number, label: string) => Promise<void> | void;
+  onDeleteTrack: (trackId: number) => void;
   onClearMask: () => void;
   onClickPoint: (point: PendingPoint) => void;
   onClickStroke: (stroke: PendingStroke) => void;
