@@ -194,6 +194,31 @@ function trackRow(page: Page, label: string): Locator {
   return page.getByRole("list", { name: "Track list" }).getByRole("button", { name: label, exact: true });
 }
 
+/** The mask strip: every Frame carrying any Track's mask, gaps for the rest. */
+function maskStrip(page: Page): Locator {
+  return page.locator("[data-mask-track]");
+}
+
+/** The strip's tick carrying an exact coverage readout, so a stale row fails the wait. */
+function coverageLabel(page: Page, covered: number, total: number): Locator {
+  return page.locator(
+    `[data-mask-track][aria-label="Mask coverage: ${covered} of ${total} Frames have a Track mask"]`,
+  );
+}
+
+function trackLane(page: Page, trackId: number): Locator {
+  return page.locator(`[data-timeline-lane="track:${trackId}"]`);
+}
+
+/** A Track lane's spans holding a mask, i.e. not the hollow runs between them. */
+function laneSpans(page: Page, trackId: number): Locator {
+  return trackLane(page, trackId).locator("[data-timeline-seg]:not([data-unlabeled])");
+}
+
+async function cssBackground(locator: Locator): Promise<string> {
+  return locator.evaluate((el) => getComputedStyle(el).backgroundColor);
+}
+
 async function pickLibraryName(page: Page, kind: "phase" | "class", name: string) {
   await page.getByRole("tab", { name: kind }).click();
   const row = page.getByRole("list", { name: "Library" }).getByRole("button", { name, exact: true });
@@ -703,4 +728,156 @@ test("rail shows the indeterminate Propagating line while the Job runs", async (
   await expect(running).toContainText("from Frame 0");
   await expect(page.getByText("Propagate complete: 1 of 1 Frames filled")).toBeVisible({ timeout: 15_000 });
   await expect(running).toHaveCount(0);
+});
+
+// --- Mask coverage: its own row and the Track Lanes (ticket 06) ---
+
+test("mask strip covers the Frames holding a Track mask; a gap seeks there", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await videoReady(page);
+
+  // No Track yet: the whole Clip is one hollow gap and the Lane well has no rows.
+  await expect(page.locator("[data-mask-head]")).toContainText("coverage · mask");
+  await expect(coverageLabel(page, 0, 2)).toBeVisible();
+  await expect(maskStrip(page).locator('[data-mask-seg][data-covered="false"]')).toHaveCount(1);
+  await expect(page.locator("[data-timeline-lane]")).toHaveCount(0);
+
+  // The picture and the Lane well hold their reserved heights while rows appear.
+  const player = page.getByRole("region", { name: "Player", exact: true });
+  const well = page.getByRole("region", { name: "Lane well" });
+  const playerHeight = (await player.boundingBox())!.height;
+  const wellHeight = (await well.boundingBox())!.height;
+
+  await clickAt(page, 0.5, 0.5);
+  await expect(trackRow(page, "track-1")).toBeVisible();
+  await expect(coverageLabel(page, 1, 2)).toBeVisible();
+  const coveredSeg = maskStrip(page).locator('[data-mask-seg][data-covered="true"]');
+  const gapSeg = maskStrip(page).locator('[data-mask-seg][data-covered="false"]');
+  await expect(coveredSeg).toHaveCount(1);
+  await expect(gapSeg).toHaveCount(1);
+  // A covered run is filled; a gap stays hollow. The two must not look alike.
+  expect(await cssBackground(coveredSeg)).not.toBe("rgba(0, 0, 0, 0)");
+  expect(await cssBackground(coveredSeg)).not.toBe(await cssBackground(gapSeg));
+  expect(Math.abs((await player.boundingBox())!.height - playerHeight)).toBeLessThan(2);
+  expect(Math.abs((await well.boundingBox())!.height - wellHeight)).toBeLessThan(2);
+
+  // One Track lane: the head carries the Track Label and colour, the span the mask.
+  const head = page.locator("[data-lane-head]").filter({ hasText: "track-1" });
+  await expect(head).toHaveCount(1);
+  const lane = trackLane(page, 1);
+  await expect(lane).toHaveAttribute("data-lane-readonly", "true");
+  const span = laneSpans(page, 1);
+  await expect(span).toHaveCount(1);
+  expect(await cssBackground(span)).toBe(await cssBackground(head.locator("span").first()));
+
+  // A click on the gap seeks to that Frame; a click on the covered run seeks back.
+  await gapSeg.click();
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  await coveredSeg.click();
+  await expect(page.getByText("Frame 0 of 2")).toBeVisible();
+});
+
+test("a Track lane is read-only: click and drag seek, nothing paints or trims", async ({ page }) => {
+  const request = page.request;
+  await page.goto("/clips/CLIP_E2E");
+  await videoReady(page);
+  await clickAt(page, 0.5, 0.5);
+  await expect(trackRow(page, "track-1")).toBeVisible();
+  await scrubToFrame(page, 0);
+
+  const lane = trackLane(page, 1);
+  const box = (await lane.boundingBox())!;
+  const midY = box.y + box.height / 2;
+
+  // Drag right: the Playhead follows and no paint ghost or span write appears.
+  await page.mouse.move(box.x + 4, midY);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, midY, { steps: 4 });
+  await expect(page.locator("[data-lane-drag]")).toHaveCount(0);
+  await page.mouse.move(box.x + box.width - 4, midY, { steps: 4 });
+  await page.mouse.up();
+  await expect(page.getByText("Frame 1 of 2")).toBeVisible();
+  await expect(lane.locator("[data-trim]")).toHaveCount(0);
+  await expect(lane.locator('[data-selected="true"]')).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+
+  // The mask store and the three label docs are untouched.
+  expect((await frameAnnotation(request, "CLIP_E2E", 1))?.masks ?? []).toHaveLength(0);
+  const classDoc = (await (await request.get(`${API}/api/class/CLIP_E2E`)).json()).frames;
+  expect(Object.keys(classDoc ?? {})).toHaveLength(0);
+  const summary = (await (await request.get(`${API}/api/clips/CLIP_E2E/annotations`)).json()) as {
+    frames: Array<{ frame_index: number }>;
+  };
+  expect(summary.frames.map((frame) => frame.frame_index)).toEqual([0]);
+
+  // A plain click seeks to the Frame under the pointer.
+  await page.mouse.click(box.x + 4, midY);
+  await expect(page.getByText("Frame 0 of 2")).toBeVisible();
+});
+
+test("Predict, Propagate, Clear and Track delete refresh the mask row in place", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await videoReady(page);
+  await expect(coverageLabel(page, 0, 2)).toBeVisible();
+  await expect(trackLane(page, 1)).toHaveCount(0);
+
+  // Predict: this Frame is covered and its Track lane shows up.
+  await clickAt(page, 0.5, 0.5);
+  await expect(coverageLabel(page, 1, 2)).toBeVisible();
+  await expect(trackLane(page, 1)).toBeVisible();
+
+  // Propagate: the Job fills the neighbor Frame; one covered run, one span.
+  await page.getByRole("button", { name: "Propagate" }).click();
+  await expect(page.getByText("Propagate complete: 1 of 1 Frames filled")).toBeVisible({ timeout: 10_000 });
+  await expect(coverageLabel(page, 2, 2)).toBeVisible();
+  await expect(maskStrip(page).locator('[data-mask-seg][data-covered="true"]')).toHaveCount(1);
+  await expect(laneSpans(page, 1)).toHaveCount(1);
+
+  // Clear this Frame's mask: coverage drops back to the other Frame.
+  await scrubToFrame(page, 0);
+  await page.getByRole("button", { name: "Clear mask" }).click();
+  await expect(coverageLabel(page, 1, 2)).toBeVisible();
+  await expect(laneSpans(page, 1)).toHaveCount(1);
+
+  // Track delete takes the lane with it and empties the strip.
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete track-1" }).click();
+  await expect(trackLane(page, 1)).toHaveCount(0);
+  await expect(coverageLabel(page, 0, 2)).toBeVisible();
+});
+
+test("the Track lane eye hides the row; the mask strip stays honest", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await videoReady(page);
+  await clickAt(page, 0.5, 0.5);
+  const lane = trackLane(page, 1);
+  await expect(lane).toBeVisible();
+  const trackList = page.getByRole("list", { name: "Track list" });
+
+  await trackList.getByRole("button", { name: "Hide lane" }).click();
+  await expect(lane).toHaveCount(0);
+  // Lane visibility never hides coverage: the strip answers for every Track.
+  await expect(coverageLabel(page, 1, 2)).toBeVisible();
+
+  await trackList.getByRole("button", { name: "Show lane" }).click();
+  await expect(lane).toBeVisible();
+});
+
+test("two Tracks get a lane each, spanning their own Frames", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await videoReady(page);
+  await clickAt(page, 0.5, 0.5);
+  await expect(trackRow(page, "track-1")).toBeVisible();
+
+  await scrubToFrame(page, 1);
+  await page.getByRole("button", { name: "New Track" }).click();
+  await clickAt(page, 0.25, 0.25);
+  await expect(trackRow(page, "track-2")).toBeVisible();
+
+  await expect(coverageLabel(page, 2, 2)).toBeVisible();
+  await expect(page.locator("[data-lane-head]")).toHaveText(["track-1", "track-2"]);
+  const first = (await laneSpans(page, 1).boundingBox())!;
+  const second = (await laneSpans(page, 2).boundingBox())!;
+  // Each lane holds its own Frame: the two runs sit on opposite halves.
+  expect(first.x + first.width).toBeLessThan(second.x + 1);
 });

@@ -78,6 +78,7 @@ export function useDeskData(clipId: string | undefined) {
     clipLoading: isLoading,
     frameIndex,
     version,
+    annotation,
     frameMasks,
     tracks,
     phaseDoc,

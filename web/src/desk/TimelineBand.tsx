@@ -2,17 +2,19 @@ import { useCallback, useRef, useState, type PointerEvent, type ReactNode } from
 import { labelColor, frameFromClientX, type FrameCoverage, type TimelineLane } from "../timeline";
 import type { LaneBar } from "./writer";
 import { CoverageStrip } from "./CoverageStrip";
+import { MaskCoverageStrip } from "./MaskStrip";
 import { usePlayback } from "./playback";
 
-/** The timeline: the Ruler, the Coverage Strip, the transport row and the Lane
- * well. Gestures are pointer-driven; every span write goes back out through the
- * panel's callbacks. */
+/** The timeline: the Ruler, the transport row, the strip area (the focused Task
+ * type's Coverage Strip and mask's own row) and the Lane well. Gestures are
+ * pointer-driven; every span write goes back out through the panel's callbacks. */
 export function TimelineBand({
   clipRailWidth,
   frameCount,
   frameIndex,
   lanes,
   coverage,
+  coveredFrames,
   previewRange,
   brushKeys,
   barSelection,
@@ -27,6 +29,8 @@ export function TimelineBand({
   frameIndex: number;
   lanes: TimelineLane[];
   coverage: FrameCoverage;
+  /** Frame indexes carrying a Track mask: the mask strip's own row. */
+  coveredFrames: number[];
   previewRange: { from: number; to: number } | null;
   brushKeys: string[];
   barSelection: LaneBar[];
@@ -136,6 +140,25 @@ export function TimelineBand({
     const frame = frameAt(event.clientX, laneTrackRef.current);
     gesture.current = { kind: "paint", laneKey, origin: frame, min: frame, max: frame };
     event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  /** A read-only Lane (a Track Lane) has no identity to paint, so any press is a seek. */
+  function onReadOnlyLanePointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    gesture.current = { kind: "seek" };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onSeek(frameAt(event.clientX, laneTrackRef.current));
+  }
+
+  /** The seek keeps following the pointer: a Track Lane behaves like a Lane bar. */
+  function onReadOnlyLanePointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (gesture.current?.kind !== "seek" || !event.currentTarget.hasPointerCapture(event.pointerId)) {
+      return;
+    }
+    onSeek(frameAt(event.clientX, laneTrackRef.current));
   }
 
   function onLanePointerMove(event: PointerEvent<HTMLDivElement>) {
@@ -263,6 +286,11 @@ export function TimelineBand({
           </div>
         </div>
       </div>
+      {/* The strip area: read-only coverage rows directly above the Lane well, on
+          the same track geometry. The focused Task type's Coverage Strip owns the
+          band above the well (05); mask, which is no Task focus tab, gets its own
+          row above it. */}
+      <MaskCoverageStrip clipRailWidth={clipRailWidth} frameCount={frameCount} covered={coveredFrames} />
       <CoverageStrip clipRailWidth={clipRailWidth} coverage={coverage} />
       <div
         role="region"
@@ -275,8 +303,8 @@ export function TimelineBand({
             <div className="flex shrink-0 flex-col border-r border-border" style={{ width: clipRailWidth }}>
               {lanes.map((lane) => (
                 <div key={lane.key} className="flex h-6 shrink-0 items-center gap-1.5 px-2" data-lane-head title={lane.key}>
-                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: labelColor(lane.key) }} />
-                  <span className="truncate text-[11px] leading-none text-foreground">{lane.key}</span>
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: lane.color ?? labelColor(lane.key) }} />
+                  <span className="truncate text-[11px] leading-none text-foreground">{lane.label ?? lane.key}</span>
                 </div>
               ))}
             </div>
@@ -287,10 +315,13 @@ export function TimelineBand({
                   key={lane.key}
                   className="relative h-6 touch-none"
                   data-timeline-lane={lane.key}
-                  onPointerDown={(event) => onLanePointerDown(event, lane.key)}
-                  onPointerMove={onLanePointerMove}
+                  data-lane-readonly={lane.readOnly ? "true" : undefined}
+                  onPointerDown={(event) =>
+                    lane.readOnly ? onReadOnlyLanePointerDown(event) : onLanePointerDown(event, lane.key)
+                  }
+                  onPointerMove={lane.readOnly ? onReadOnlyLanePointerMove : onLanePointerMove}
                   onPointerUp={(event) => {
-                    if (gesture.current?.kind === "paint") {
+                    if (gesture.current?.kind === "paint" || gesture.current?.kind === "seek") {
                       commitGesture(event);
                     }
                   }}
@@ -313,6 +344,24 @@ export function TimelineBand({
                       );
                     }
                     const label = seg.label;
+                    if (lane.readOnly) {
+                      // Read-only: the span shows the mask's extent and nothing more.
+                      const color = lane.color ?? labelColor(lane.key);
+                      return (
+                        <span
+                          key={`${lane.key}-${seg.start}`}
+                          data-timeline-seg=""
+                          data-label-color={color}
+                          aria-hidden="true"
+                          className="pointer-events-none absolute bottom-1 top-1 box-border rounded border-r border-black/50"
+                          style={{
+                            left: `${(seg.start / frameCount) * 100}%`,
+                            width: `${((seg.end - seg.start + 1) / frameCount) * 100}%`,
+                            backgroundColor: color,
+                          }}
+                        />
+                      );
+                    }
                     const selected = barSelection.some(
                       (bar) => bar.laneKey === lane.key && bar.start === seg.start && bar.end === seg.end,
                     );
@@ -367,7 +416,7 @@ export function TimelineBand({
                       </button>
                     );
                   })}
-                  {previewRange && brushKeys.includes(lane.key) ? (
+                  {previewRange && !lane.readOnly && brushKeys.includes(lane.key) ? (
                     <span
                       data-ghost=""
                       aria-hidden="true"

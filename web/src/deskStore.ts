@@ -64,7 +64,10 @@ function dropBrushIdentity(brush: DeskBrush, identity: BrushIdentity): DeskBrush
   return { ...brush, triplet: brush.triplet.filter((row) => tripleKey(row) !== key) };
 }
 
-export function laneVisibilityKey(kind: EditorKind, identity: string): string {
+/** A Lane row's owner: one Task type's Vocab identity, or a mask Track. */
+export type LaneKind = EditorKind | "track";
+
+export function laneVisibilityKey(kind: LaneKind, identity: string): string {
   return `${kind}:${identity}`;
 }
 
