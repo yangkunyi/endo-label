@@ -9,6 +9,7 @@ from endo_label.auth import require_admin
 from endo_label.coordination import (
     AssignmentConflict,
     AssignmentNotFound,
+    NotAProjectMember,
     NoteRequired,
     ReviewerIsAnnotator,
     TransitionForbidden,
@@ -81,6 +82,9 @@ def _mutate(fn):
         return fn()
     except (AssignmentNotFound, UnknownAccount):
         raise HTTPException(status_code=404, detail="Not Found") from None
+    except NotAProjectMember as exc:
+        # A membership refusal is the one 409 whose sentence the admin has to act on.
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     except (AssignmentConflict, ReviewerIsAnnotator):
         raise HTTPException(status_code=409, detail="Conflict") from None
     except TransitionForbidden as exc:

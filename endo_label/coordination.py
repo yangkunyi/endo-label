@@ -71,6 +71,10 @@ class NoteRequired(Exception):
     """A reject transition needs a short note."""
 
 
+class NotAProjectMember(Exception):
+    """The Account is not a member of the Project, so it may not hold its work."""
+
+
 @dataclass(frozen=True)
 class Account:
     id: int
@@ -116,6 +120,9 @@ def connect(path: Path) -> sqlite3.Connection:
     return con
 
 
+# The tables whose absence means "this database predates the schema": a full bootstrap.
+# A table added later (project_members) is migrated by its own `_ensure_*` instead, so an
+# existing install never re-runs the bootstrap — and its write lock — on every connect.
 _SCHEMA_TABLES = frozenset(
     {
         "users",
@@ -132,8 +139,7 @@ _SCHEMA_TABLES = frozenset(
 
 
 def _schema_present(con: sqlite3.Connection) -> bool:
-    rows = con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-    return _SCHEMA_TABLES <= {str(row["name"]) for row in rows}
+    return _SCHEMA_TABLES <= _table_names(con)
 
 
 def _init_schema(con: sqlite3.Connection) -> None:
@@ -146,7 +152,17 @@ def _init_schema(con: sqlite3.Connection) -> None:
     if not _schema_present(con):
         _create_schema(con)
     _ensure_clip_version_column(con)
+    _ensure_project_members(con)
     con.commit()
+
+
+_PROJECT_MEMBERS_DDL = """
+        CREATE TABLE IF NOT EXISTS project_members (
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            account_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            PRIMARY KEY (project_id, account_id)
+        );
+        """
 
 
 def _create_schema(con: sqlite3.Connection) -> None:
@@ -178,6 +194,9 @@ def _create_schema(con: sqlite3.Connection) -> None:
             path TEXT NOT NULL,
             version INTEGER NOT NULL DEFAULT 0
         );
+        """
+        + _PROJECT_MEMBERS_DDL
+        + """
         CREATE TABLE IF NOT EXISTS assignments (
             clip_id TEXT NOT NULL REFERENCES clips(id),
             task_type TEXT NOT NULL CHECK (task_type IN ('phase', 'class', 'triplet', 'mask')),
@@ -234,6 +253,36 @@ def _create_schema(con: sqlite3.Connection) -> None:
 
 def _column_names(con: sqlite3.Connection, table: str) -> set[str]:
     return {str(row[1]) for row in con.execute(f"PRAGMA table_info({table})")}
+
+
+def _table_names(con: sqlite3.Connection) -> set[str]:
+    return {
+        str(row["name"])
+        for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+
+
+def _ensure_project_members(con: sqlite3.Connection) -> None:
+    """Membership is a later decision: an install that predates the table gets it seeded.
+
+    The Accounts that already hold an Assignment in a Project are exactly the ones that
+    install has been working with, so they become its members — the pilot keeps being
+    assignable instead of turning every item into a refusal. A fresh database creates the
+    table empty and seeds nothing.
+    """
+    if "project_members" in _table_names(con):
+        return
+    con.executescript(_PROJECT_MEMBERS_DDL)
+    _backfill_project_members(con)
+
+
+def _backfill_project_members(con: sqlite3.Connection) -> None:
+    con.execute(
+        "INSERT OR IGNORE INTO project_members (project_id, account_id) "
+        "SELECT DISTINCT c.project_id, a.assignee_id FROM assignments a "
+        "JOIN clips c ON c.id = a.clip_id "
+        "WHERE a.assignee_id IS NOT NULL"
+    )
 
 
 def _ensure_clip_version_column(con: sqlite3.Connection) -> None:
@@ -462,24 +511,56 @@ def _clip_from_row(row: sqlite3.Row) -> RegisteredClip:
     )
 
 
-def create_project(path: Path, name: str, hospital: str = "") -> Project:
+def create_project(
+    path: Path, name: str, hospital: str = "", members: tuple[str, ...] | list[str] = ()
+) -> Project:
+    """Create a Project, seeding its members from config. Afterwards the database owns them."""
     name = name.strip()
     if not name:
         raise ValueError("name is required")
     hospital = hospital.strip()
     con = connect(path)
     try:
+        con.execute("BEGIN IMMEDIATE")
         try:
             cur = con.execute(
                 "INSERT INTO projects (name, hospital) VALUES (?, ?)",
                 (name, hospital),
             )
-            con.commit()
         except sqlite3.IntegrityError as exc:
             raise ProjectExists(name) from exc
-        return Project(id=int(cur.lastrowid), name=name, hospital=hospital)
+        project_id = int(cur.lastrowid)
+        _seed_project_members(con, project_id, members)
+        con.commit()
+        return Project(id=project_id, name=name, hospital=hospital)
+    except Exception:
+        con.rollback()
+        raise
     finally:
         con.close()
+
+
+def _seed_project_members(
+    con: sqlite3.Connection, project_id: int, usernames: tuple[str, ...] | list[str]
+) -> None:
+    """A new Project's `members:` list, and only a new Project's.
+
+    This runs once, at registration, and never again — after that the admin owns membership,
+    so a UI edit cannot be reverted by a restart. Seeding cannot create an Account, and at
+    first start the config's Projects are registered before the admin has any Account to name,
+    so a username that does not exist yet is skipped; `add-member` (or the Projects page) is
+    how such an Account joins the Project later.
+    """
+    for name in dict.fromkeys(str(item).strip() for item in usernames if str(item).strip()):
+        row = con.execute(
+            "SELECT id FROM users WHERE username=? COLLATE NOCASE", (name,)
+        ).fetchone()
+        if row is None:
+            continue
+        con.execute(
+            "INSERT OR IGNORE INTO project_members (project_id, account_id) VALUES (?, ?)",
+            (project_id, int(row["id"])),
+        )
 
 
 def get_project_by_name(path: Path, name: str) -> Project:
@@ -496,9 +577,12 @@ def get_project_by_name(path: Path, name: str) -> Project:
         con.close()
 
 
-def get_or_create_project(path: Path, name: str, hospital: str = "") -> Project:
+def get_or_create_project(
+    path: Path, name: str, hospital: str = "", members: tuple[str, ...] | list[str] = ()
+) -> Project:
+    """Register a Project: `members` only ever seed a Project this call creates."""
     try:
-        return create_project(path, name, hospital)
+        return create_project(path, name, hospital, members)
     except ProjectExists:
         return get_project_by_name(path, name)
 
@@ -528,6 +612,98 @@ def list_projects(path: Path) -> list[Project]:
     try:
         rows = con.execute("SELECT id, name, hospital FROM projects ORDER BY id").fetchall()
         return [_project_from_row(row) for row in rows]
+    finally:
+        con.close()
+
+
+def _require_project(con: sqlite3.Connection, project_id: int) -> sqlite3.Row:
+    row = con.execute(
+        "SELECT id, name, hospital FROM projects WHERE id=?", (project_id,)
+    ).fetchone()
+    if row is None:
+        raise ProjectNotFound(project_id)
+    return row
+
+
+def _project_members(con: sqlite3.Connection, project_id: int) -> list[str]:
+    rows = con.execute(
+        "SELECT u.username AS username FROM project_members m "
+        "JOIN users u ON u.id = m.account_id "
+        "WHERE m.project_id = ? ORDER BY u.username COLLATE NOCASE",
+        (project_id,),
+    ).fetchall()
+    return [str(row["username"]) for row in rows]
+
+
+def list_project_members(path: Path, project_id: int) -> list[str]:
+    """Usernames of a Project's members — the Accounts its work may be assigned to."""
+    con = connect(path)
+    try:
+        _require_project(con, project_id)
+        return _project_members(con, project_id)
+    finally:
+        con.close()
+
+
+def set_project_members(path: Path, project_id: int, usernames: list[str]) -> list[str]:
+    """Replace a Project's member list. One unknown username refuses the whole write."""
+    names = list(dict.fromkeys(name.strip() for name in usernames if name.strip()))
+    con = connect(path)
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        _require_project(con, project_id)
+        account_ids = [_account_id(con, name) for name in names]
+        con.execute("DELETE FROM project_members WHERE project_id=?", (project_id,))
+        for account_id in account_ids:
+            con.execute(
+                "INSERT INTO project_members (project_id, account_id) VALUES (?, ?)",
+                (project_id, account_id),
+            )
+        con.commit()
+        return _project_members(con, project_id)
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+
+def add_project_member(path: Path, project_id: int, username: str) -> list[str]:
+    """Add one Account to a Project; adding a member twice changes nothing."""
+    con = connect(path)
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        _require_project(con, project_id)
+        account_id = _account_id(con, username)
+        con.execute(
+            "INSERT OR IGNORE INTO project_members (project_id, account_id) VALUES (?, ?)",
+            (project_id, account_id),
+        )
+        con.commit()
+        return _project_members(con, project_id)
+    except Exception:
+        con.rollback()
+        raise
+    finally:
+        con.close()
+
+
+def remove_project_member(path: Path, project_id: int, username: str) -> list[str]:
+    """Remove one Account from a Project; an Account that is not a member is already gone."""
+    con = connect(path)
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        _require_project(con, project_id)
+        account_id = _account_id(con, username)
+        con.execute(
+            "DELETE FROM project_members WHERE project_id=? AND account_id=?",
+            (project_id, account_id),
+        )
+        con.commit()
+        return _project_members(con, project_id)
+    except Exception:
+        con.rollback()
+        raise
     finally:
         con.close()
 
@@ -624,22 +800,35 @@ def all_tags(path: Path) -> list[str]:
         con.close()
 
 
-def projects_payload(path: Path) -> list[dict]:
+def projects_payload(path: Path, *, include_members: bool = False) -> list[dict]:
+    """Projects and their Clips; admins also get `members` (the pickers' one source)."""
     projects = list_projects(path)
     clips_by_project: dict[int, list[dict]] = {}
     for clip in list_registered_clips(path):
         clips_by_project.setdefault(clip.project_id, []).append(
             {"id": clip.id, "kind": clip.kind}
         )
-    return [
-        {
+    members_by_project: dict[int, list[str]] = {}
+    if include_members:
+        con = connect(path)
+        try:
+            members_by_project = {
+                project.id: _project_members(con, project.id) for project in projects
+            }
+        finally:
+            con.close()
+    payloads = []
+    for project in projects:
+        payload = {
             "id": project.id,
             "name": project.name,
             "hospital": project.hospital,
             "clips": clips_by_project.get(project.id, []),
         }
-        for project in projects
-    ]
+        if include_members:
+            payload["members"] = members_by_project.get(project.id, [])
+        payloads.append(payload)
+    return payloads
 
 
 def _valid_clip_id(clip_id: str) -> str:
@@ -684,9 +873,11 @@ def register_clip(
                 and existing["path"] == stored
             ):
                 _ensure_assignment_rows(con, clip_id)
-                if tags:
-                    con.execute("DELETE FROM clip_tags WHERE clip_id=?", (clip_id,))
-                    _write_tags(con, clip_id, tags)
+                # A re-registration states the Clip's tags in full, so a tag
+                # dropped from the config leaves the store instead of lingering
+                # to match the tag filter forever.
+                con.execute("DELETE FROM clip_tags WHERE clip_id=?", (clip_id,))
+                _write_tags(con, clip_id, tags)
                 con.commit()
                 return _clip_from_row(existing)
             raise ClipExists(clip_id)
@@ -709,7 +900,7 @@ def apply_config_registrations(settings: Settings) -> None:
         return
     path = db_path(settings)
     for spec in settings.projects:
-        project = get_or_create_project(path, spec.name, spec.hospital)
+        project = get_or_create_project(path, spec.name, spec.hospital, spec.members)
         for clip in spec.clips:
             register_clip(
                 path,
@@ -772,14 +963,51 @@ def _fetch_item(con: sqlite3.Connection, clip_id: str, task_type: str) -> dict:
     return _item_dict(row, _clip_tags(con, clip_id))
 
 
-def _account_id(con: sqlite3.Connection, username: str) -> int:
+def _account_login(con: sqlite3.Connection, username: str) -> tuple[int, str]:
+    """This Account's id and its stored spelling, so a refusal echoes the name on file."""
     row = con.execute(
-        "SELECT id FROM users WHERE username=? COLLATE NOCASE",
+        "SELECT id, username FROM users WHERE username=? COLLATE NOCASE",
         (username.strip(),),
     ).fetchone()
     if row is None:
         raise UnknownAccount(username)
-    return int(row["id"])
+    return int(row["id"]), str(row["username"])
+
+
+def _account_id(con: sqlite3.Connection, username: str) -> int:
+    return _account_login(con, username)[0]
+
+
+def _is_project_member(con: sqlite3.Connection, project_id: int, account_id: int) -> bool:
+    row = con.execute(
+        "SELECT 1 FROM project_members WHERE project_id=? AND account_id=?",
+        (project_id, account_id),
+    ).fetchone()
+    return row is not None
+
+
+def _clip_project(con: sqlite3.Connection, clip_id: str) -> tuple[int, str] | None:
+    row = con.execute(
+        "SELECT p.id AS project_id, p.name AS project FROM clips c "
+        "JOIN projects p ON p.id = c.project_id WHERE c.id = ?",
+        (clip_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return int(row["project_id"]), str(row["project"])
+
+
+def _membership_refusal(
+    con: sqlite3.Connection, clip_id: str, account_id: int, login: str
+) -> str | None:
+    """Why this Account may not take this Clip's work, or None when it may."""
+    project = _clip_project(con, clip_id)
+    if project is None:
+        return None
+    project_id, project_name = project
+    if _is_project_member(con, project_id, account_id):
+        return None
+    return f"{login} is not a member of Project {project_name} — add them first."
 
 
 def items_payload(
@@ -885,9 +1113,12 @@ def _with_assignment(path: Path, clip_id: str, task_type: str, fn):
 
 def assign_item(path: Path, clip_id: str, task_type: str, username: str) -> dict:
     def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
-        user_id = _account_id(con, username)
+        user_id, login = _account_login(con, username)
         if row["state"] != "Unassigned":
             raise AssignmentConflict(row["state"])
+        refusal = _membership_refusal(con, clip_id, user_id, login)
+        if refusal is not None:
+            raise NotAProjectMember(refusal)
         con.execute(
             "UPDATE assignments SET state='Labeling', assignee_id=? "
             "WHERE clip_id=? AND task_type=?",
@@ -900,9 +1131,12 @@ def assign_item(path: Path, clip_id: str, task_type: str, username: str) -> dict
 
 def reassign_item(path: Path, clip_id: str, task_type: str, username: str) -> dict:
     def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
-        user_id = _account_id(con, username)
+        user_id, login = _account_login(con, username)
         if row["state"] != "Labeling":
             raise AssignmentConflict(row["state"])
+        refusal = _membership_refusal(con, clip_id, user_id, login)
+        if refusal is not None:
+            raise NotAProjectMember(refusal)
         con.execute(
             "UPDATE assignments SET assignee_id=? WHERE clip_id=? AND task_type=?",
             (user_id, clip_id, task_type),
@@ -1122,6 +1356,22 @@ def _holding_counts(con: sqlite3.Connection) -> dict[int, int]:
     return {int(row["assignee_id"]): int(row["n"]) for row in rows}
 
 
+def _refuse_non_members(
+    con: sqlite3.Connection, rows: list[sqlite3.Row], names: list[str]
+) -> None:
+    """Every assignee must be a member of every Project in the selection.
+
+    Auto-assign may span Projects, so the refusal worth showing names the first
+    (Account, Project) pair that does not hold. Nothing is written when it refuses.
+    """
+    for clip_id in dict.fromkeys(str(row["clip_id"]) for row in rows):
+        for name in names:
+            account_id, login = _account_login(con, name)
+            refusal = _membership_refusal(con, clip_id, account_id, login)
+            if refusal is not None:
+                raise NotAProjectMember(refusal)
+
+
 def auto_assign_items(
     path: Path,
     *,
@@ -1170,6 +1420,7 @@ def auto_assign_items(
         if items is not None:
             wanted = set(items)
             rows = [row for row in rows if (row["clip_id"], row["task_type"]) in wanted]
+        _refuse_non_members(con, rows, names)
 
         existing = _holding_counts(con)
         holding = {name: existing.get(user_ids[name], 0) for name in names}

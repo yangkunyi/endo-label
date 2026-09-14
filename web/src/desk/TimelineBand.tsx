@@ -1,17 +1,19 @@
 import { useCallback, useRef, useState, type PointerEvent, type ReactNode } from "react";
-import { labelColor, frameFromClientX, type TimelineLane } from "../timeline";
+import { labelColor, frameFromClientX, type FrameCoverage, type TimelineLane } from "../timeline";
 import type { LaneBar } from "./writer";
+import { CoverageStrip } from "./CoverageStrip";
 import { MaskCoverageStrip } from "./MaskStrip";
 import { usePlayback } from "./playback";
 
-/** The timeline: the Ruler, the transport row, the coverage strip area and the
- * Lane well. Gestures are pointer-driven; every span write goes back out through
- * the panel's callbacks. */
+/** The timeline: the Ruler, the transport row, the strip area (the focused Task
+ * type's Coverage Strip and mask's own row) and the Lane well. Gestures are
+ * pointer-driven; every span write goes back out through the panel's callbacks. */
 export function TimelineBand({
   clipRailWidth,
   frameCount,
   frameIndex,
   lanes,
+  coverage,
   coveredFrames,
   previewRange,
   brushKeys,
@@ -26,6 +28,7 @@ export function TimelineBand({
   frameCount: number;
   frameIndex: number;
   lanes: TimelineLane[];
+  coverage: FrameCoverage;
   /** Frame indexes carrying a Track mask: the mask strip's own row. */
   coveredFrames: number[];
   previewRange: { from: number; to: number } | null;
@@ -284,9 +287,11 @@ export function TimelineBand({
         </div>
       </div>
       {/* The strip area: read-only coverage rows directly above the Lane well, on
-          the same track geometry. This is the mask row (05 adds the focused
-          Task type's beside it). */}
+          the same track geometry. The focused Task type's Coverage Strip owns the
+          band above the well (05); mask, which is no Task focus tab, gets its own
+          row above it. */}
       <MaskCoverageStrip clipRailWidth={clipRailWidth} frameCount={frameCount} covered={coveredFrames} />
+      <CoverageStrip clipRailWidth={clipRailWidth} coverage={coverage} />
       <div
         role="region"
         aria-label="Lane well"

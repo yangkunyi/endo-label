@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { libraryRowSemanticStyle, nowEmptyText } from "./editorCards";
+import { libraryRowSemanticStyle, nowEmptyText, nowFillStyle } from "./editorCards";
 
 describe("editor cards helpers", () => {
   it("nowEmptyText returns calm muted text with frame number", () => {
@@ -27,6 +27,22 @@ describe("editor cards helpers", () => {
       borderStyle: "solid",
       borderColor: "hsla(200, 35%, 55%, 0.35)",
       backgroundColor: "hsla(200, 35%, 55%, 0.12)",
+    });
+  });
+
+  it("nowFillStyle fills the chip with the identity's own label colour", () => {
+    expect(nowFillStyle("Preparation")).toEqual({
+      backgroundColor: "hsl(186 35% 55%)",
+      color: "var(--color-background)",
+    });
+    expect(nowFillStyle("grasper")).toEqual({
+      backgroundColor: "hsl(27 35% 55%)",
+      color: "var(--color-background)",
+    });
+    // A triplet is one identity, spelled the way the desk spells it.
+    expect(nowFillStyle("Hook / Pull / Tissue")).toEqual({
+      backgroundColor: "hsl(254 35% 55%)",
+      color: "var(--color-background)",
     });
   });
 });

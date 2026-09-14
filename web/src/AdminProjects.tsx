@@ -1,16 +1,112 @@
 import { useState, type FormEvent } from "react";
 import useSWR, { mutate } from "swr";
 import {
+  adminProjectMemberPath,
+  adminProjectMembersPath,
   getJson,
   projectPath,
   projectsPath,
   sendJson,
+  type ProjectMembersResponse,
   type ProjectResponse,
   type ProjectRow,
   type ProjectsResponse,
 } from "./api";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
+
+/** Who works on this Project. Membership gates assignment — a non-member is refused. */
+function MemberList({
+  project,
+  refresh,
+}: {
+  project: ProjectRow;
+  refresh: () => Promise<unknown>;
+}) {
+  const members = project.members ?? [];
+  const [username, setUsername] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function add(event: FormEvent) {
+    event.preventDefault();
+    const name = username.trim();
+    if (!name) {
+      return;
+    }
+    setError(null);
+    try {
+      // The write surface replaces the list, so an add is the current list plus one.
+      await sendJson<ProjectMembersResponse>(adminProjectMembersPath(project.id), "PUT", {
+        members: [...members, name],
+      });
+      setUsername("");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add member");
+    }
+  }
+
+  async function remove(name: string) {
+    setError(null);
+    try {
+      await sendJson<ProjectMembersResponse>(
+        adminProjectMemberPath(project.id, name),
+        "DELETE",
+      );
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not remove member");
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-xs text-muted-foreground">
+        Members ({members.length})
+      </span>
+      {members.length ? (
+        <ul className="flex flex-wrap gap-2">
+          {members.map((name) => (
+            <li
+              key={name}
+              className="flex items-center gap-2 rounded-md border border-border px-2 py-0.5 text-xs"
+            >
+              {name}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-label={`Remove ${name} from ${project.name}`}
+                onClick={() => remove(name)}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Nobody yet — assignment in this Project is refused until someone is a member.
+        </p>
+      )}
+      <form className="flex flex-wrap items-end gap-2" onSubmit={add}>
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Add member
+          <Input
+            aria-label={`Add member to ${project.name}`}
+            placeholder="Username"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+          />
+        </label>
+        <Button type="submit" size="sm" variant="outline">
+          Add
+        </Button>
+      </form>
+      {error ? <p role="alert">{error}</p> : null}
+    </div>
+  );
+}
 
 function ProjectRow({
   project,
@@ -54,6 +150,7 @@ function ProjectRow({
           Save
         </Button>
       </form>
+      <MemberList project={project} refresh={refresh} />
       {project.clips.length ? (
         <p className="text-xs text-muted-foreground">
           {project.clips.map((clip) => `${clip.id} (${clip.kind})`).join(", ")}
