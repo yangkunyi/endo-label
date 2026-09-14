@@ -1,7 +1,7 @@
 # The beads-dag drain's Target config (docs/agents/beads-dag.md). Every key is optional; these are this
 # repo's choices, and a run's opening node prints the effective set on stderr.
 
-concurrency: 6 # six issues in flight at most; merging into Main is serialised by the run lock anyway
+concurrency: 6 # six issues in flight at most; the pack's Main lock serialises the merges anyway
 store: /data3/yky/.local/bin/bd # explicit, so a runner whose PATH lacks bd still opens the store
 # runner: pi   # the pack's default: a pi session per turn, with the full tool ladder. The alternative
 #              # is `dsh`, a child process whose profile mounts one persistent bash tool.
