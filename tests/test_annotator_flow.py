@@ -37,13 +37,15 @@ _ITEMS = {
     "Done": ("CLIPA", "mask"),
 }
 
-# Roles per Account. alice annotates, carol reviews, dave holds no role at all.
+# Roles per Account. alice annotates, carol reviews and becomes the item's assigned
+# reviewer, erin reviews too but is never assigned this item, dave holds no role.
 _ROLES = {
     "admin": {"admin": True, "reviewer": False, "annotator": False},
     "alice": {"admin": False, "reviewer": False, "annotator": True},
     "bob": {"admin": False, "reviewer": False, "annotator": True},
     "carol": {"admin": False, "reviewer": True, "annotator": False},
     "dave": {"admin": False, "reviewer": False, "annotator": False},
+    "erin": {"admin": False, "reviewer": True, "annotator": False},
 }
 
 
@@ -53,7 +55,9 @@ def caps(*actions: str) -> dict[str, bool]:
 
 
 # role x state -> each action. The item is alice's to label and carol's to
-# review (she becomes the assigned reviewer from Reviewing on).
+# review (she becomes the assigned reviewer from Reviewing on). erin holds the
+# reviewer flag without ever holding this item, so she is false in every cell:
+# the flag alone decides no action, Done included.
 _MATRIX: dict[str, dict[str, dict[str, bool]]] = {
     "Unassigned": {
         "admin": caps("assign"),
@@ -61,6 +65,7 @@ _MATRIX: dict[str, dict[str, dict[str, bool]]] = {
         "bob": caps(),
         "carol": caps(),
         "dave": caps(),
+        "erin": caps(),
     },
     "Labeling": {
         "admin": caps("reassign", "unassign", "submit"),
@@ -68,6 +73,7 @@ _MATRIX: dict[str, dict[str, dict[str, bool]]] = {
         "bob": caps(),
         "carol": caps(),
         "dave": caps(),
+        "erin": caps(),
     },
     "Submitted": {
         "admin": caps("assign_reviewer", "recall"),
@@ -75,6 +81,7 @@ _MATRIX: dict[str, dict[str, dict[str, bool]]] = {
         "bob": caps(),
         "carol": caps(),
         "dave": caps(),
+        "erin": caps(),
     },
     "Reviewing": {
         "admin": caps("pass", "reject"),
@@ -82,6 +89,7 @@ _MATRIX: dict[str, dict[str, dict[str, bool]]] = {
         "bob": caps(),
         "carol": caps("pass", "reject", "edit_labels"),
         "dave": caps(),
+        "erin": caps(),
     },
     "Done": {
         "admin": caps("reject", "re_review"),
@@ -89,6 +97,7 @@ _MATRIX: dict[str, dict[str, dict[str, bool]]] = {
         "bob": caps(),
         "carol": caps("reject", "re_review"),
         "dave": caps(),
+        "erin": caps(),
     },
 }
 

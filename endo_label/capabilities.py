@@ -51,13 +51,15 @@ def item_capabilities(
     reviewer_id: int | None,
     account_id: int,
     admin: bool,
-    reviewer: bool,
 ) -> dict[str, bool]:
     """Each action for one item and one Account.
 
     Admin gates assign / reassign / unassign / assign_reviewer. Being the item's
-    assignee or assigned reviewer gates the rest — a role flag alone never writes
-    someone else's item. `edit_labels` mirrors the label-write check exactly.
+    assignee or assigned reviewer gates the rest — the reviewer role flag is not a
+    parameter here because it decides no item action, another team's item least of
+    all. Done is no exception: re-opening it (`re_review`, and the reject back to
+    Labeling) is its assigned reviewer's call or an admin's, the same ruler
+    Reviewing uses. `edit_labels` mirrors the label-write check exactly.
     """
     is_assignee = assignee_id is not None and assignee_id == account_id
     is_reviewer = reviewer_id is not None and reviewer_id == account_id
@@ -70,8 +72,8 @@ def item_capabilities(
         "recall": state == "Submitted" and (is_assignee or admin),
         "pass": state == "Reviewing" and (is_reviewer or admin),
         "reject": (state == "Reviewing" and (is_reviewer or admin))
-        or (state == "Done" and (admin or reviewer)),
-        "re_review": state == "Done" and (admin or reviewer),
+        or (state == "Done" and (is_reviewer or admin)),
+        "re_review": state == "Done" and (is_reviewer or admin),
         "edit_labels": (state == "Labeling" and is_assignee)
         or (state == "Reviewing" and is_reviewer),
     }

@@ -1070,7 +1070,6 @@ def _item_payload_for(con: sqlite3.Connection, row: sqlite3.Row, account: Accoun
         reviewer_id=row["reviewer_id"],
         account_id=account.id,
         admin=account.admin,
-        reviewer=account.reviewer,
     )
     # Why a label write would be refused, in the 403's own words, so a desk can say
     # it before the click rather than after: one author for the sentence, and a
@@ -1200,14 +1199,14 @@ def _actor_capabilities(
     con: sqlite3.Connection, row: sqlite3.Row, account_id: int
 ) -> dict[str, bool]:
     """The one place a transition's permission comes from — HTTP and /api/me."""
-    admin, reviewer = _actor_flags(con, account_id)
+    # The reviewer flag is deliberately not read: no item action turns on it.
+    admin, _reviewer = _actor_flags(con, account_id)
     return capabilities.item_capabilities(
         state=row["state"],
         assignee_id=row["assignee_id"],
         reviewer_id=row["reviewer_id"],
         account_id=account_id,
         admin=admin,
-        reviewer=reviewer,
     )
 
 
@@ -1305,7 +1304,10 @@ def pass_item(path: Path, clip_id: str, task_type: str, *, account_id: int) -> d
 def reject_item(
     path: Path, clip_id: str, task_type: str, note: str, *, account_id: int
 ) -> dict:
-    """Reviewing / Done -> Labeling with one short note. The reviewer or an admin rejects."""
+    """Reviewing / Done -> Labeling with one short note.
+
+    The item's assigned reviewer or an admin rejects either one.
+    """
 
     note = (note or "").strip()
     if not note:
@@ -1328,13 +1330,18 @@ def reject_item(
 
 
 def rereview_item(path: Path, clip_id: str, task_type: str, *, account_id: int) -> dict:
-    """Done -> Submitted for a fresh review. A reviewer or an admin reopens it."""
+    """Done -> Submitted for a fresh review.
+
+    The item's assigned reviewer or an admin reopens it.
+    """
 
     def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
         if row["state"] != "Done":
             raise AssignmentConflict(row["state"])
         if not _actor_capabilities(con, row, account_id)["re_review"]:
-            raise TransitionForbidden("Only a reviewer or an admin can send this item back for review.")
+            raise TransitionForbidden(
+                "Only the assigned reviewer or an admin can send this item back for review."
+            )
         con.execute(
             "UPDATE assignments SET state='Submitted', reviewer_id=NULL, note=NULL, "
             "reviewed_by=NULL, reviewed_at=NULL WHERE clip_id=? AND task_type=?",
@@ -1652,14 +1659,13 @@ def _write_allowed(row: sqlite3.Row | None, account_id: int) -> bool:
     """Labeling: the assignee writes. Submitted/Done: nobody. Reviewing: the reviewer."""
     if row is None:
         return False
-    admin, reviewer = False, False  # edit_labels never depends on a role flag
+    # edit_labels never depends on a role flag — not the admin's either.
     return capabilities.item_capabilities(
         state=row["state"],
         assignee_id=row["assignee_id"],
         reviewer_id=row["reviewer_id"],
         account_id=account_id,
-        admin=admin,
-        reviewer=reviewer,
+        admin=False,
     )["edit_labels"]
 
 
