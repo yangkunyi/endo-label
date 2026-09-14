@@ -290,31 +290,31 @@ def test_admin_creates_projects_and_edits_the_hospital_field(tmp_path: Path) -> 
     assert admin.patch("/api/projects/9999", json={"hospital": "Nowhere"}).status_code == 404
 
 
-def test_sitting_config_registers_clip_tags_for_filtering(tmp_path: Path) -> None:
-    frames = tmp_path / "frames"
-    media = _jpeg_clip(frames, "CASE01")
+def _sitting_with_tags(tmp_path: Path, media: Path, tags: list[str]) -> Path:
+    """One sitting YAML whose single Clip carries `tags` (no key at all when empty)."""
+    lines = [
+        f"frames_root: {media.parent}",
+        f"labels_root: {tmp_path / 'labels'}",
+        f"annotations_root: {tmp_path / 'mask'}",
+        "projects:",
+        "  - name: West Study",
+        "    hospital: West China",
+        "    clips:",
+        "      - id: CASE01",
+        "        kind: jpeg",
+        f"        path: {media}",
+    ]
+    if tags:
+        lines.append("        tags:")
+        lines.extend(f"          - {tag}" for tag in tags)
     yaml_path = tmp_path / "sitting.yaml"
-    yaml_path.write_text(
-        "\n".join(
-            [
-                f"frames_root: {frames}",
-                f"labels_root: {tmp_path / 'labels'}",
-                f"annotations_root: {tmp_path / 'mask'}",
-                "projects:",
-                "  - name: West Study",
-                "    hospital: West China",
-                "    clips:",
-                "      - id: CASE01",
-                "        kind: jpeg",
-                f"        path: {media}",
-                "        tags:",
-                "          - west",
-                "          - chole",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    yaml_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return yaml_path
+
+
+def test_sitting_config_registers_clip_tags_for_filtering(tmp_path: Path) -> None:
+    media = _jpeg_clip(tmp_path / "frames", "CASE01")
+    yaml_path = _sitting_with_tags(tmp_path, media, ["west", "chole"])
     client = authed_client(load_settings(yaml_path))
     assert client.get("/api/tags").json()["tags"] == ["chole", "west"]
     tagged = client.get("/api/clips", params={"tag": "west"}).json()["clips"]
@@ -324,6 +324,29 @@ def test_sitting_config_registers_clip_tags_for_filtering(tmp_path: Path) -> Non
     ).json()["items"]
     assert {row["clip_id"] for row in items} == {"CASE01"}
     assert all(row["tags"] == ["chole", "west"] for row in items)
+
+
+def test_a_tag_dropped_from_the_config_leaves_the_clip(tmp_path: Path) -> None:
+    """Re-registering a Clip states its tags in full, so dropping one drops it."""
+    media = _jpeg_clip(tmp_path / "frames", "CASE01")
+    yaml_path = _sitting_with_tags(tmp_path, media, ["west", "chole"])
+    client = authed_client(load_settings(yaml_path))
+    assert client.get("/api/tags").json()["tags"] == ["chole", "west"]
+
+    # One tag goes: the other stays, the dropped one stops matching every filter.
+    yaml_path = _sitting_with_tags(tmp_path, media, ["west"])
+    client = authed_client(load_settings(yaml_path))
+    assert client.get("/api/tags").json()["tags"] == ["west"]
+    assert client.get("/api/clips", params={"tag": "chole"}).json()["clips"] == []
+    assert client.get("/api/items", params={"tag": "chole"}).json()["items"] == []
+    assert all(row["tags"] == ["west"] for row in client.get("/api/items").json()["items"])
+
+    # The last tag goes: the Clip keeps its labels and loses its tags.
+    yaml_path = _sitting_with_tags(tmp_path, media, [])
+    client = authed_client(load_settings(yaml_path))
+    assert client.get("/api/tags").json()["tags"] == []
+    assert client.get("/api/clips", params={"tag": "west"}).json()["clips"] == []
+    assert all(row["tags"] == [] for row in client.get("/api/items").json()["items"])
 
 
 def test_register_clip_cli_accepts_repeated_tags(tmp_path: Path, capsys) -> None:
