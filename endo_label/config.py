@@ -42,8 +42,9 @@ class ClipEntry:
     kind: str
     path: Path
     # Tri-state: `None` is an entry that says nothing about tags, so registering it leaves
-    # whatever `clip_tags` already holds. A tuple — empty included — is the Clip's tags
-    # stated in full, so a tag missing from it leaves the store (ADR 0028).
+    # whatever `clip_tags` already holds — including a `tags:` holding no tag name at all.
+    # A tuple — empty included — is the Clip's tags stated in full, so a tag missing from
+    # it leaves the store (ADR 0028).
     tags: tuple[str, ...] | None = None
 
 
@@ -144,11 +145,17 @@ def _parse_tags(value: object, path: Path) -> tuple[str, ...] | None:
     key absent, or left bare and so null, leave the store's tags alone). Only an
     explicit empty list clears, so a key left dangling in a config never deletes what
     the admin wrote.
+
+    The comma-separated string is the convenience form, and it states the tags it
+    names: a blank string names none, which is the same silence as an absent key, not
+    a statement that the Clip has no tags. A blank *entry* inside a stated list names
+    no tag either — which is why the CLI clears a Clip with `--tag ''` (ADR 0028).
     """
     if value is None:
         return None
     if isinstance(value, str):
-        return tuple(tag.strip() for tag in value.split(",") if tag.strip())
+        named = tuple(tag.strip() for tag in value.split(",") if tag.strip())
+        return named or None
     if isinstance(value, list):
         return tuple(str(tag).strip() for tag in value if str(tag).strip())
     raise ConfigError(f"{path}: Clip tags must be a list of strings")

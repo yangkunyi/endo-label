@@ -10,6 +10,7 @@ import { ResizeHandle } from "./desk/ResizeHandle";
 import { TimelinePanel } from "./desk/TimelinePanel";
 import { vocabControlsOf } from "./desk/vocabControls";
 import { useDeskData } from "./desk/deskData";
+import { controlToBlur } from "./desk/focusGuard";
 import { useLaneVisibility } from "./desk/lanes";
 import type { DeskNotice } from "./desk/notice";
 import { useIdentityWriter } from "./desk/writer";
@@ -17,26 +18,19 @@ import { useDeskStore, type EditorKind } from "./deskStore";
 import { foldCoverage } from "./timeline";
 
 /**
- * A mouse click must not leave focus on a control: with focus on a button,
- * Enter re-fires it (and with focus on a checkbox, Space toggles it instead of
- * the transport), and the desk's shortcuts then read as intercepted.
- * Keyboard users who Tab to a control keep Space/Enter.
+ * A mouse click must not leave focus on the control it hit: with focus on a
+ * button, Enter re-fires it (and with focus on a checkbox, Space toggles it
+ * instead of the transport), and the desk's shortcuts then read as intercepted.
+ * `controlToBlur` is that rule, over the click's *effective* control — the rail's
+ * scope toggle is a `<label>` around its checkbox, so a click on its words is a
+ * click on the checkbox. Keyboard users who Tab to a control keep Space/Enter.
  */
 function releaseFocus(event: ReactPointerEvent<HTMLElement>) {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
     return;
   }
-  // Menus and dialogs own their focus; leave them alone.
-  if (target.closest('[role="dialog"], [role="menu"], [role="listbox"], [aria-haspopup]')) {
-    return;
-  }
-  const control = target.closest(
-    "button, [role='button'], [role='radio'], input[type='checkbox']",
-  );
-  if (control instanceof HTMLElement) {
-    control.blur();
-  }
+  controlToBlur(target)?.blur();
 }
 
 /**
