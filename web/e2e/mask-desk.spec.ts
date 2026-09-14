@@ -862,3 +862,22 @@ test("the Track lane eye hides the row; the mask strip stays honest", async ({ p
   await trackList.getByRole("button", { name: "Show lane" }).click();
   await expect(lane).toBeVisible();
 });
+
+test("two Tracks get a lane each, spanning their own Frames", async ({ page }) => {
+  await page.goto("/clips/CLIP_E2E");
+  await videoReady(page);
+  await clickAt(page, 0.5, 0.5);
+  await expect(trackRow(page, "track-1")).toBeVisible();
+
+  await scrubToFrame(page, 1);
+  await page.getByRole("button", { name: "New Track" }).click();
+  await clickAt(page, 0.25, 0.25);
+  await expect(trackRow(page, "track-2")).toBeVisible();
+
+  await expect(coverageLabel(page, 2, 2)).toBeVisible();
+  await expect(page.locator("[data-lane-head]")).toHaveText(["track-1", "track-2"]);
+  const first = (await laneSpans(page, 1).boundingBox())!;
+  const second = (await laneSpans(page, 2).boundingBox())!;
+  // Each lane holds its own Frame: the two runs sit on opposite halves.
+  expect(first.x + first.width).toBeLessThan(second.x + 1);
+});

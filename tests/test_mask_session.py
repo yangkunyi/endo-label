@@ -1211,6 +1211,26 @@ def test_summary_carries_the_track_ids_behind_each_covered_frame(
     ]
 
 
+def test_deleting_a_track_drops_it_and_its_masks_from_annotation(
+    tmp_path: Path,
+) -> None:
+    """The Track delete is a mask edit: the mask store loses Track and masks."""
+    client = _sitting_with(tmp_path)
+    _open(client)
+    assert client.post("/api/session/predict", json=_POINT).status_code == 200
+    summary = client.get("/api/clips/CLIPA/annotations").json()
+    assert [t["track_id"] for t in summary["tracks"]] == [1]
+    assert [f["frame_index"] for f in summary["frames"]] == [0]
+
+    dropped = client.delete("/api/session/tracks/1")
+    assert dropped.status_code == 200, dropped.text
+
+    after = client.get("/api/clips/CLIPA/annotations").json()
+    assert after["tracks"] == []
+    assert after["frames"] == []
+    assert client.get("/api/clips/CLIPA/annotations/frames/0").json()["masks"] == []
+
+
 def _start_propagate(client: TestClient, **overrides) -> dict:
     body = {"direction": "forward", "start_frame_index": 0, **overrides}
     started = client.post("/api/session/propagate", json=body)
