@@ -113,6 +113,7 @@ export function ClipDesk() {  const { clipId } = useParams();
                   phaseFrames={desk.phaseDoc?.frames ?? {}}
                   classFrames={desk.classDoc?.frames ?? {}}
                   tripletFrames={desk.tripletDoc?.frames ?? {}}
+                  annotation={desk.annotation}
                   writer={writer}
                   notify={setNotice}
                 />

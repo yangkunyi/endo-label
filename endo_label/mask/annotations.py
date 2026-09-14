@@ -291,6 +291,25 @@ def auto_save_merge(settings: Settings, clip_id: str, incoming: dict[str, Any]) 
     return save_doc(settings, clip_id, merged)
 
 
+def mask_track_ids(masks: list[dict[str, Any]]) -> list[int]:
+    """Track ids carrying a mask on one Frame.
+
+    The desk reads this to answer "标到哪了" for mask: the mask strip covers a
+    Frame when this list is non-empty, and each Track Lane spans the Frames
+    holding that Track id.
+    """
+    ids: set[int] = set()
+    for mask in masks:
+        track_id = mask.get("track_id")
+        if track_id is None:
+            continue
+        try:
+            ids.add(int(track_id))
+        except (TypeError, ValueError):
+            continue
+    return sorted(ids)
+
+
 def summary(settings: Settings, clip_id: str) -> dict[str, Any]:
     doc = load(settings, clip_id)
     frames_out: list[dict[str, Any]] = []
@@ -304,6 +323,7 @@ def summary(settings: Settings, clip_id: str) -> dict[str, Any]:
                 "frame_stem": entry.get("frame_stem") or stem,
                 "frame_index": entry.get("frame_index"),
                 "mask_count": len(masks),
+                "track_ids": mask_track_ids(masks),
             }
         )
     return {

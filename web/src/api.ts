@@ -255,10 +255,20 @@ export type SessionPublic = {
   tracks?: TrackRow[];
 };
 
+export type AnnotationSummaryFrame = {
+  frame_stem: string;
+  frame_index: number | null;
+  mask_count: number;
+  /** Track ids holding a mask on this Frame: the mask strip and Track Lanes read it. */
+  track_ids?: number[];
+};
+
 export type AnnotationSummary = {
   clip_id: string;
   tracks: TrackRow[];
+  /** Covered Frames only (the mask store keeps no row for an uncovered Frame). */
   frame_count: number;
+  frames?: AnnotationSummaryFrame[];
 };
 
 export type FrameAnnotations = {

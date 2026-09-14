@@ -729,6 +729,11 @@ class SessionManager:
             self._predictor.remove_track(track_id)
         except Exception:
             pass
+        # ADR 0025: the Track delete is a mask edit, so Annotation loses the
+        # Track and every mask under it right away. The desk reads the mask
+        # store for the picture, the mask strip and the Track Lanes, so a delete
+        # that only touched the Session would leave a phantom behind.
+        self._persist_session()
         return self.get_public()
 
     def clear_frame_mask(

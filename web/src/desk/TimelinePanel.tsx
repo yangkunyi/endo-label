@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { ClipMeta, TripletRow, Vocab } from "../api";
+import type { AnnotationSummary, ClipMeta, TripletRow, Vocab } from "../api";
 import { useDeskStore, type EditorKind } from "../deskStore";
+import { maskCoveredFrames } from "../maskCoverage";
 import { foldCoverage } from "../timeline";
 import { brushColorKey, useBrushRange, useDeskLanes } from "./lanes";
+import { useTrackLanes } from "./maskLanes";
 import { TransportRow } from "./PlayerPanel";
 import { TimelineBand } from "./TimelineBand";
 import { isEditableTarget } from "./keyboard";
@@ -20,6 +22,7 @@ export function TimelinePanel({
   phaseFrames,
   classFrames,
   tripletFrames,
+  annotation,
   writer,
   notify,
 }: {
@@ -31,6 +34,8 @@ export function TimelinePanel({
   phaseFrames: Record<string, string>;
   classFrames: Record<string, string[]>;
   tripletFrames: Record<string, TripletRow[]>;
+  /** The mask summary: the mask strip's coverage and the Track Lanes' spans. */
+  annotation: AnnotationSummary | null | undefined;
   writer: IdentityWriter;
   notify: (notice: DeskNotice) => void;
 }) {
@@ -43,6 +48,11 @@ export function TimelinePanel({
     tripletFrames,
     vocab,
   });
+  // Track Lanes join the Vocab Lanes in the same well; the mask strip answers
+  // for every Track at once, whatever the Lane visibility says.
+  const trackLanes = useTrackLanes({ frameCount: clip.frame_count, summary: annotation });
+  const allLanes = useMemo(() => [...lanes, ...trackLanes], [lanes, trackLanes]);
+  const coveredFrames = useMemo(() => maskCoveredFrames(annotation), [annotation]);
   const { previewRange, focusedBrush } = useBrushRange({ clipId, frameIndex, focus, vocab });
   // One derived map per Task type: the strip draws it and the desk's hints count
   // it, both through `foldCoverage` (ADR 0029).
@@ -157,8 +167,9 @@ export function TimelinePanel({
       clipRailWidth={clipRailWidth}
       frameCount={clip.frame_count}
       frameIndex={frameIndex}
-      lanes={lanes}
+      lanes={allLanes}
       coverage={coverage}
+      coveredFrames={coveredFrames}
       previewRange={previewRange}
       brushKeys={focusedBrush.map(brushColorKey)}
       barSelection={barSelection}
