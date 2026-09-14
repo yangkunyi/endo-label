@@ -369,9 +369,20 @@ class SessionManager:
         session = SessionState(session_id=str(uuid.uuid4()), clip_id=clip_id)
         self._sessions[key] = session
         self._set_current(key)
-        self._ensure_predictor_clip(clip_id)
-        if load_annotations:
-            self._hydrate_from_annotations(clip_id)
+        try:
+            self._ensure_predictor_clip(clip_id)
+            if load_annotations:
+                self._hydrate_from_annotations(clip_id)
+        except Exception:
+            # A Session that never opened must not linger: the next open would
+            # find it "existing" and answer 201 with a Session the predictor
+            # does not hold.
+            self._sessions.pop(key, None)
+            if self._current_key == key:
+                self._current_key = None
+            if self._active_clip.get(key[0]) == key[1]:
+                self._active_clip.pop(key[0], None)
+            raise
         self._enforce_caps()
         return session
 
@@ -379,9 +390,12 @@ class SessionManager:
         """Make the shared predictor hold this Clip's model Session."""
         if self._predictor_clip == clip_id:
             return
-        frames_dir = str((self._settings.frames_root / clip_id).resolve())
         try:
-            self._predictor.open_clip(clip_id=clip_id, frames_dir=frames_dir)
+            source = catalog.source_path(self._settings, clip_id)
+        except catalog.ClipNotFound as exc:
+            raise SessionClipNotFound(clip_id) from exc
+        try:
+            self._predictor.open_clip(clip_id=clip_id, frames_dir=str(source))
         except Exception as exc:
             raise WorkerNotReady(str(exc)) from exc
         self._predictor_clip = clip_id

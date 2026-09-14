@@ -332,6 +332,26 @@ def media_path(settings: Settings, clip_id: str) -> Path:
     return ensure_transcoded(settings, clip_id)
 
 
+def source_path(settings: Settings, clip_id: str) -> Path:
+    """The registered source media itself: the JPEG folder, or the video file.
+
+    Clips are registered with their own path (ticket 10), so the source is the
+    entry's path — never ``frames_root / clip_id``, the retired single-user
+    layout that only happened to coincide when the ids were folder names.
+    """
+    entry = _entry(settings, clip_id)
+    path = entry.path.resolve()
+    if entry.kind == "jpeg":
+        if not path.is_dir():
+            raise ClipNotFound(clip_id)
+    elif entry.kind == "video":
+        if not path.is_file():
+            raise ClipNotFound(clip_id)
+    else:
+        raise ClipNotFound(clip_id)
+    return path
+
+
 def _clip_row(entry: ClipEntry, settings: Settings) -> dict | None:
     if entry.kind == "jpeg":
         try:
