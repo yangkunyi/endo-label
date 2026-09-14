@@ -49,6 +49,9 @@ class ProjectSpec:
     name: str
     hospital: str
     clips: tuple[ClipEntry, ...] = ()
+    # Seeds this Project's members when it is first registered. Afterwards the database
+    # owns membership (the Projects page / add-member), so a restart never rewrites it.
+    members: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -140,6 +143,17 @@ def _parse_tags(value: object, path: Path) -> tuple[str, ...]:
     raise ConfigError(f"{path}: Clip tags must be a list of strings")
 
 
+def _parse_members(value: object, path: Path) -> tuple[str, ...]:
+    """A Project's `members:` list: Account usernames, or one comma-separated string."""
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        return tuple(name.strip() for name in value.split(",") if name.strip())
+    if isinstance(value, list):
+        return tuple(str(name).strip() for name in value if str(name).strip())
+    raise ConfigError(f"{path}: Project members must be a list of usernames")
+
+
 def _parse_projects(value: object, path: Path, base: Path) -> tuple[ProjectSpec, ...]:
     if value is None:
         return ()
@@ -159,7 +173,14 @@ def _parse_projects(value: object, path: Path, base: Path) -> tuple[ProjectSpec,
             if clip.id in seen_ids:
                 raise ConfigError(f"{path}: duplicate Clip id {clip.id}")
             seen_ids.add(clip.id)
-        specs.append(ProjectSpec(name=name, hospital=hospital, clips=clips))
+        specs.append(
+            ProjectSpec(
+                name=name,
+                hospital=hospital,
+                clips=clips,
+                members=_parse_members(item.get("members"), path),
+            )
+        )
     return tuple(specs)
 
 

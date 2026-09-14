@@ -11,7 +11,7 @@ from endo_label.__main__ import main
 from endo_label.app import create_app
 from endo_label.config import Settings, load_settings
 from endo_label.coordination import create_account, create_project, db_path, register_clip
-from tests.sitting_http import authed_client, ensure_registered, login, seed_admin
+from tests.sitting_http import authed_client, ensure_members, ensure_registered, login, seed_admin
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -36,6 +36,7 @@ def _shared_app(tmp_path: Path):
     path = db_path(settings)
     create_account(path, "alice", "pw", annotator=True)
     create_account(path, "carol", "pw", reviewer=True)
+    ensure_members(settings, "alice", "carol")
     return settings, create_app(settings)
 
 

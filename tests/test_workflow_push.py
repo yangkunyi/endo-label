@@ -10,7 +10,7 @@ import httpx
 from endo_label.config import Settings
 from endo_label.coordination import create_account, db_path
 from tests.live_http import account_client, live_server, read_event
-from tests.sitting_http import ensure_registered, seed_admin
+from tests.sitting_http import ensure_members, ensure_registered, seed_admin
 
 _STREAM = "/api/events"
 
@@ -39,6 +39,7 @@ def _accounts(settings: Settings) -> None:
     create_account(path, "alice", "pw", annotator=True)
     create_account(path, "bob", "pw", annotator=True)
     create_account(path, "carol", "pw", reviewer=True)
+    ensure_members(settings, "alice", "bob", "carol")
 
 
 def _resync(lines: Iterator[str]) -> None:

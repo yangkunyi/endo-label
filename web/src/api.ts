@@ -208,9 +208,13 @@ export type ProjectRow = {
   name: string;
   hospital: string;
   clips: { id: string; kind: string }[];
+  /** Admins only: the Accounts this Project's work may be assigned to. */
+  members?: string[];
 };
 
 export type ProjectsResponse = { projects: ProjectRow[] };
+
+export type ProjectMembersResponse = { members: string[] };
 
 export type ProjectResponse = {
   project: { id: number; name: string; hospital: string };
@@ -397,6 +401,14 @@ export function projectsPath(): string {
 
 export function projectPath(projectId: number): string {
   return `/api/projects/${projectId}`;
+}
+
+export function adminProjectMembersPath(projectId: number): string {
+  return `/api/admin/projects/${projectId}/members`;
+}
+
+export function adminProjectMemberPath(projectId: number, username: string): string {
+  return `${adminProjectMembersPath(projectId)}/${encodeURIComponent(username)}`;
 }
 
 export function tagsPath(): string {
