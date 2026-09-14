@@ -26,9 +26,12 @@ was given some.** A registration *is* given tags by a config Clip entry whose `t
 an explicitly empty `tags: []` included — or by one or more `--tag` on `register-clip`; that list is
 then the Clip's tags in full, rewritten on every boot, so a tag dropped from it leaves the store and
 its filters. A registration given no tag list at all — `tags:` absent (or left bare, which is the same
-null value), no `--tag` — says nothing about tags and leaves `clip_tags` as it stands, so the next
-`create_app` does not undo `PUT /api/clips/{clip_id}/tags`. Two writers over one table is fine as long
-as the weaker one only speaks when spoken to.
+null value), a `tags:` naming no tag (an empty string), no `--tag` — says nothing about tags and leaves
+`clip_tags` as it stands, so the next `create_app` does not undo `PUT /api/clips/{clip_id}/tags`. The
+list is what states a Clip's tags in itself; the comma-separated string form is a convenience that
+states the tags it names, so a blank one states nothing rather than stating an empty list. Empty
+*entries* inside a stated list name no tag either, which is why the CLI clears a Clip with
+`--tag ''`. Two writers over one table is fine as long as the weaker one only speaks when spoken to.
 
 ## Considered Options
 
