@@ -69,13 +69,25 @@ export function FrameControls({
   // "[" marks the range start, "]" paints the whole range with the Brush.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (isEditableTarget(event.target)) {
-        return;
-      }
-      if (!clip || clip.frame_count <= 0 || !hasBrush) {
-        return;
-      }
       const key = event.key.toLowerCase();
+      const bracket = key === "[" || key === "]";
+      const typing = isEditableTarget(event.target);
+      // Brackets act even from inside a Vocab field: they never belong to a
+      // name, and marking a range should not mean leaving the typeahead.
+      // Letters stay typeable, so "i"/"o" keep the editable-target guard.
+      if (typing && !bracket) {
+        return;
+      }
+      if (!clip || clip.frame_count <= 0) {
+        return;
+      }
+      if (!hasBrush) {
+        // Silence here reads as "the key was swallowed" (trial feedback).
+        if (bracket && !typing) {
+          notify({ text: "Brush is empty — pick an identity in the Library first", error: true });
+        }
+        return;
+      }
       if (key === "[" || key === "i") {
         event.preventDefault();
         setSpanStart({ clipId: clip.id, frameIndex });
@@ -88,7 +100,7 @@ export function FrameControls({
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [applyRange, clip, frameIndex, hasBrush, setSpanStart]);
+  }, [applyRange, clip, frameIndex, hasBrush, notify, setSpanStart]);
 
   return (
       <footer aria-label="Player controls" className="flex shrink-0 items-center gap-3 overflow-x-auto border-t border-border bg-card px-4 py-2" style={{ height }}>

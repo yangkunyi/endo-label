@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useParams } from "react-router-dom";
 import { ClipRail } from "./desk/ClipRail";
 import { DeskItemActions } from "./desk/DeskItemActions";
@@ -16,12 +16,31 @@ import { useIdentityWriter } from "./desk/writer";
 import { useDeskStore, type EditorKind } from "./deskStore";
 
 /**
+ * A mouse click must not leave focus on a control: with focus on a button,
+ * Enter re-fires it, and the desk's shortcuts then read as intercepted.
+ * Keyboard users who Tab to a button keep Space/Enter.
+ */
+function releaseFocus(event: ReactPointerEvent<HTMLElement>) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  // Menus and dialogs own their focus; leave them alone.
+  if (target.closest('[role="dialog"], [role="menu"], [role="listbox"], [aria-haspopup]')) {
+    return;
+  }
+  const control = target.closest("button, [role='button'], [role='radio']");
+  if (control instanceof HTMLElement) {
+    control.blur();
+  }
+}
+
+/**
  * The desk: one Clip, one Frame, one focused Task type. This shell only wires
  * the panels — the Clip rail, player, timeline, mask panel, editor rail and
  * Frame controls each own their own state.
  */
-export function ClipDesk() {
-  const { clipId } = useParams();
+export function ClipDesk() {  const { clipId } = useParams();
   const desk = useDeskData(clipId);
   const { clip, frameIndex, vocab } = desk;
   const [taskFocus, setTaskFocus] = useState<EditorKind>("class");
@@ -46,7 +65,10 @@ export function ClipDesk() {
   });
 
   return (
-    <main className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground">
+    <main
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground"
+      onPointerUp={releaseFocus}
+    >
       <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-3 py-2">
         <span className="text-sm font-semibold tracking-wide">endo_label</span>
         <span className="text-muted-foreground" aria-hidden="true">/</span>

@@ -204,6 +204,11 @@ export function TimelineBand({
   return (
     <div role="region" aria-label="Timeline" data-timeline="" className="shrink-0 border-t border-border bg-card select-none">
       <div className="flex">
+        <div className="h-9 shrink-0 border-r border-border" style={{ width: clipRailWidth }} />
+        <div className="w-1 shrink-0" />
+        <div className="min-w-0 flex-1">{transport}</div>
+      </div>
+      <div className="flex">
         <div className="h-3 shrink-0 border-r border-border" style={{ width: clipRailWidth }} />
         <div className="w-1 shrink-0" />
         <div ref={trackRef} className="relative min-w-0 flex-1" data-timeline-track="">
@@ -230,6 +235,14 @@ export function TimelineBand({
             onPointerUp={stopDrag}
             onPointerCancel={stopDrag}
           >
+            {/* How far the Playhead has come: the seek track reads as progress
+                instead of a bare hairline (trial feedback). */}
+            <span
+              data-ruler-progress=""
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 left-0 bg-[#5e6ad2]/20"
+              style={{ width: playheadLeft }}
+            />
             <span aria-hidden="true" className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
             {previewRange ? (
               <span
@@ -245,11 +258,6 @@ export function TimelineBand({
             <span data-playhead="" aria-hidden="true" className="pointer-events-none absolute top-0.5 h-2 w-2 -translate-x-1/2 rounded-full bg-[#5e6ad2]" style={{ left: playheadLeft }} />
           </div>
         </div>
-      </div>
-      <div className="flex">
-        <div className="h-9 shrink-0 border-r border-border" style={{ width: clipRailWidth }} />
-        <div className="w-1 shrink-0" />
-        <div className="min-w-0 flex-1">{transport}</div>
       </div>
       <div
         role="region"

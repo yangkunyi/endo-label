@@ -449,14 +449,14 @@ test("jpeg player shows the hand-built transport and Frame print", async ({ page
   await expect(page.locator("[data-transport-time]")).toHaveText("0:00 / 0:00");
   await expectNoMediaChrome(page);
   await expect(page.getByLabel("Player controls").getByText("Frame 0 of 2")).toBeVisible();
-  // transport row sits directly under the Ruler and above the Lane well, in the player column
+  // transport row sits directly under the picture, with the Ruler between it and the Lane well
   const playerBox = await page.getByRole("region", { name: "Player", exact: true }).boundingBox();
   const rulerBox = await page.getByRole("slider", { name: "Ruler" }).boundingBox();
   const transportBox = await transport.boundingBox();
   const wellBox = await page.getByRole("region", { name: "Lane well" }).boundingBox();
   expect(playerBox && rulerBox && transportBox && wellBox).toBeTruthy();
-  expect(transportBox!.y).toBeGreaterThanOrEqual(rulerBox!.y + rulerBox!.height - 1);
-  expect(wellBox!.y).toBeGreaterThanOrEqual(transportBox!.y + transportBox!.height - 1);
+  expect(rulerBox!.y).toBeGreaterThanOrEqual(transportBox!.y + transportBox!.height - 1);
+  expect(wellBox!.y).toBeGreaterThanOrEqual(rulerBox!.y + rulerBox!.height - 1);
   expect(transportBox!.x).toBeGreaterThanOrEqual(playerBox!.x - 2);
   await scrubToFrame(page, 1);
   await expect(page.getByText("Frame 1 of 2")).toBeVisible();
@@ -1289,8 +1289,9 @@ test("empty Clip shows Ruler and Lane well; picture height stays put when a Lane
   expect(clipsBox && playerBox && timelineBox && editorsBox && rulerBox && transportBox && wellBox).toBeTruthy();
   expect(timelineBox!.y).toBeGreaterThanOrEqual(playerBox!.y + playerBox!.height - 1);
   expect(rulerBox!.y).toBeGreaterThanOrEqual(playerBox!.y + playerBox!.height - 1);
-  expect(transportBox!.y).toBeGreaterThanOrEqual(rulerBox!.y + rulerBox!.height - 1);
-  expect(wellBox!.y).toBeGreaterThanOrEqual(transportBox!.y + transportBox!.height - 1);
+  expect(transportBox!.y).toBeGreaterThanOrEqual(playerBox!.y + playerBox!.height - 1);
+  expect(rulerBox!.y).toBeGreaterThanOrEqual(transportBox!.y + transportBox!.height - 1);
+  expect(wellBox!.y).toBeGreaterThanOrEqual(rulerBox!.y + rulerBox!.height - 1);
   expect(Math.abs(timelineBox!.x - clipsBox!.x)).toBeLessThan(2);
   expect(Math.abs(timelineBox!.x + timelineBox!.width - (playerBox!.x + playerBox!.width))).toBeLessThan(2);
   expect(timelineBox!.x + timelineBox!.width).toBeLessThanOrEqual(editorsBox!.x + 1);
@@ -1342,8 +1343,9 @@ test("empty Clip shows Ruler and Lane well; picture height stays put when a Lane
   const videoWellBox = await videoWell.boundingBox();
   expect(videoPlayerBox && videoRulerBox && videoTransportBox && videoWellBox).toBeTruthy();
   expect(videoRulerBox!.y).toBeGreaterThanOrEqual(videoPlayerBox!.y + videoPlayerBox!.height - 1);
-  expect(videoTransportBox!.y).toBeGreaterThanOrEqual(videoRulerBox!.y + videoRulerBox!.height - 1);
-  expect(videoWellBox!.y).toBeGreaterThanOrEqual(videoTransportBox!.y + videoTransportBox!.height - 1);
+  expect(videoTransportBox!.y).toBeGreaterThanOrEqual(videoPlayerBox!.y + videoPlayerBox!.height - 1);
+  expect(videoRulerBox!.y).toBeGreaterThanOrEqual(videoTransportBox!.y + videoTransportBox!.height - 1);
+  expect(videoWellBox!.y).toBeGreaterThanOrEqual(videoRulerBox!.y + videoRulerBox!.height - 1);
   expect(Math.abs(videoWellBox!.height - emptyWellHeight)).toBeLessThan(2);
 });
 
