@@ -9,6 +9,7 @@ import { ClipDesk } from "./ClipDesk";
 import { Login } from "./Login";
 import { MyTasks } from "./MyTasks";
 import { getJson, mePath, type Me } from "./api";
+import { DESK_PATH, MY_TASKS_PATH, startsOnMyTasks } from "./routes";
 
 /** Annotators and reviewers default to My Tasks; everyone else lands on the desk. */
 function Home() {
@@ -16,7 +17,7 @@ function Home() {
   if (!data) {
     return <p className="p-6">Loading…</p>;
   }
-  return data.capabilities?.annotate || data.capabilities?.review ? <MyTasks /> : <ClipDesk />;
+  return startsOnMyTasks(data) ? <MyTasks /> : <ClipDesk />;
 }
 
 export default function App() {
@@ -26,7 +27,8 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route element={<AppShell />}>
           <Route path="/" element={<Home />} />
-          <Route path="/tasks" element={<MyTasks />} />
+          <Route path={DESK_PATH} element={<ClipDesk />} />
+          <Route path={MY_TASKS_PATH} element={<MyTasks />} />
           <Route path="/clips/:clipId" element={<ClipDesk />} />
           <Route path="/admin/users" element={<AdminUsers />} />
           <Route path="/admin/projects" element={<AdminProjects />} />
