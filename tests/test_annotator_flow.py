@@ -191,6 +191,27 @@ def test_me_capability_matrix_is_role_by_state(
     }
 
 
+def test_me_answers_404_for_an_item_no_assignment_holds(tmp_path: Path) -> None:
+    """A (Clip, Task type) pair the store does not hold has no capability cell."""
+    clients = _clients(tmp_path)
+    alice = clients["alice"]
+
+    held = alice.get("/api/me", params={"clip_id": "CLIPA", "task_type": "phase"})
+    assert held.status_code == 200, held.text
+    assert held.json()["item"]["clip_id"] == "CLIPA"
+
+    # A Task type this Clip does not carry, and a Clip nobody registered.
+    unknown_type = alice.get("/api/me", params={"clip_id": "CLIPA", "task_type": "nope"})
+    assert unknown_type.status_code == 404, unknown_type.text
+    unknown_clip = alice.get("/api/me", params={"clip_id": "NOPE", "task_type": "phase"})
+    assert unknown_clip.status_code == 404, unknown_clip.text
+
+    # Half a question is not an item question: identity still answers without it.
+    identity = alice.get("/api/me", params={"clip_id": "CLIPA"})
+    assert identity.status_code == 200, identity.text
+    assert "item" not in identity.json()
+
+
 def _my_items(client: TestClient) -> dict[tuple[str, str], dict]:
     response = client.get("/api/me/items")
     assert response.status_code == 200, response.text
