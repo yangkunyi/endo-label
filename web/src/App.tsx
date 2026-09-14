@@ -6,6 +6,7 @@ import { AdminVocab } from "./AdminVocab";
 import { AppShell } from "./AppShell";
 import { AssignmentsBoard } from "./AssignmentsBoard";
 import { ClipDesk } from "./ClipDesk";
+import { ClipList } from "./ClipList";
 import { Login } from "./Login";
 import { MyTasks } from "./MyTasks";
 import { getJson, mePath, type Me } from "./api";
@@ -28,6 +29,7 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route path="/" element={<Home />} />
           <Route path={DESK_PATH} element={<ClipDesk />} />
+          <Route path="/clips" element={<ClipList />} />
           <Route path={MY_TASKS_PATH} element={<MyTasks />} />
           <Route path="/clips/:clipId" element={<ClipDesk />} />
           <Route path="/admin/users" element={<AdminUsers />} />

@@ -41,9 +41,11 @@ test("the stream lives at the app's event endpoint", () => {
   expect(WORKFLOW_EVENTS_PATH).toBe("/api/events");
 });
 
-test("workflow keys are the lists, the board and the desk's item view", () => {
+test("workflow keys are the lists, the board, the Clip directory and the desk's item view", () => {
   expect(workflowKey("/api/me/items")).toBe(true);
   expect(workflowKey("/api/items?project=Study&tag=west")).toBe(true);
+  expect(workflowKey("/api/clips")).toBe(true);
+  expect(workflowKey("/api/clips?scope=mine&tag=west")).toBe(true);
   expect(workflowKey("/api/me?clip_id=CLIPA&task_type=phase")).toBe(true);
 });
 

@@ -111,6 +111,11 @@ test("admin console paths match compose HTTP", () => {
   );
   expect(clipsPath()).toBe("/api/clips");
   expect(clipsPath({ tag: "west" })).toBe("/api/clips?tag=west");
+  expect(clipsPath({ scope: "mine" })).toBe("/api/clips?scope=mine");
+  expect(clipsPath({ scope: "all" })).toBe("/api/clips?scope=all");
+  expect(clipsPath({ project: "West Study", tag: "west", scope: "all" })).toBe(
+    "/api/clips?project=West+Study&tag=west&scope=all",
+  );
 });
 
 test("registry paths match compose HTTP", () => {

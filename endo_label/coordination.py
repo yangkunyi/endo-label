@@ -713,6 +713,7 @@ def list_registered_clips(
     *,
     project: str | None = None,
     tag: str | None = None,
+    account_id: int | None = None,
 ) -> list[RegisteredClip]:
     query = (
         "SELECT c.id, c.project_id, c.kind, c.path FROM clips c "
@@ -728,6 +729,14 @@ def list_registered_clips(
             "EXISTS (SELECT 1 FROM clip_tags t WHERE t.clip_id = c.id AND t.tag = ?)"
         )
         params.append(tag.strip())
+    if account_id is not None:
+        # "Mine": the Account holds an Assignment on the Clip, as its assignee
+        # or as its reviewer, in any state of the workflow.
+        conditions.append(
+            "EXISTS (SELECT 1 FROM assignments a WHERE a.clip_id = c.id "
+            "AND (a.assignee_id = ? OR a.reviewer_id = ?))"
+        )
+        params.extend((account_id, account_id))
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
     query += " ORDER BY c.rowid"

@@ -10,7 +10,7 @@ while it was away cannot leave a stale list on screen.
 
 import { useEffect } from "react";
 import { useSWRConfig } from "swr";
-import { itemsPath, mePath, myItemsPath } from "./api";
+import { clipsPath, itemsPath, mePath, myItemsPath } from "./api";
 
 export const WORKFLOW_EVENTS_PATH = "/api/events";
 
@@ -28,8 +28,10 @@ export type WorkflowKeyFilter = (key: unknown) => boolean;
 
 /** Whether one cached key goes stale when an Assignment moves.
 
-The lists, the board, and the desk's per-item capability view do; identity
-(`/api/me`) does not — roles do not move with an Assignment.
+The lists, the board, the desk's per-item capability view and the Clip
+directory do — an Assignment moves a Clip into or out of "mine" for the
+Account that holds it. Identity (`/api/me`) does not: roles do not move with an
+Assignment.
 */
 export function workflowKey(key: unknown): boolean {
   if (typeof key !== "string") {
@@ -38,6 +40,8 @@ export function workflowKey(key: unknown): boolean {
   return (
     key === myItemsPath() ||
     key.startsWith(itemsPath()) ||
+    key === clipsPath() ||
+    key.startsWith(`${clipsPath()}?`) ||
     key.startsWith(`${mePath()}?`)
   );
 }

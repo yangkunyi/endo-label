@@ -154,8 +154,33 @@ def create_app(
         }
 
     @app.get("/api/clips")
-    def get_clips(project: str | None = None, tag: str | None = None) -> dict:
-        return {"clips": catalog.list_clips(cfg, project=project, tag=tag)}
+    def get_clips(
+        request: Request,
+        project: str | None = None,
+        tag: str | None = None,
+        scope: str | None = None,
+    ) -> dict:
+        """The Clip directory: `mine` for everyone, `all` for the admin alone.
+
+        An Account only ever holds its own Clips, and the filter is this
+        server's, not the browser's: `scope=all` from a non-admin is refused
+        rather than quietly narrowed to `mine`.
+        """
+        account = request.state.account
+        if scope == "all" and not account.admin:
+            raise HTTPException(
+                status_code=403,
+                detail="Only an admin can see every Clip.",
+            )
+        return {
+            "clips": catalog.list_clips(
+                cfg,
+                project=project,
+                tag=tag,
+                account_id=int(account.id),
+                scope=scope or "mine",
+            )
+        }
 
     @app.get("/api/clips/{clip_id}")
     def get_clip(clip_id: str) -> dict:
