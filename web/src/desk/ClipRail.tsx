@@ -13,9 +13,11 @@ import { useClipFilters } from "../useClipFilters";
  * refusal the server really does send still shows its sentence here.
  *
  * The rail is a surface of that selection, not only a reader of it: a stored
- * scope this Account may not hold is cleared here — the same read the page
- * makes, on the one screen a labeler stays on — and an admin may change it
- * here rather than go back to the Clips directory for the toggle.
+ * scope this Account may not hold is corrected here — the same read the page
+ * makes, on the one screen a labeler stays on — and an admin may change it here
+ * rather than go back to the Clips directory for the toggle. A change is a patch
+ * of the corrected selection the rail renders, so the scope the correction just
+ * dropped cannot come back through the toggle.
  */
 export function ClipRail({ activeClipId, width }: { activeClipId: string | undefined; width: number }) {
   const { filters, notice, canChooseScope, choose } = useClipFilters();

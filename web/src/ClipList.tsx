@@ -19,10 +19,13 @@ import { useClipFilters } from "./useClipFilters";
  * server would have sent; `all` is the admin's own scope, and its refusal is
  * shown as the sentence the server sent.
  *
- * The selection comes from `useClipFilters`, which reads the stored value for
- * the Account that is asking and says what it had to leave behind: a stale
- * scope or a filter that no longer names anything is corrected here rather
- * than shown as a list with nothing in it.
+ * The selection comes from `useClipFilters`: it reads the stored value for the
+ * Account that is asking and corrects one that would strand the list — a scope
+ * the server refuses this Account, a `project`/`tag` no option list carries — so
+ * the page renders from the corrected selection and changes that same value.
+ * The notice below is what the read that found the stored value stale had to
+ * say; a read of the corrected selection has nothing to correct, and so nothing
+ * to say.
  */
 export function ClipList() {
   const { filters, notice, canChooseScope, choose } = useClipFilters();

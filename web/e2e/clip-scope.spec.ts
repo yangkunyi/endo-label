@@ -13,6 +13,13 @@ import { CLIP_FILTERS_STORAGE_KEY } from "../src/clipFilters";
  * value the server would refuse is corrected before it is asked with
  * (pilot-ux/13): the browser outlives an admin flag, and neither surface may
  * answer with a refusal sentence over a list nobody can fix.
+ *
+ * The correction is the selection the surfaces render and the entry the browser
+ * keeps (pilot-ux/17), so a dropped value cannot come back through a later
+ * choice; the sentence about it belongs to the one read that finds the stored
+ * value stale. `web/src/clipFilterSurfaces.test.ts` pins that read in-process —
+ * it is a render, and by the time this suite can look at the page the entry is
+ * already right and there is nothing left to say.
  */
 
 test.describe.configure({ mode: "serial" });
@@ -152,18 +159,21 @@ test("a stored scope the server refuses is corrected, never shown as a refusal",
   await page.goto("/clips");
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(listedClips(page)).toHaveText(["CLIP_E2E"]);
-  await expect(page.getByRole("status")).toContainText("showing your own Clips");
-  // The browser's entry is put right, so the next reader starts from it.
+  // The browser's entry is put right, and that is the whole of the correction:
+  // the page renders from the corrected selection, so the sentence about the
+  // stored one does not hang over the list (it is told once, at the read that
+  // finds the entry stale — pinned in `web/src/clipFilterSurfaces.test.ts`).
   await expect.poll(() => storedScope(page)).toBe("mine");
+  await expect(page.getByRole("status")).toHaveCount(0);
 
-  // The rail reads the same entry and clears it too: the desk is not a place
+  // The rail reads the same entry and corrects it too: the desk is not a place
   // from which this needs a detour through the Clips directory.
   await page.goto("/clips/CLIP_E2E");
   const rail = page.getByRole("navigation", { name: "Clips" });
   await expect(railClips(page)).toHaveText(["CLIP_E2E 2 Frames"]);
   await expect(rail.getByText(REFUSAL)).toHaveCount(0);
-  await expect(rail.getByRole("status")).toContainText("showing your own Clips");
   await expect.poll(() => storedScope(page)).toBe("mine");
+  await expect(rail.getByRole("status")).toHaveCount(0);
 });
 
 test("the admin may change the scope from the desk rail, without leaving the desk", async ({

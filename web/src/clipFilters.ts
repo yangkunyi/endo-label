@@ -10,7 +10,8 @@
  * the list with a sentence instead of Clips.
  *
  * The server's rule is not softened here: a non-admin asking for `all` is still
- * refused. What changes is which selection the browser asks with.
+ * refused. What changes is which selection the browser asks with — and, once
+ * the caller is known, which selection the browser keeps.
  */
 
 import type { ClipScope } from "./api";
@@ -109,7 +110,11 @@ export type ClipFilterResolution = {
   filters: ClipFilterSelection;
   /** What the reader must be told about the stored value, or `null` for nothing. */
   notice: string | null;
-  /** The stored entry is stale: `filters` is what should replace it. */
+  /**
+   * The stored entry is stale: `filters` is what should replace it — in the
+   * selection the surfaces hold and in the browser's entry alike. Never true for
+   * a caller not yet known, whose stored selection is nobody's to correct yet.
+   */
   corrected: boolean;
 };
 
@@ -131,18 +136,23 @@ function quoted(value: string): string {
 /**
  * The stored selection as this caller may use it, plus what was left behind.
  *
- * Two stored values can strand a list nobody can fix from the UI:
+ * Field by field, for a caller who is *known*:
  *
- * - a scope the server refuses this caller — the browser is shared, or an
- *   admin flag was taken away — which reads as the refusal sentence over an
- *   empty list. It is read as `mine`, so the caller ends up with its own Clips.
- * - a `project`/`tag` no option list carries any more (a renamed or deleted
- *   Project, a tag no Clip carries), which keeps filtering everything away
- *   while its `<select>` shows nothing. It is dropped and named.
+ * - `scope`: a value the server would refuse this caller — the browser is
+ *   shared, or an admin flag was taken away — reads as `mine`, so the caller
+ *   ends up with its own Clips instead of the refusal sentence over an empty
+ *   list. It is said in this module's own words, never as the server's refusal.
+ * - `project`, `tag`: a value no *loaded* option list carries any more (a
+ *   renamed or deleted Project, a tag no Clip carries) is left out and named.
+ *   A list that has not loaded cannot call a value dead — `undefined` options
+ *   are a list that has not answered, `[]` is one that answered nothing — and
+ *   the empty value is no filter, so it survives every list.
  *
- * A caller not yet known narrows the request the same way but corrects nothing:
- * an admin's own stored `all` is not the browser's to lose while `/api/me`
- * is in flight.
+ * A caller not yet known is narrowed the same way and corrected in no field: the
+ * request leaves out what cannot be proved (`mine` for `all`, or a value no loaded
+ * list carries), while `corrected` stays false and `notice` stays null. An admin's
+ * own stored `all` is not the browser's to lose while `/api/me` is in flight, and a
+ * value found dead in that window is found dead again once the flag answers.
  */
 export function resolveClipFilters(
   stored: ClipFilterSelection,
@@ -154,9 +164,12 @@ export function resolveClipFilters(
   const project = isDeadValue(stored.project, options.projects) ? "" : stored.project;
   const tag = isDeadValue(stored.tag, options.tags) ? "" : stored.tag;
 
+  // Every field is corrected together or not at all: a known caller's stored
+  // selection is the one that may be replaced, and a caller not yet known can
+  // claim nothing about it.
   const scopeDropped = known && scope !== stored.scope;
-  const projectDropped = project !== stored.project;
-  const tagDropped = tag !== stored.tag;
+  const projectDropped = known && project !== stored.project;
+  const tagDropped = known && tag !== stored.tag;
   const sentences = [
     scopeDropped ? "Every Clip is the admin's scope; showing your own Clips." : "",
     projectDropped
@@ -170,4 +183,21 @@ export function resolveClipFilters(
     notice: sentences.length > 0 ? sentences.join(" ") : null,
     corrected: scopeDropped || projectDropped || tagDropped,
   };
+}
+
+/**
+ * The selection a control's change produces.
+ *
+ * `shown` is the selection the surfaces render, which is the corrected one: what
+ * the state holds and what the browser's entry gets, so the two agree about the
+ * same value. A change is a patch of that and of nothing else — a scope or a
+ * filter the resolution has already read past is not in hand to bring back, and
+ * nothing here decides who may hold what: `resolveClipFilters` reads the result
+ * on the next render, options and caller unchanged.
+ */
+export function chooseClipFilters(
+  shown: ClipFilterSelection,
+  patch: Partial<ClipFilterSelection>,
+): ClipFilterSelection {
+  return { ...shown, ...patch };
 }
