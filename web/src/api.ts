@@ -16,6 +16,9 @@ export type MyItem = {
   delivered_at: string | null;
   version: number;
   capabilities: Record<string, boolean>;
+  /** The sentence a label write would be refused with, or null when this Account may
+   * write: the server's own wording, so the desk can show why before the click. */
+  write_refusal: string | null;
 };
 
 export type Me = {

@@ -157,6 +157,102 @@ def test_a_refused_write_carries_the_state_s_own_sentence(
     assert _state_of(admin) == state
 
 
+@pytest.mark.parametrize(
+    ("state", "actor"),
+    [
+        ("Unassigned", "alice"),
+        ("Labeling", "bob"),
+        ("Submitted", "alice"),
+        ("Reviewing", "alice"),
+        ("Done", "alice"),
+    ],
+)
+def test_the_item_payload_carries_the_sentence_a_write_would_be_refused_with(
+    tmp_path: Path, state: str, actor: str
+) -> None:
+    """The desk says why before the click: the read carries the 403's own words.
+
+    The wording is pinned state by state above. What is pinned here is that the
+    desk never has to word it again — the sentence it shows beside a disabled
+    control is byte for byte the one the refused call would have carried.
+    """
+    _settings_obj, admin, alice, bob, carol = _world(tmp_path)
+    _drive(admin, alice, carol, state)
+    client = {"alice": alice, "bob": bob}[actor]
+
+    item = client.get(
+        "/api/me", params={"clip_id": "CLIPA", "task_type": "phase"}
+    ).json()["item"]
+    assert item["capabilities"]["edit_labels"] is False
+
+    refused = _write(client)
+    assert refused.status_code == 403, refused.text
+    assert item["write_refusal"] == refused.json()["detail"]
+
+
+def test_an_item_this_account_may_write_carries_no_refusal(tmp_path: Path) -> None:
+    """A writable cell has nothing to explain, and the bystander's sentence names the holder."""
+    _settings_obj, admin, alice, bob, carol = _world(tmp_path)
+    _drive(admin, alice, carol, "Labeling")
+
+    holder = alice.get(
+        "/api/me", params={"clip_id": "CLIPA", "task_type": "phase"}
+    ).json()["item"]
+    assert holder["capabilities"]["edit_labels"] is True
+    assert holder["write_refusal"] is None
+
+    bystander = bob.get(
+        "/api/me", params={"clip_id": "CLIPA", "task_type": "phase"}
+    ).json()["item"]
+    assert bystander["capabilities"]["edit_labels"] is False
+    assert bystander["write_refusal"] == (
+        "This Clip's phase is assigned to alice: only alice writes its labels."
+    )
+
+
+def test_the_assigned_reviewer_reads_no_refusal_while_the_annotator_does(
+    tmp_path: Path,
+) -> None:
+    """Review moves the write to the reviewer, and the read says so on both sides."""
+    _settings_obj, admin, alice, _bob, carol = _world(tmp_path)
+    _drive(admin, alice, carol, "Reviewing")
+
+    reviewer = carol.get(
+        "/api/me", params={"clip_id": "CLIPA", "task_type": "phase"}
+    ).json()["item"]
+    assert reviewer["capabilities"]["edit_labels"] is True
+    assert reviewer["write_refusal"] is None
+
+    annotator = alice.get(
+        "/api/me", params={"clip_id": "CLIPA", "task_type": "phase"}
+    ).json()["item"]
+    assert annotator["write_refusal"] == (
+        "This Clip's phase is in Review — only its reviewer (carol) may edit its labels."
+    )
+
+
+def test_a_mask_item_s_cell_carries_the_mask_sentence(tmp_path: Path) -> None:
+    """The mask editor reads its own item's cell, so the sentence names mask."""
+    _settings_obj, admin, alice, bob, _carol = _world(tmp_path)
+    assigned = admin.post("/api/items/CLIPA/mask/assign", json={"assignee": "alice"})
+    assert assigned.status_code == 200, assigned.text
+
+    item = bob.get(
+        "/api/me", params={"clip_id": "CLIPA", "task_type": "mask"}
+    ).json()["item"]
+    assert item["capabilities"]["edit_labels"] is False
+    assert item["write_refusal"] == (
+        "This Clip's mask is assigned to alice: only alice writes its labels."
+    )
+
+    # The admin holds no bypass either: their read of the same item says the same.
+    as_admin = admin.get(
+        "/api/me", params={"clip_id": "CLIPA", "task_type": "mask"}
+    ).json()["item"]
+    assert as_admin["capabilities"]["edit_labels"] is False
+    assert as_admin["write_refusal"] == item["write_refusal"]
+
+
 def test_a_write_refusal_names_the_task_type_it_was_asked_for(tmp_path: Path) -> None:
     _settings_obj, admin, alice, bob, _carol = _world(tmp_path)
     for task_type in ("class", "triplet"):

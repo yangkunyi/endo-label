@@ -46,6 +46,7 @@ import {
 import { hasMaskHandoff, isProtectedState, propagateTargetFrames, trackState } from "../trackState";
 import { formatElapsed, workerLoadingToast } from "../workerStatus";
 import { isEditableTarget } from "./keyboard";
+import { maskControlStates, useMaskWrite } from "./maskControls";
 import { useTrackLaneVisibility } from "./maskLanes";
 import { MaskSessionContext, useMaskSession, type MaskSession } from "./maskSession";
 import type { DeskNotice } from "./notice";
@@ -103,6 +104,11 @@ export function MaskSessionProvider({
   } | null>(null);
   // Story 86: overlay geometry input is off while a Job runs.
   const jobRunning = propagateJob != null;
+  // What the open Clip's mask item allows, from the same cell the server refuses on
+  // (ADR 0030): every mask write is the assignee's, and this is where the desk reads
+  // that — permission, the sentence a refusal would carry, and the controls it leaves.
+  const write = useMaskWrite(clipId);
+  const controls = maskControlStates(write, { job: jobRunning, predicting: predictBusy });
   // Ticket 09: the Job blocks, so the desk shows an indeterminate state with
   // elapsed time — the whole span streams inside the first poll, so no honest
   // per-frame number exists (maintainer decision: no async).
@@ -241,7 +247,7 @@ export function MaskSessionProvider({
   }, [clip, notify, refreshMaskReads, stopJobPolling]);
 
   const runPredict = useCallback(async () => {
-    if (!clipId || predicting.current || jobRunning || pendingRef.current.length === 0) {
+    if (!clipId || !write.writable || predicting.current || jobRunning || pendingRef.current.length === 0) {
       return;
     }
     predicting.current = true;
@@ -297,7 +303,7 @@ export function MaskSessionProvider({
       predicting.current = false;
       setPredictBusy(false);
     }
-  }, [activeTrackId, clearPredictTimer, clipId, ensureSession, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn, notify]);
+  }, [activeTrackId, clearPredictTimer, clipId, ensureSession, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn, notify, write.writable]);
 
   const schedulePredict = useCallback(() => {
     clearPredictTimer();
@@ -328,7 +334,7 @@ export function MaskSessionProvider({
   }, []);
 
   const onDeletePin = useCallback(async (index: number) => {
-    if (activeTrackId == null || predicting.current || jobRunning) {
+    if (!write.writable || activeTrackId == null || predicting.current || jobRunning) {
       return;
     }
     predicting.current = true;
@@ -349,10 +355,10 @@ export function MaskSessionProvider({
     } finally {
       predicting.current = false;
     }
-  }, [activeTrackId, clearPredictTimer, clipId, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn, notify]);
+  }, [activeTrackId, clearPredictTimer, clipId, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn, notify, write.writable]);
 
   const onClearMask = useCallback(async () => {
-    if (activeTrackId == null || predicting.current || jobRunning) {
+    if (!write.writable || activeTrackId == null || predicting.current || jobRunning) {
       return;
     }
     predicting.current = true;
@@ -373,10 +379,10 @@ export function MaskSessionProvider({
     } finally {
       predicting.current = false;
     }
-  }, [activeTrackId, clearPredictTimer, clipId, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn, notify]);
+  }, [activeTrackId, clearPredictTimer, clipId, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn, notify, write.writable]);
 
   const runUndo = useCallback(async () => {
-    if (!clipId || predicting.current || jobRunning) {
+    if (!clipId || !write.writable || predicting.current || jobRunning) {
       return;
     }
     predicting.current = true;
@@ -405,10 +411,10 @@ export function MaskSessionProvider({
     } finally {
       predicting.current = false;
     }
-  }, [clearPredictTimer, clipId, frameIndex, jobRunning, mutateAnnotation, mutateFrameAnn, notify]);
+  }, [clearPredictTimer, clipId, frameIndex, jobRunning, mutateAnnotation, mutateFrameAnn, notify, write.writable]);
 
   const runPropagate = useCallback(async () => {
-    if (!clipId || predicting.current || jobRunning) {
+    if (!clipId || !write.writable || predicting.current || jobRunning) {
       return;
     }
     predicting.current = true;
@@ -463,9 +469,13 @@ export function MaskSessionProvider({
     propagateMaxFrames,
     notify,
     refreshMaskReads,
+    write.writable,
   ]);
 
   const onRenameTrack = useCallback(async (trackId: number, label: string) => {
+    if (!write.writable) {
+      return;
+    }
     notify(null);
     try {
       await sendJson<SessionPublic>(sessionTrackPath(trackId, clipId ?? undefined), "PATCH", {
@@ -477,11 +487,11 @@ export function MaskSessionProvider({
     } catch (err) {
       notify({ text: err instanceof Error ? err.message : "Track Label edit failed", error: true });
     }
-  }, [clipId, frameIndex, loadSessionFrame, mutateAnnotation, notify]);
+  }, [clipId, frameIndex, loadSessionFrame, mutateAnnotation, notify, write.writable]);
 
   /** Drop the whole Track: its masks go with it, on every Frame. */
   const onDeleteTrack = useCallback(async (trackId: number) => {
-    if (predicting.current || jobRunning) {
+    if (!write.writable || predicting.current || jobRunning) {
       return;
     }
     predicting.current = true;
@@ -509,6 +519,7 @@ export function MaskSessionProvider({
     mutateAnnotation,
     mutateFrameAnn,
     notify,
+    write.writable,
   ]);
 
   useEffect(() => {
@@ -581,7 +592,8 @@ export function MaskSessionProvider({
     scribbleWidth,
     activeTrackId,
     canUndo: (sessionSnapshot?.tracks.length ?? 0) > 0,
-    busy: jobRunning,
+    refusal: write.refusal,
+    controls,
     predicting: predictBusy,
     canPropagate: frameMasks.length > 0,
     frameKept,
@@ -625,7 +637,7 @@ export function PlayerMaskOverlay({
       leftover={session.leftover}
       pending={session.pending}
       width={session.scribbleWidth}
-      inputEnabled={!session.busy}
+      inputEnabled={session.controls.prompts}
       onPause={onPause}
       onClickPoint={session.onClickPoint}
       onStroke={session.onClickStroke}
@@ -642,9 +654,10 @@ export function MaskPanel() {
     pendingCount,
     scribbleWidth,
     canUndo,
-    busy,
     predicting,
     canPropagate,
+    refusal,
+    controls,
     frameMasks,
     frameKept,
     propagateJob,
@@ -685,6 +698,16 @@ export function MaskPanel() {
 
   return (
     <section aria-label="Tracks" className="flex shrink-0 flex-col gap-2 rounded-lg border border-border/70 bg-surface/40 p-3">
+      {refusal ? (
+        // Why these controls are off, in the server's own words: the sentence a write
+        // would be refused with. It names the way out — the admin assigns the item.
+        <p
+          data-mask-refusal=""
+          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-200"
+        >
+          {refusal}
+        </p>
+      ) : null}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tracks</span>
@@ -694,13 +717,13 @@ export function MaskPanel() {
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <Button type="button" size="sm" variant="outline" onClick={onNewTrack}>
+          <Button type="button" size="sm" variant="outline" disabled={!controls.newTrack} onClick={onNewTrack}>
             New Track
           </Button>
           <Button
             type="button"
             size="sm"
-            disabled={pendingCount === 0 || busy || predicting}
+            disabled={!controls.predict || pendingCount === 0}
             onClick={onPredict}
           >
             {predicting ? "Inferring…" : "Predict"}
@@ -727,10 +750,10 @@ export function MaskPanel() {
         </output>
       </div>
       <div className="flex items-center gap-1" data-track-controls="">
-        <Button type="button" size="sm" variant="outline" disabled={busy || !canUndo} onClick={onUndo}>
+        <Button type="button" size="sm" variant="outline" disabled={!controls.undo || !canUndo} onClick={onUndo}>
           Undo
         </Button>
-        <Button type="button" size="sm" variant="outline" disabled={busy || activeTrackId == null} onClick={onClearMask}>
+        <Button type="button" size="sm" variant="outline" disabled={!controls.clear || activeTrackId == null} onClick={onClearMask}>
           Clear mask
         </Button>
       </div>
@@ -745,7 +768,7 @@ export function MaskPanel() {
                 role="radio"
                 variant={propagateDirection === direction ? "secondary" : "ghost"}
                 aria-checked={propagateDirection === direction}
-                disabled={busy}
+                disabled={!controls.propagate}
                 onClick={() => onPropagateDirection(direction)}
               >
                 {direction}
@@ -759,12 +782,12 @@ export function MaskPanel() {
             step={1}
             placeholder="to edge"
             value={propagateMaxFrames}
-            disabled={busy}
+            disabled={!controls.propagate}
             className="h-7 w-20 shrink-0 text-xs"
             onChange={(event) => onPropagateMaxFrames(event.target.value)}
           />
         </div>
-        <Button type="button" size="sm" disabled={!canPropagate || busy} onClick={onPropagate}>
+        <Button type="button" size="sm" disabled={!controls.propagate || !canPropagate} onClick={onPropagate}>
           Propagate
         </Button>
         {propagateJob ? (
@@ -821,9 +844,13 @@ export function MaskPanel() {
                     variant={activeTrackId === track.track_id ? "secondary" : "ghost"}
                     aria-pressed={activeTrackId === track.track_id}
                     className="min-w-0 flex-1 justify-start gap-2"
-                    title="Double-click to rename"
+                    title={controls.renameTrack ? "Double-click to rename" : undefined}
                     onClick={() => onSelectTrack(track.track_id)}
-                    onDoubleClick={() => setRenaming({ trackId: track.track_id, draft: track.label })}
+                    onDoubleClick={
+                      controls.renameTrack
+                        ? () => setRenaming({ trackId: track.track_id, draft: track.label })
+                        : undefined
+                    }
                   >
                     <span
                       aria-hidden
@@ -885,7 +912,7 @@ export function MaskPanel() {
                   className="h-7 w-7 shrink-0 p-0 text-muted-foreground hover:text-foreground"
                   aria-label={`Delete ${track.label}`}
                   title={`Delete ${track.label} — its masks go too`}
-                  disabled={busy || predicting}
+                  disabled={!controls.deleteTrack}
                   onClick={() => {
                     if (window.confirm(`Delete ${track.label} from this Clip? Its masks go with it.`)) {
                       onDeleteTrack(track.track_id);

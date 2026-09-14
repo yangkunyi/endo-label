@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import type { FrameAnnotations, PropagateDirection, PropagateJobPublic, TrackRow } from "../api";
 import type { LeftoverPoint, PendingMark, PendingPoint, PendingStroke } from "../overlayCoords";
+import type { MaskControlStates } from "./maskControls";
 
 /** Mask working state and controls for the focused Clip and Frame, shared by the
  * Track rail and the picture overlay so neither owns the other. */
@@ -13,7 +14,11 @@ export type MaskSession = {
   scribbleWidth: number;
   activeTrackId: number | null;
   canUndo: boolean;
-  busy: boolean;
+  /** The server's sentence for a refused mask write, shown beside the controls, or
+   * null when the mask item allows this Account to write it. */
+  refusal: string | null;
+  /** Which controls that permission and the writes in flight allow right now. */
+  controls: MaskControlStates;
   predicting: boolean;
   canPropagate: boolean;
   frameKept: boolean;

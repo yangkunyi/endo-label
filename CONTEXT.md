@@ -53,8 +53,8 @@ An identity in the global Vocab registry, held as a stable id: a phase name, a c
 _Avoid_: bare strings as the durable key; the labeler writing the registry; per-project spellings of one word; hard-deleting a referenced name; built-in seed names the labeler cannot remove; changing only the picker while leaving old strings on disk; treating a class-tag `grasper` as the same identity as a word inside a triple; independent instrument/verb/target lists; orphan Frame strings
 
 **mask**:
-Pixel silhouette on a Track-on-Frame. Predict writes this Frame only. Propagate (SAM 3.1) fills other Frames. Propagate does not write phase, class, or triplet.
-_Avoid_: using Annotation as a name for phase/class/triplet
+Pixel silhouette on a Track-on-Frame. Predict writes this Frame only. Propagate (SAM 3.1) fills other Frames. Propagate does not write phase, class, or triplet. It is written under the Clip's mask Assignment like the other Task types: the assignee writes, the assigned reviewer may edit during Review, and an admin self-assigns the mask item before masking (ADR 0030).
+_Avoid_: using Annotation as a name for phase/class/triplet; a role flag as a mask write key
 
 **Track**:
 One object identity across Frames in a Clip. Used by mask only. Optional **Track Label**.
