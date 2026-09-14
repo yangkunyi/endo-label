@@ -12,6 +12,10 @@
  * What a browser does with the corrected entry (writing it back) is an effect,
  * which a server render does not run; `clipFilters.test.ts` pins the pure
  * instruction and the end-to-end spec pins the write.
+ *
+ * One render stands in for the server *refusing* the request instead: a refusal
+ * is a request's error, and SWR keeps an error in a cache entry rather than in a
+ * fallback, so `refused()` seeds the entry the surface then reads.
  */
 
 import { createElement, type ReactElement } from "react";
@@ -68,11 +72,33 @@ const PROJECTS: ProjectsResponse = {
 
 const TAGS: TagsResponse = { tags: ["east"] };
 
-/** One render with a stored entry standing in for this browser's localStorage. */
+/**
+ * A refusal as SWR holds it: the answered request's error, not its data.
+ *
+ * A fallback entry is data; only a cache entry carries an error, so this is what
+ * a 403 leaves behind and what the surfaces' own error branch reads.
+ */
+function refused(message: string) {
+  return {
+    data: undefined,
+    error: new Error(message),
+    isLoading: false,
+    isValidating: false,
+  };
+}
+
+/**
+ * One render with a stored entry standing in for this browser's localStorage.
+ *
+ * `refusal` stands in for the server refusing the request this render asks with:
+ * no Clips are answered and the sentence is, which is what a browser that still
+ * believes it is an admin sees once the server stops agreeing.
+ */
 function renderWithStored(
   component: ReactElement,
   stored: ClipFilterSelection | null,
   me: Me,
+  refusal: string | null = null,
 ): string {
   const entries = new Map<string, string>();
   if (stored) {
@@ -88,6 +114,19 @@ function renderWithStored(
     },
   };
   try {
+    // Keyed by the selection a surface may ask with: `mine` is the corrected
+    // scope, `all` the stored one only an admin may use. A refused request is
+    // answered with an error instead of Clips, so it takes no fallback entry.
+    const allClips = clipsPath({ ...DEFAULT_CLIP_FILTERS, scope: "all" });
+    const fallback: Record<string, unknown> = {
+      [mePath()]: me,
+      [projectsPath()]: PROJECTS,
+      [tagsPath()]: TAGS,
+      [clipsPath({ ...DEFAULT_CLIP_FILTERS, scope: "mine" })]: MINE,
+    };
+    if (refusal === null) {
+      fallback[allClips] = EVERY_CLIP;
+    }
     return renderToStaticMarkup(
       createElement(
         MemoryRouter,
@@ -96,15 +135,10 @@ function renderWithStored(
           SWRConfig,
           {
             value: {
-              fallback: {
-                [mePath()]: me,
-                [projectsPath()]: PROJECTS,
-                [tagsPath()]: TAGS,
-                // Keyed by the selection a surface may ask with: `mine` is the
-                // corrected scope, `all` the stored one only an admin may use.
-                [clipsPath({ ...DEFAULT_CLIP_FILTERS, scope: "mine" })]: MINE,
-                [clipsPath({ ...DEFAULT_CLIP_FILTERS, scope: "all" })]: EVERY_CLIP,
-              },
+              fallback,
+              ...(refusal === null
+                ? {}
+                : { provider: () => new Map([[allClips, refused(refusal)]]) }),
             },
           },
           component,
@@ -173,4 +207,27 @@ test("a Project no option list carries cannot empty the page silently", () => {
   // what is pinned: the dead Project is named, not silently filtered away.
   expect(html).toContain("The stored Project &quot;West Study&quot; is not registered");
   expect(html).not.toContain("No Clips assigned to you.");
+});
+
+test("a refusal the server does send is still its own sentence, on both surfaces", () => {
+  // The browser outlives the flag: `/api/me` still answers admin in this tab, so
+  // both surfaces ask for `all` — which is the selection a correction cannot
+  // reach — and the server answers with its sentence. Correcting a stale stored
+  // scope must not quiet a refusal the server really does send.
+  const page = renderWithStored(createElement(ClipList), STORED_ALL, ADMIN, REFUSAL);
+  expect(page).toContain('role="alert"');
+  expect(page).toContain(REFUSAL);
+  expect(page).not.toContain("CLIP_A");
+  expect(page).not.toContain("CLIP_B");
+  expect(page).not.toContain("Loading Clips");
+
+  const rail = renderWithStored(
+    createElement(ClipRail, { activeClipId: "CLIP_A", width: 280 }),
+    STORED_ALL,
+    ADMIN,
+    REFUSAL,
+  );
+  expect(rail).toContain(REFUSAL);
+  expect(rail).not.toContain("CLIP_A");
+  expect(rail).not.toContain("Loading Clips");
 });
