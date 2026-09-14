@@ -6,7 +6,10 @@ import {
   emptyClipsNotice,
   normalizeClipFilters,
   readStoredClipFilters,
+  resolveClipFilters,
   saveStoredClipFilters,
+  scopeForCaller,
+  type ClipFilterSelection,
 } from "./clipFilters";
 
 /** A stand-in for the browser's localStorage: one map, no DOM needed. */
@@ -70,4 +73,95 @@ test("an unfiltered selection asks for mine, and empty filters stay out of the U
 test("the empty-list sentence names whose Clips are missing", () => {
   expect(emptyClipsNotice("mine")).toBe("No Clips assigned to you.");
   expect(emptyClipsNotice("all")).toBe("No Clips on the allowlist.");
+});
+
+const WEST_ALL: ClipFilterSelection = { project: "West Study", tag: "west", scope: "all" };
+
+test("only an admin holds all, and a caller not yet known does not", () => {
+  expect(scopeForCaller("all", true)).toBe("all");
+  expect(scopeForCaller("all", false)).toBe("mine");
+  expect(scopeForCaller("all", null)).toBe("mine");
+  expect(scopeForCaller("mine", false)).toBe("mine");
+});
+
+test("a scope the server would refuse this caller is read as mine, and named", () => {
+  const refused = resolveClipFilters(WEST_ALL, { isAdmin: false }, {});
+  expect(refused.filters).toEqual({ project: "West Study", tag: "west", scope: "mine" });
+  expect(refused.corrected).toBe(true);
+  expect(refused.notice).toContain("showing your own Clips");
+
+  // The admin's own scope is theirs: nothing is read past it and nothing is said.
+  const admin = resolveClipFilters(WEST_ALL, { isAdmin: true }, {});
+  expect(admin.filters).toEqual(WEST_ALL);
+  expect(admin.corrected).toBe(false);
+  expect(admin.notice).toBeNull();
+});
+
+test("a caller not yet known is narrowed for the request but corrects nothing", () => {
+  // /api/me is still in flight: an admin's stored all is not the browser's to
+  // lose before the flag is known, so the narrow request is made silently.
+  const unknown = resolveClipFilters(WEST_ALL, { isAdmin: null }, {});
+  expect(unknown.filters.scope).toBe("mine");
+  expect(unknown.corrected).toBe(false);
+  expect(unknown.notice).toBeNull();
+});
+
+test("a Project or tag no option list carries any more is dropped and named", () => {
+  const dropped = resolveClipFilters(
+    WEST_ALL,
+    { isAdmin: true },
+    { projects: ["East Study"], tags: ["chole"] },
+  );
+  expect(dropped.filters).toEqual({ project: "", tag: "", scope: "all" });
+  expect(dropped.corrected).toBe(true);
+  expect(dropped.notice).toContain('The stored Project "West Study"');
+  expect(dropped.notice).toContain('The stored tag "west"');
+
+  // A list not loaded yet cannot call a value dead: the filter still holds.
+  const unloaded = resolveClipFilters(WEST_ALL, { isAdmin: true }, {});
+  expect(unloaded.filters).toEqual(WEST_ALL);
+  expect(unloaded.corrected).toBe(false);
+  expect(unloaded.notice).toBeNull();
+
+  // A loaded list that does carry the values keeps them.
+  const carried = resolveClipFilters(
+    WEST_ALL,
+    { isAdmin: true },
+    { projects: ["West Study"], tags: ["west"] },
+  );
+  expect(carried).toEqual({ filters: WEST_ALL, notice: null, corrected: false });
+});
+
+test("an empty option list is a loaded one: any filter value is dead", () => {
+  const dropped = resolveClipFilters(
+    { project: "West Study", tag: "", scope: "mine" },
+    { isAdmin: false },
+    { projects: [], tags: [] },
+  );
+  expect(dropped.filters.project).toBe("");
+  expect(dropped.corrected).toBe(true);
+
+  // No filter is not a filter: an empty value survives every list.
+  const none = resolveClipFilters(
+    DEFAULT_CLIP_FILTERS,
+    { isAdmin: false },
+    { projects: [], tags: [] },
+  );
+  expect(none).toEqual({ filters: DEFAULT_CLIP_FILTERS, notice: null, corrected: false });
+});
+
+test("the corrected selection is the one a later read gets", () => {
+  const storage = fakeStorage({
+    [CLIP_FILTERS_STORAGE_KEY]: JSON.stringify(WEST_ALL),
+  });
+  const first = resolveClipFilters(readStoredClipFilters(storage), { isAdmin: false }, {});
+  expect(first.corrected).toBe(true);
+  saveStoredClipFilters(first.filters, storage);
+
+  // The corrected entry lists Clips for the next reader too: no sentence left.
+  const next = resolveClipFilters(readStoredClipFilters(storage), { isAdmin: false }, {});
+  expect(next.filters).toEqual({ project: "West Study", tag: "west", scope: "mine" });
+  expect(next.corrected).toBe(false);
+  expect(next.notice).toBeNull();
+  expect(clipsPath(next.filters)).toBe("/api/clips?project=West+Study&tag=west&scope=mine");
 });
