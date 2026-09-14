@@ -1,34 +1,31 @@
-import { useState } from "react";
 import { Link } from "react-router-dom";
 import useSWR from "swr";
 import {
   clipDeskPath,
   clipsPath,
   getJson,
-  mePath,
   projectsPath,
   tagsPath,
   type ClipListResponse,
-  type Me,
   type ProjectsResponse,
   type TagsResponse,
 } from "./api";
-import {
-  emptyClipsNotice,
-  readStoredClipFilters,
-  saveStoredClipFilters,
-  type ClipFilterSelection,
-} from "./clipFilters";
+import { emptyClipsNotice } from "./clipFilters";
+import { useClipFilters } from "./useClipFilters";
 
 /**
  * The Clips directory: the Clips this Account may see, narrowed by Project and
  * tag. `mine` is enforced by the server, so the page never hides a row the
  * server would have sent; `all` is the admin's own scope, and its refusal is
  * shown as the sentence the server sent.
+ *
+ * The selection comes from `useClipFilters`, which reads the stored value for
+ * the Account that is asking and says what it had to leave behind: a stale
+ * scope or a filter that no longer names anything is corrected here rather
+ * than shown as a list with nothing in it.
  */
 export function ClipList() {
-  const [filters, setFilters] = useState<ClipFilterSelection>(readStoredClipFilters);
-  const { data: me } = useSWR(mePath(), getJson<Me>);
+  const { filters, notice, canChooseScope, choose } = useClipFilters();
   const { data: projects } = useSWR(projectsPath(), getJson<ProjectsResponse>);
   const { data: tags } = useSWR(tagsPath(), getJson<TagsResponse>);
   // The selection is a path's worth of filters: empty ones drop out of the URL.
@@ -36,13 +33,6 @@ export function ClipList() {
     clipsPath(filters),
     getJson<ClipListResponse>,
   );
-  const isAdmin = Boolean(me?.roles.admin);
-
-  function choose(patch: Partial<ClipFilterSelection>) {
-    const next = { ...filters, ...patch };
-    setFilters(next);
-    saveStoredClipFilters(next);
-  }
 
   return (
     <main className="mx-auto h-full max-w-5xl overflow-auto p-6">
@@ -83,7 +73,7 @@ export function ClipList() {
             ))}
           </select>
         </label>
-        {isAdmin ? (
+        {canChooseScope ? (
           <label className="flex items-center gap-2 pb-2 text-sm">
             <input
               type="checkbox"
@@ -95,6 +85,12 @@ export function ClipList() {
           </label>
         ) : null}
       </div>
+
+      {notice ? (
+        <p role="status" className="mb-4 text-sm text-muted-foreground">
+          {notice}
+        </p>
+      ) : null}
 
       {error ? (
         <p role="alert" className="text-destructive">

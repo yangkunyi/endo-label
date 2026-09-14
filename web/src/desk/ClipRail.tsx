@@ -1,7 +1,8 @@
 import { Link } from "react-router-dom";
 import useSWR from "swr";
 import { clipDeskPath, clipsPath, getJson, type ClipListResponse } from "../api";
-import { emptyClipsNotice, readStoredClipFilters } from "../clipFilters";
+import { emptyClipsNotice } from "../clipFilters";
+import { useClipFilters } from "../useClipFilters";
 
 /**
  * The left rail: the Clips this Account may see, the focused one marked as
@@ -9,10 +10,15 @@ import { emptyClipsNotice, readStoredClipFilters } from "../clipFilters";
  *
  * It reads the Clips page's own selection (Project, tag, scope) instead of a
  * second one, so the rail and the page can never disagree about the list; a
- * scope the server refuses shows the server's sentence here too.
+ * refusal the server really does send still shows its sentence here.
+ *
+ * The rail is a surface of that selection, not only a reader of it: a stored
+ * scope this Account may not hold is cleared here — the same read the page
+ * makes, on the one screen a labeler stays on — and an admin may change it
+ * here rather than go back to the Clips directory for the toggle.
  */
 export function ClipRail({ activeClipId, width }: { activeClipId: string | undefined; width: number }) {
-  const filters = readStoredClipFilters();
+  const { filters, notice, canChooseScope, choose } = useClipFilters();
   const { data, error, isLoading } = useSWR(
     clipsPath(filters),
     getJson<ClipListResponse>,
@@ -26,7 +32,21 @@ export function ClipRail({ activeClipId, width }: { activeClipId: string | undef
     >
       <div className="border-b border-border px-3 py-2">
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Clips</p>
+        {canChooseScope ? (
+          <label className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              aria-label="Show every Clip"
+              checked={filters.scope === "all"}
+              onChange={(event) => choose({ scope: event.target.checked ? "all" : "mine" })}
+            />
+            Every Clip (admin)
+          </label>
+        ) : null}
       </div>
+      {notice ? (
+        <p role="status" className="border-b border-border px-3 py-2 text-xs text-muted-foreground">{notice}</p>
+      ) : null}
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
         {isLoading ? <p className="p-2 text-sm text-muted-foreground">Loading Clips…</p> : null}
         {error ? (

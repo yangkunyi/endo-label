@@ -18,8 +18,9 @@ import { foldCoverage } from "./timeline";
 
 /**
  * A mouse click must not leave focus on a control: with focus on a button,
- * Enter re-fires it, and the desk's shortcuts then read as intercepted.
- * Keyboard users who Tab to a button keep Space/Enter.
+ * Enter re-fires it (and with focus on a checkbox, Space toggles it instead of
+ * the transport), and the desk's shortcuts then read as intercepted.
+ * Keyboard users who Tab to a control keep Space/Enter.
  */
 function releaseFocus(event: ReactPointerEvent<HTMLElement>) {
   const target = event.target;
@@ -30,7 +31,9 @@ function releaseFocus(event: ReactPointerEvent<HTMLElement>) {
   if (target.closest('[role="dialog"], [role="menu"], [role="listbox"], [aria-haspopup]')) {
     return;
   }
-  const control = target.closest("button, [role='button'], [role='radio']");
+  const control = target.closest(
+    "button, [role='button'], [role='radio'], input[type='checkbox']",
+  );
   if (control instanceof HTMLElement) {
     control.blur();
   }
