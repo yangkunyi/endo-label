@@ -4,6 +4,10 @@
 
 Whatever is chosen has to reach the capability matrix test, whose rows currently cannot see it: in every row the reviewer happens to be the item's assigned reviewer.
 
+**Answered (2026-09-14, owner): option 2** — from Done, `re_review` and the reject-to-Labeling belong to
+the item's *assigned* reviewer or an admin, the same ruler the Reviewing state already uses. The
+capability change, the matrix row and the wording are ticketed as `multi-user/27`.
+
 **Found by:** review finding from the 22 closeout; `.scratch/multi-user/issues/22-playwright-closeout.md`
 
 - [ ] decision recorded on who holds `re_review` / Done→Labeling reject

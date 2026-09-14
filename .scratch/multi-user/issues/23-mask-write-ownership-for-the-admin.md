@@ -4,6 +4,11 @@
 
 Either mask follows the same ownership rule as phase/class/triplet (then the desk must hide or disable the editor when the item is not writable, and the admin self-assigns before masking), or the admin is a special writer (then `_write_allowed` and the ticket-19 decision record change with it). Whichever way, a refused write must say why — not "Predict failed".
 
+**Answered (2026-09-14, owner): mask follows assignment.** There is no admin bypass and no
+claim-on-first-write: an admin self-assigns before masking, exactly like everyone else. The desk-side
+work and the decision record are ticketed as `multi-user/26`; the refusal sentence this ticket also asked
+for already landed with the write-refusal rewrite.
+
 **Found by:** review finding from the 22 closeout; `.scratch/multi-user/issues/22-playwright-closeout.md`
 
 - [ ] decision recorded (ADR or CONTEXT.md note) on mask write authority
