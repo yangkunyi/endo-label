@@ -222,6 +222,14 @@ export type ClipTagsResponse = { clip_id: string; tags: string[] };
 
 export type ItemFilters = { project?: string; tag?: string };
 
+/**
+ * Whose Clips the directory answers with: `mine` is every Account's default,
+ * and `all` is the admin's alone — the server refuses it from anyone else.
+ */
+export type ClipScope = "mine" | "all";
+
+export type ClipFilters = ItemFilters & { scope?: ClipScope };
+
 export type MaskProvenance = { mask_handoff?: boolean };
 
 export type MaskRle = {
@@ -419,13 +427,16 @@ export function itemsPath(filters: ItemFilters = {}): string {
   return suffix ? `/api/items?${suffix}` : "/api/items";
 }
 
-export function clipsPath(filters: ItemFilters = {}): string {
+export function clipsPath(filters: ClipFilters = {}): string {
   const query = new URLSearchParams();
   if (filters.project) {
     query.set("project", filters.project);
   }
   if (filters.tag) {
     query.set("tag", filters.tag);
+  }
+  if (filters.scope) {
+    query.set("scope", filters.scope);
   }
   const suffix = query.toString();
   return suffix ? `/api/clips?${suffix}` : "/api/clips";

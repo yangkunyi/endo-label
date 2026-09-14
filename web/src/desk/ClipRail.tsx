@@ -1,10 +1,22 @@
 import { Link } from "react-router-dom";
 import useSWR from "swr";
-import { clipDeskPath, getJson, type ClipListResponse } from "../api";
+import { clipDeskPath, clipsPath, getJson, type ClipListResponse } from "../api";
+import { emptyClipsNotice, readStoredClipFilters } from "../clipFilters";
 
-/** The left rail: every allowlisted Clip, the focused one marked as current. */
+/**
+ * The left rail: the Clips this Account may see, the focused one marked as
+ * current.
+ *
+ * It reads the Clips page's own selection (Project, tag, scope) instead of a
+ * second one, so the rail and the page can never disagree about the list; a
+ * scope the server refuses shows the server's sentence here too.
+ */
 export function ClipRail({ activeClipId, width }: { activeClipId: string | undefined; width: number }) {
-  const { data, error, isLoading } = useSWR("/api/clips", getJson<ClipListResponse>);
+  const filters = readStoredClipFilters();
+  const { data, error, isLoading } = useSWR(
+    clipsPath(filters),
+    getJson<ClipListResponse>,
+  );
 
   return (
     <nav
@@ -17,8 +29,14 @@ export function ClipRail({ activeClipId, width }: { activeClipId: string | undef
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
         {isLoading ? <p className="p-2 text-sm text-muted-foreground">Loading Clips…</p> : null}
-        {error ? <p className="p-2 text-sm text-destructive">Could not load Clips</p> : null}
-        {!isLoading && !error && data?.clips.length === 0 ? <p className="p-2 text-sm text-muted-foreground">No Clips on the allowlist.</p> : null}
+        {error ? (
+          <p className="p-2 text-sm text-destructive">
+            {error instanceof Error ? error.message : "Could not load Clips"}
+          </p>
+        ) : null}
+        {!isLoading && !error && data?.clips.length === 0 ? (
+          <p className="p-2 text-sm text-muted-foreground">{emptyClipsNotice(filters.scope)}</p>
+        ) : null}
         {data?.clips.map((clip) => (
           <Link
             key={clip.id}

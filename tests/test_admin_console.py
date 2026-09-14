@@ -189,10 +189,13 @@ def test_delivered_marker_and_project_tag_filtered_queries(tmp_path: Path) -> No
     assert admin.put("/api/clips/NOPE/tags", json={"tags": ["x"]}).status_code == 404
     assert admin.get("/api/tags").json()["tags"] == ["chole", "east", "west"]
 
-    # Clip directory filters by Project and by Clip tag.
-    tagged = admin.get("/api/clips", params={"tag": "west"}).json()["clips"]
+    # Clip directory filters by Project and by Clip tag. The directory is
+    # "mine" by default, so an admin asking about the whole catalog says so.
+    tagged = admin.get("/api/clips", params={"tag": "west", "scope": "all"}).json()["clips"]
     assert [row["id"] for row in tagged] == ["CLIPA", "CLIPC"]
-    western = admin.get("/api/clips", params={"project": "West Study"}).json()["clips"]
+    western = admin.get(
+        "/api/clips", params={"project": "West Study", "scope": "all"}
+    ).json()["clips"]
     assert [row["id"] for row in western] == ["CLIPC"]
 
     # Task list / board membership carries the Project and tags for the row.

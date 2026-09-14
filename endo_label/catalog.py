@@ -42,10 +42,13 @@ def clip_entries(
     *,
     project: str | None = None,
     tag: str | None = None,
+    account_id: int | None = None,
 ) -> tuple[ClipEntry, ...]:
     return tuple(
         ClipEntry(id=row.id, kind=row.kind, path=row.path)
-        for row in list_registered_clips(db_path(settings), project=project, tag=tag)
+        for row in list_registered_clips(
+            db_path(settings), project=project, tag=tag, account_id=account_id
+        )
     )
 
 
@@ -383,9 +386,24 @@ def list_clips(
     *,
     project: str | None = None,
     tag: str | None = None,
+    account_id: int | None = None,
+    scope: str = "mine",
 ) -> list[dict]:
+    """Clips the caller asked for, narrowed by Project, tag and scope.
+
+    ``scope="mine"`` keeps only Clips the Account holds an Assignment on — as
+    its assignee or its reviewer, in any state. Exactly ``"all"`` lifts that
+    filter, and who may ask for it is the caller's decision, not this one's.
+    """
+    if scope != "all" and account_id is None:
+        raise CatalogError("scope='mine' needs an Account")
     clips: list[dict] = []
-    for entry in clip_entries(settings, project=project, tag=tag):
+    for entry in clip_entries(
+        settings,
+        project=project,
+        tag=tag,
+        account_id=None if scope == "all" else account_id,
+    ):
         row = _clip_row(entry, settings)
         if row is not None:
             clips.append(row)
