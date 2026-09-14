@@ -13,13 +13,16 @@ asserted by name (`alice`, `carol`) — the holder is the whole point of the
 sentence, and a refusal that reads "not assigned to anyone" about an item alice
 is holding is exactly the bug this wording exists to end.
 
-Three arms of `coordination._write_refusal` cannot be reached by driving the API,
-and each is accounted for here: a Labeling row nobody holds and a Reviewing row
-with no reviewer are pinned against a hand-made row (the way
-`tests/test_project_members.py` pins the upgrade), while its "yours, but it is
-not in a writable state" arm is unreachable by construction — being the assignee
-in Labeling *is* what makes the write writable — so it is deliberately not
-driven.
+Four arms of `coordination._write_refusal` are not states of the machine: the row
+is missing, a Labeling row nobody holds, a Reviewing row with no reviewer, and
+"yours, but it is not in a writable state". The first three are pinned against a
+hand-made store or row (the way `tests/test_project_members.py` pins the
+upgrade); the fourth is unreachable by construction — being the assignee in
+Labeling *is* what makes the write writable — so it is deliberately not driven.
+`assign_reviewer`'s sentence is the same story on the transition side: both its
+callers are admin-gated, so what a non-admin actually meets is the route's
+"Admin only", and the sentence behind it is left unpinned rather than tested
+down a path nobody can walk.
 """
 
 from __future__ import annotations
