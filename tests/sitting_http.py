@@ -10,10 +10,12 @@ from endo_label.app import create_app
 from endo_label.config import ClipEntry, Settings
 from endo_label.coordination import (
     AccountExists,
+    add_project_member,
     connect,
     create_account,
     db_path,
     get_or_create_project,
+    get_project_by_name,
     hash_password,
     register_clip,
 )
@@ -74,6 +76,14 @@ def login(
 ) -> None:
     response = client.post("/api/auth/login", json={"username": username, "password": password})
     assert response.status_code == 200, response.text
+
+
+def ensure_members(settings: Settings, *usernames: str, project: str = "Test") -> None:
+    """Test helper: assignment only takes members, so seed who works on the Project."""
+    path = db_path(settings)
+    project_row = get_project_by_name(path, project)
+    for username in usernames:
+        add_project_member(path, project_row.id, username)
 
 
 def occupy_registered(settings: Settings, username: str = ADMIN_USERNAME) -> None:

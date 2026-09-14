@@ -44,6 +44,8 @@ import {
   registryPath,
   adminUserPath,
   adminUsersPath,
+  adminProjectMemberPath,
+  adminProjectMembersPath,
   clipTagsPath,
   clipsPath,
   deliverPath,
@@ -95,6 +97,9 @@ test("admin console paths match compose HTTP", () => {
   expect(adminUserPath("a b")).toBe("/api/admin/users/a%20b");
   expect(projectsPath()).toBe("/api/projects");
   expect(projectPath(3)).toBe("/api/projects/3");
+  expect(adminProjectMembersPath(3)).toBe("/api/admin/projects/3/members");
+  expect(adminProjectMemberPath(3, "alice")).toBe("/api/admin/projects/3/members/alice");
+  expect(adminProjectMemberPath(3, "a b")).toBe("/api/admin/projects/3/members/a%20b");
   expect(tagsPath()).toBe("/api/tags");
   expect(clipTagsPath("CLIPA")).toBe("/api/clips/CLIPA/tags");
   expect(deliverPath("CLIPA", "phase")).toBe("/api/items/CLIPA/phase/deliver");

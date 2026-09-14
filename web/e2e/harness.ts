@@ -53,6 +53,32 @@ export async function ensureAccount(
     [200, 409],
     `create ${account.username}: ${response.status()} ${await response.text()}`,
   ).toContain(response.status());
+  await ensureMember(request, account.username);
+}
+
+/**
+ * Make `username` a member of the sitting's Project. Membership gates assignment, and the
+ * harness's Accounts are created after the server has registered the Project, so nothing
+ * seeds them: `assign` and `ensureLabelingFor` call this before they hand work out.
+ */
+export async function ensureMember(request: APIRequestContext, username: string): Promise<void> {
+  const response = await request.get("/api/projects");
+  expect(response.ok(), `projects: ${response.status()}`).toBeTruthy();
+  const projects = ((await response.json()) as {
+    projects: { id: number; name: string; members?: string[] }[];
+  }).projects;
+  const project = projects.find((row) => row.name === E2E_PROJECT);
+  expect(project, `no Project ${E2E_PROJECT}`).toBeTruthy();
+  if (project!.members?.includes(username)) {
+    return;
+  }
+  const put = await request.put(`/api/admin/projects/${project!.id}/members`, {
+    data: { members: [...(project!.members ?? []), username] },
+  });
+  expect(
+    put.ok(),
+    `add ${username} to ${E2E_PROJECT}: ${put.status()} ${await put.text()}`,
+  ).toBeTruthy();
 }
 
 export async function boardItems(request: APIRequestContext): Promise<ItemRow[]> {
@@ -120,6 +146,7 @@ export async function assign(
   taskType: string,
   username: string,
 ): Promise<void> {
+  await ensureMember(request, username);
   await postItem(request, clipId, taskType, "assign", { assignee: username });
 }
 
@@ -139,6 +166,7 @@ export async function ensureLabelingFor(
   clips: readonly string[] = E2E_CLIPS,
   taskTypes: readonly string[] = TASK_TYPES,
 ): Promise<void> {
+  await ensureMember(request, username);
   const items = await boardItems(request);
   for (const clipId of clips) {
     for (const taskType of taskTypes) {

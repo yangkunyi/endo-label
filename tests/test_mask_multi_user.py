@@ -13,7 +13,7 @@ from endo_label.config import Settings
 from endo_label.coordination import create_account, db_path
 from endo_label.mask.predictor import FakePredictor
 from endo_label.mask.session import SessionManager
-from tests.sitting_http import login, seed_admin, ensure_registered
+from tests.sitting_http import ensure_members, ensure_registered, login, seed_admin
 
 _POINT = {"frame_index": 0, "points": [[0.5, 0.5]], "point_labels": [1]}
 
@@ -42,6 +42,7 @@ def _shared_app(tmp_path: Path, *, predictor=None, **extra):
     ensure_registered(settings)
     create_account(db_path(settings), "alice", "pw", annotator=True)
     create_account(db_path(settings), "bob", "pw", annotator=True)
+    ensure_members(settings, "alice", "bob")
     manager = SessionManager(settings, predictor) if predictor is not None else None
     return create_app(settings, session_manager=manager)
 
