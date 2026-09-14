@@ -13,3 +13,9 @@ node_modules/
 .archon/workflows/matt/ticket-dag/
 worktrees/
 .scratch/orchestrator/runs/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
