@@ -2,17 +2,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AnnotationSummary, ClipMeta, TripletRow, Vocab } from "../api";
 import { useDeskStore, type EditorKind } from "../deskStore";
 import { maskCoveredFrames } from "../maskCoverage";
-import { foldCoverage } from "../timeline";
+import type { FrameCoverage } from "../timeline";
 import { brushColorKey, useBrushRange, useDeskLanes } from "./lanes";
 import { useTrackLanes } from "./maskLanes";
 import { TransportRow } from "./PlayerPanel";
 import { TimelineBand } from "./TimelineBand";
 import { isEditableTarget } from "./keyboard";
 import type { DeskNotice } from "./notice";
+import { useUnlabeledJump } from "./unlabeledJump";
 import { identityFromLaneKey, sameLaneBar, type IdentityWriter, type LaneBar } from "./writer";
 
-/** The timeline panel: Ruler, transport and Lane well, plus the bar selection
- * and the span edits its gestures commit. */
+/** The timeline panel: Ruler, transport and Lane well, the strip area, plus the
+ * bar selection and the span edits its gestures commit. */
 export function TimelinePanel({
   clipId,
   clip,
@@ -23,6 +24,7 @@ export function TimelinePanel({
   classFrames,
   tripletFrames,
   annotation,
+  coverage,
   writer,
   notify,
 }: {
@@ -36,6 +38,8 @@ export function TimelinePanel({
   tripletFrames: Record<string, TripletRow[]>;
   /** The mask summary: the mask strip's coverage and the Track Lanes' spans. */
   annotation: AnnotationSummary | null | undefined;
+  /** The focused Task type's coverage, folded once by the desk and drawn below. */
+  coverage: FrameCoverage;
   writer: IdentityWriter;
   notify: (notice: DeskNotice) => void;
 }) {
@@ -54,19 +58,8 @@ export function TimelinePanel({
   const allLanes = useMemo(() => [...lanes, ...trackLanes], [lanes, trackLanes]);
   const coveredFrames = useMemo(() => maskCoveredFrames(annotation), [annotation]);
   const { previewRange, focusedBrush } = useBrushRange({ clipId, frameIndex, focus, vocab });
-  // One derived map per Task type: the strip draws it and the desk's hints count
-  // it, both through `foldCoverage` (ADR 0029).
-  const coverage = useMemo(
-    () =>
-      foldCoverage({
-        task: focus,
-        frameCount: clip.frame_count,
-        phaseFrames,
-        classFrames,
-        tripletFrames,
-      }),
-    [classFrames, clip.frame_count, focus, phaseFrames, tripletFrames],
-  );
+  // The button beside the Coverage Strip is the `n` key's other half.
+  const nextUnlabeled = useUnlabeledJump({ coverage, frameIndex, notify });
   const [barSelection, setBarSelection] = useState<LaneBar[]>([]);
   const selectionScope = `${clipId ?? ""}:${focus}`;
   const [barScope, setBarScope] = useState(selectionScope);
@@ -174,6 +167,7 @@ export function TimelinePanel({
       brushKeys={focusedBrush.map(brushColorKey)}
       barSelection={barSelection}
       transport={<TransportRow />}
+      onNextUnlabeled={nextUnlabeled}
       onToggleBar={(bar) =>
         setBarSelection((prev) =>
           prev.some((item) => sameLaneBar(item, bar))

@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import {
   coverageSummary,
+  everyFrameLabeledNotice,
   foldClass,
   foldCoverage,
   foldCovered,
@@ -8,7 +9,10 @@ import {
   foldTriplet,
   frameFromClientX,
   labelColor,
+  nextUnlabeledFrame,
+  submitGapNotice,
   taskColor,
+  type FrameCoverage,
 } from "./timeline";
 
 test("phase folds one lane per phase name", () => {
@@ -189,4 +193,106 @@ test("taskColor is per Task type, distinct, and desaturated for dark surfaces", 
   for (const color of colors) {
     expect(color).toMatch(/^hsl\(\d+ \d+% \d+%\)$/);
   }
+});
+
+/** `n`'s map: 6 Frames, class on 0-1 and 4, so the gaps are 2-3 and 5. */
+function gapCoverage(overrides: Partial<FrameCoverage> = {}): FrameCoverage {
+  return {
+    task: "class",
+    segs: [
+      { start: 0, end: 1, covered: true },
+      { start: 2, end: 3, covered: false },
+      { start: 4, end: 4, covered: true },
+      { start: 5, end: 5, covered: false },
+    ],
+    covered: 3,
+    unlabeled: 3,
+    total: 6,
+    ...overrides,
+  };
+}
+
+test("the next unlabeled Frame is the first gap ahead of the Playhead", () => {
+  const coverage = gapCoverage();
+  expect(nextUnlabeledFrame(coverage, 0)).toBe(2);
+  expect(nextUnlabeledFrame(coverage, 1)).toBe(2);
+  // Standing inside a gap, the walk moves on rather than staying put.
+  expect(nextUnlabeledFrame(coverage, 2)).toBe(3);
+  expect(nextUnlabeledFrame(coverage, 3)).toBe(5);
+  expect(nextUnlabeledFrame(coverage, 4)).toBe(5);
+});
+
+test("the next unlabeled Frame wraps once through the Clip", () => {
+  expect(nextUnlabeledFrame(gapCoverage(), 5)).toBe(2);
+  // A gap that lies entirely behind the Playhead is reached by the wrap, not
+  // by a second search: 4 Frames, class on 2-3, so frames 0-1 are the only gap.
+  const behind = foldCoverage({
+    task: "class",
+    frameCount: 4,
+    phaseFrames: {},
+    classFrames: { "2": ["blurred"], "3": ["blurred"] },
+    tripletFrames: {},
+  });
+  expect(behind.segs).toEqual([
+    { start: 0, end: 1, covered: false },
+    { start: 2, end: 3, covered: true },
+  ]);
+  expect(nextUnlabeledFrame(behind, 2)).toBe(0);
+  expect(nextUnlabeledFrame(behind, 3)).toBe(0);
+});
+
+test("a covered Clip has no next unlabeled Frame, and an empty one has none either", () => {
+  const covered = foldCoverage({
+    task: "phase",
+    frameCount: 3,
+    phaseFrames: { "0": "Calot", "1": "Calot", "2": "Pack" },
+    classFrames: {},
+    tripletFrames: {},
+  });
+  expect(covered.unlabeled).toBe(0);
+  expect(nextUnlabeledFrame(covered, 0)).toBeNull();
+  expect(nextUnlabeledFrame(covered, 2)).toBeNull();
+
+  const emptyClip = foldCoverage({
+    task: "class",
+    frameCount: 0,
+    phaseFrames: {},
+    classFrames: {},
+    tripletFrames: {},
+  });
+  expect(nextUnlabeledFrame(emptyClip, 0)).toBeNull();
+});
+
+test("the only unlabeled Frame left is found from either side of it", () => {
+  const coverage = foldCoverage({
+    task: "triplet",
+    frameCount: 4,
+    phaseFrames: {},
+    classFrames: {},
+    tripletFrames: {
+      "0": [{ instrument: "grasper", verb: "retract", target: "gallbladder" }],
+      "2": [{ instrument: "grasper", verb: "retract", target: "gallbladder" }],
+      "3": [{ instrument: "grasper", verb: "retract", target: "gallbladder" }],
+    },
+  });
+  expect(coverage).toMatchObject({ covered: 3, unlabeled: 1, total: 4 });
+  expect(nextUnlabeledFrame(coverage, 0)).toBe(1);
+  expect(nextUnlabeledFrame(coverage, 1)).toBe(1);
+  expect(nextUnlabeledFrame(coverage, 3)).toBe(1);
+});
+
+test("the Submit hint names the gap count for the Task type being submitted", () => {
+  const counts = { task: "class", unlabeled: 32, total: 120 };
+  expect(submitGapNotice(counts)).toBe("Submitting with 32 of 120 frames unlabeled for class");
+  expect(submitGapNotice({ ...counts, task: "triplet", unlabeled: 1 })).toBe(
+    "Submitting with 1 of 120 frames unlabeled for triplet",
+  );
+  // A fully covered Clip has nothing to say, and nothing to refuse either.
+  expect(submitGapNotice({ ...counts, unlabeled: 0 })).toBeNull();
+  expect(submitGapNotice({ task: "mask", unlabeled: 0, total: 0 })).toBeNull();
+});
+
+test("the nothing-left notice names the Task type and never reads as an error", () => {
+  expect(everyFrameLabeledNotice("class")).toBe("Every Frame has a class label");
+  expect(everyFrameLabeledNotice("phase")).toBe("Every Frame has a phase label");
 });

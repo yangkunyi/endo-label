@@ -2,6 +2,7 @@ import useSWR from "swr";
 import { getJson, mePath, type Me, type MyItem } from "../api";
 import { ItemActions as ItemActionsPanel } from "../ItemActions";
 import { cn } from "../lib/utils";
+import { submitGapNotice, type FrameCoverage } from "../timeline";
 import { rejectNote, stateBadge, taskActions } from "../taskList";
 import type { EditorKind } from "../deskStore";
 
@@ -9,8 +10,20 @@ import type { EditorKind } from "../deskStore";
 
 Submit / recall are the annotator's; pass / reject / reopen are the reviewer's —
 the same server-derived buttons the task list shows, rendered on the desk.
+
+The Submit hint is read off the same coverage map the Coverage Strip draws, so
+the sentence and the band count one set of Unlabeled gaps (ADR 0029).
 */
-export function DeskItemActions({ clipId, taskType }: { clipId: string; taskType: EditorKind }) {
+export function DeskItemActions({
+  clipId,
+  taskType,
+  coverage,
+}: {
+  clipId: string;
+  taskType: EditorKind;
+  /** The focused Task type's coverage, folded once by the desk (ADR 0029). */
+  coverage: FrameCoverage;
+}) {
   const { data, mutate } = useSWR(mePath(clipId, taskType), getJson<Me>);
   const item: MyItem | undefined = data?.item;
   const note = item ? rejectNote(item) : null;
@@ -35,6 +48,7 @@ export function DeskItemActions({ clipId, taskType }: { clipId: string; taskType
         taskType={taskType}
         item={item}
         onCompleted={mutate}
+        submitNotice={() => submitGapNotice(coverage)}
       />
       {note ? (
         <p
