@@ -1638,11 +1638,17 @@ def _write_allowed(row: sqlite3.Row | None, account_id: int) -> bool:
 
 
 def _account_name(con: sqlite3.Connection, account_id: int | None) -> str | None:
+    """The username a refusal names, or `None` when the store cannot answer.
+
+    `users` is the Account table — this read is what makes "assigned to alice"
+    name her. The guard is a safety net for a connection built by hand rather
+    than by `connect()`: every store `connect()` opens has the table.
+    """
     if account_id is None:
         return None
     try:
-        row = con.execute("SELECT username FROM accounts WHERE id=?", (int(account_id),)).fetchone()
-    except sqlite3.OperationalError:  # a fixture DB with no accounts table
+        row = con.execute("SELECT username FROM users WHERE id=?", (int(account_id),)).fetchone()
+    except sqlite3.OperationalError:  # a connection to a store without the Account table
         return None
     return str(row["username"]) if row is not None else None
 
