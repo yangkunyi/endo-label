@@ -107,6 +107,23 @@ def test_pass_records_done_and_reject_returns_the_item_with_its_note(tmp_path: P
     # A once-passed item stays in the reviewer's list so a re-review can reopen it.
     done_queue = _my_item(carol, "CLIPA", "phase")
     assert done_queue["capabilities"]["re_review"] is True
+    assert done_queue["capabilities"]["reject"] is True
+
+    # The assigned reviewer's reopen: Done -> Submitted, the review fields cleared,
+    # and the item waiting for an admin to hand it out again.
+    reopened = carol.post("/api/items/CLIPA/phase/re-review")
+    assert reopened.status_code == 200, reopened.text
+    assert reopened.json()["state"] == "Submitted"
+    assert reopened.json()["reviewer"] is None
+    assert reopened.json()["reviewed_by"] is None
+    assert reopened.json()["reviewed_at"] is None
+    assert _my_item(alice, "CLIPA", "phase")["state"] == "Submitted"
+    # Nothing to review again yet: it left the reviewer's queue with the review.
+    assert all(row["clip_id"] != "CLIPA" for row in carol.get("/api/me/items").json()["items"])
+    assert admin.post(
+        "/api/items/CLIPA/phase/reviewer", json={"reviewer": "carol"}
+    ).status_code == 200
+    assert carol.post("/api/items/CLIPA/phase/pass").status_code == 200
 
     # Reject from Done writes one note, clears the review fields, and unlocks the assignee.
     rejected = carol.post("/api/items/CLIPA/phase/reject", json={"note": "fix frame 3"})
