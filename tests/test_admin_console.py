@@ -293,8 +293,13 @@ def test_admin_creates_projects_and_edits_the_hospital_field(tmp_path: Path) -> 
     assert admin.patch("/api/projects/9999", json={"hospital": "Nowhere"}).status_code == 404
 
 
-def _sitting_with_tags(tmp_path: Path, media: Path, tags: list[str] | None) -> Path:
-    """One sitting YAML whose single Clip carries `tags` — stated as `[]` when empty, no key for None."""
+def _sitting_with_tags(tmp_path: Path, media: Path, tags: list[str] | str | None) -> Path:
+    """One sitting YAML whose single Clip carries `tags`.
+
+    A list is written as the list form (`[]` when empty) and a string as the one
+    comma-separated value — `""` included, which is the blank value no tag name is
+    read out of. `None` writes no `tags:` key at all.
+    """
     lines = [
         f"frames_root: {media.parent}",
         f"labels_root: {tmp_path / 'labels'}",
@@ -307,7 +312,9 @@ def _sitting_with_tags(tmp_path: Path, media: Path, tags: list[str] | None) -> P
         "        kind: jpeg",
         f"        path: {media}",
     ]
-    if tags is not None:
+    if isinstance(tags, str):
+        lines.append(f'        tags: "{tags}"')
+    elif tags is not None:
         lines.append(f"        tags: [{', '.join(tags)}]")
     yaml_path = tmp_path / "sitting.yaml"
     yaml_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -387,6 +394,34 @@ def test_a_config_entry_that_states_tags_owns_them_again(tmp_path: Path) -> None
     assert all(
         row["tags"] == ["chole", "west"] for row in admin.get("/api/items").json()["items"]
     )
+
+
+def test_a_blank_tags_value_states_nothing_about_the_clips_tags(tmp_path: Path) -> None:
+    """`tags: ""` names no tag, and a value naming none is no statement (ADR 0028).
+
+    Only a list is a statement in itself; the string form is the comma-separated
+    convenience, so a blank one has nothing to say and must leave the store's tags
+    as an absent key does — while `tags: []` still clears them.
+    """
+    media = _jpeg_clip(tmp_path / "frames", "CASE01")
+    admin = _boot(_sitting_with_tags(tmp_path, media, None))
+    assert admin.put("/api/clips/CASE01/tags", json={"tags": ["chole"]}).status_code == 200
+
+    # Each restart re-reads the same entry, now carrying a blank string: not a
+    # statement that the Clip has no tags, so the admin's tag survives it.
+    for _ in range(2):
+        admin = _boot(_sitting_with_tags(tmp_path, media, ""))
+        assert admin.get("/api/tags").json()["tags"] == ["chole"]
+        tagged = admin.get("/api/clips", params={"tag": "chole"}).json()["clips"]
+        assert [row["id"] for row in tagged] == ["CASE01"]
+
+    # The string form is still a statement when it names tags, and the list form
+    # is one even when it names none: that is how a config clears a Clip.
+    admin = _boot(_sitting_with_tags(tmp_path, media, "west, chole"))
+    assert admin.get("/api/tags").json()["tags"] == ["chole", "west"]
+    admin = _boot(_sitting_with_tags(tmp_path, media, []))
+    assert admin.get("/api/tags").json()["tags"] == []
+    assert admin.get("/api/clips", params={"tag": "chole"}).json()["clips"] == []
 
 
 def _plain_sitting(tmp_path: Path, frames: Path) -> Path:
