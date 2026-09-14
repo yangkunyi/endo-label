@@ -1246,7 +1246,12 @@ def recall_item(path: Path, clip_id: str, task_type: str, *, account_id: int) ->
 def assign_reviewer(
     path: Path, clip_id: str, task_type: str, username: str, *, account_id: int
 ) -> dict:
-    """Submitted -> Reviewing. Admin assigns a reviewer other than the annotator."""
+    """Submitted -> Reviewing. Admin assigns a member of the Clip's Project, not the annotator.
+
+    Reviewing is work on the Project, so membership gates the reviewer the way it
+    gates the assignee. The membership refusal comes first: an impossible reviewer
+    is impossible whoever the annotator is.
+    """
 
     def _do(con: sqlite3.Connection, row: sqlite3.Row) -> dict:
         if not _actor_capabilities(con, row, account_id)["assign_reviewer"]:
@@ -1255,7 +1260,10 @@ def assign_reviewer(
             if not admin:
                 raise TransitionForbidden("Only an admin can assign a reviewer.")
             raise AssignmentConflict(row["state"])
-        reviewer_id = _account_id(con, username)
+        reviewer_id, login = _account_login(con, username)
+        refusal = _membership_refusal(con, clip_id, reviewer_id, login)
+        if refusal is not None:
+            raise NotAProjectMember(refusal)
         if row["assignee_id"] is not None and int(row["assignee_id"]) == reviewer_id:
             raise ReviewerIsAnnotator()
         con.execute(

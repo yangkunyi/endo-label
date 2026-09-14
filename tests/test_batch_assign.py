@@ -7,8 +7,8 @@ selection must not stop the Unassigned ones from landing, and the caller has to 
 able to say what happened to each. The single-item routes stay the only other
 writers, and this one calls them, so the state machine has one implementation.
 
-The two Projects here are not decoration: membership gates the assignee path (09),
-so a batch that spans Projects has to answer per Project.
+The two Projects here are not decoration: membership gates the handover paths (09,
+16), so a batch that spans Projects has to answer per Project.
 """
 
 from __future__ import annotations
@@ -20,7 +20,12 @@ from fastapi.testclient import TestClient
 
 from endo_label.app import create_app
 from endo_label.config import ClipEntry, ProjectSpec, Settings
-from endo_label.coordination import create_account, db_path
+from endo_label.coordination import (
+    add_project_member,
+    create_account,
+    db_path,
+    get_project_by_name,
+)
 from tests.live_http import account_client, live_server, read_event
 from tests.sitting_http import login, seed_admin
 
@@ -298,7 +303,11 @@ def test_a_reviewer_who_is_the_annotator_is_refused_per_item(tmp_path: Path) -> 
         assert _batch(admin, [(clip_id, "phase")], assignee=username).status_code == 200
         assert annotator.post(f"/api/items/{clip_id}/phase/submit").status_code == 200
 
-    # alice annotates CLIPA/phase, so she may only review the other one.
+    # Membership gates the reviewer too, so alice has to be a Ward member for this
+    # test to be about the annotator check: she may only review the other one.
+    ward = get_project_by_name(db_path(settings), "Ward")
+    assert add_project_member(db_path(settings), ward.id, "alice")
+
     answer = _batch(
         admin, [("CLIPA", "phase"), ("CLIPB", "phase")], reviewer="alice"
     )
@@ -347,6 +356,32 @@ def test_a_non_member_is_skipped_by_name_while_the_members_land(tmp_path: Path) 
     again = _batch(admin, [("CLIPB", "phase")], assignee="alice")
     assert again.json()["skipped"] == []
     assert [row["assignee"] for row in again.json()["assigned"]] == ["alice"]
+
+
+def test_a_non_member_reviewer_is_skipped_by_name_while_the_members_land(
+    tmp_path: Path,
+) -> None:
+    """The reviewer is gated like the annotator, so a reviewer batch answers per Project."""
+    settings, app = _settings_and_app(tmp_path)
+    admin = TestClient(app)
+    bob = TestClient(app)
+    login(admin)
+    login(bob, *_BOB)
+
+    # Two Submitted items by one annotator: alice may review Pilot's, not Ward's.
+    for clip_id in ("CLIPA", "CLIPB"):
+        assert _batch(admin, [(clip_id, "class")], assignee="bob").status_code == 200
+        assert bob.post(f"/api/items/{clip_id}/class/submit").status_code == 200
+
+    answer = _batch(admin, [("CLIPA", "class"), ("CLIPB", "class")], reviewer="alice")
+    assert answer.status_code == 200, answer.text
+    assert [(row["clip_id"], row["reviewer"]) for row in answer.json()["assigned"]] == [
+        ("CLIPA", "alice")
+    ]
+    assert answer.json()["skipped"] == [
+        {"clip_id": "CLIPB", "task_type": "class", "reason": _NOT_A_MEMBER_OF_WARD}
+    ]
+    assert _item(admin, "CLIPB", "class")["state"] == "Submitted"
 
 
 def test_an_item_that_does_not_answer_is_skipped_not_a_404(tmp_path: Path) -> None:
