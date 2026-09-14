@@ -25,7 +25,7 @@ One study: the long-lived grouping a Clip belongs to (exactly one). Carries a ho
 _Avoid_: import batch (an informal grouping, not an entity); hospital as Clip ownership; one Clip in two Projects; tags deciding vocab or assignment
 
 **Project membership**:
-The explicit relation between an Account and a Project — the Accounts who may be given work in that Project. It gates assignment, not reading labels; it is a relation, not a role.
+The explicit relation between an Account and a Project — the Accounts who may be given work in that Project, as its annotator or as its reviewer. It gates assignment, not reading labels; it is a relation, not a role.
 _Avoid_: deriving membership from assignment history; membership as a permission on reads; a role flag; per-Clip membership
 
 **Account**:
