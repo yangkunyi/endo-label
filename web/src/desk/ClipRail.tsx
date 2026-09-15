@@ -17,7 +17,8 @@ import { useClipFilters } from "../useClipFilters";
  * makes, on the one screen a labeler stays on — and an admin may change it here
  * rather than go back to the Clips directory for the toggle. A change is a patch
  * of the corrected selection the rail renders, so the scope the correction just
- * dropped cannot come back through the toggle.
+ * dropped cannot come back through the toggle; the sentence about that stored
+ * scope stays above the list until the change is made.
  */
 export function ClipRail({ activeClipId, width }: { activeClipId: string | undefined; width: number }) {
   const { filters, notice, canChooseScope, choose } = useClipFilters();

@@ -9,13 +9,13 @@
  * and the desk rail are pinned to the *corrected* request, not only to a
  * correct pure function.
  *
- * Each rendering here is the read that finds the stored value stale, and the one
- * sentence it has to say belongs to it: a reader is told about a corrected value
- * once, and a read of the corrected selection says nothing. What a browser does
- * with the correction — holding it in state and writing it to the entry — is an
- * effect, which a server render does not run; `clipFilters.test.ts` pins the pure
- * instruction behind it and the end-to-end spec pins the write, and the quiet
- * after it.
+ * Each rendering here is a read of a stored value, and the sentence it has to
+ * say belongs to that value: the render after the correction says the same
+ * thing, because writing the correction to the browser's entry is an effect and
+ * does not replace the value in the reader's hands — which is what this file can
+ * show, since a server render runs no effects. `clipFilters.test.ts` pins the
+ * pure view the hook is built from, and the end-to-end spec pins the entry write
+ * the reader's own browser performs.
  *
  * One render stands in for the server *refusing* the request instead: a refusal
  * is a request's error, and SWR keeps an error in a cache entry rather than in a
@@ -181,9 +181,9 @@ test("the desk rail corrects the same stored scope, on the desk", () => {
   expect(html).not.toContain("Show every Clip");
 });
 
-test("the corrected entry is read quietly: the sentence is told once", () => {
-  // What the browser holds once the correction has settled — the read that comes
-  // after the one the sentence belongs to.
+test("a browser whose entry is already the selection in force is read quietly", () => {
+  // The entry has been corrected by a past read, so this render has nothing to
+  // correct and, with no stored value left over, nothing to say.
   const html = renderWithStored(
     createElement(ClipList),
     { ...DEFAULT_CLIP_FILTERS, scope: "mine" },
