@@ -14,11 +14,17 @@
  * the caller is known, which selection the browser's entry keeps.
  *
  * A change of the reader's patches the selection in force at the moment it is
- * applied: the stored value while the Account is not yet known, whose read is
- * only a narrowing of the request, and the read's `filters` once it is, whose
- * correction is what the browser's entry becomes. Only the fields the reader
- * touched change, so an admin's `scope: "all"` is not lost by a Project or tag
- * pick made while `/api/me` is in flight.
+ * applied, field by field, and only in the fields it names. A field the read has
+ * answered for is the resolution's: a Project or tag is narrowed only against a
+ * loaded option list, so the read has answered for it whenever its answer can
+ * differ from the reader's value, and a value such a list proved dead cannot
+ * survive the change. A field the read has not answered for stays the reader's:
+ * while `/api/me` is in flight, `scope` is narrowed to `mine` for the request and
+ * never proved, so a Project or tag pick keeps the stored `scope`, and an admin's
+ * `all` is not the browser's to lose. The change is also what writes the
+ * browser's entry, so a browser whose reader never chooses a filter gains none;
+ * the read's own correction is all the render after it has left to write
+ * (`clipFiltersView`'s `entry`).
  */
 
 import type { ClipScope } from "./api";
@@ -201,13 +207,14 @@ export function resolveClipFilters(
  * One render of the stored selection, as the hook hands it to its surfaces.
  *
  * `filters` is the selection the surfaces ask with — the stored value as this
- * caller may use it — and, once the caller is known, the selection a control
- * patches. `notice` is the sentence about the stored value, and reading it does
- * not use it up — the stored value is still in the reader's hands, so the render
- * after the correction says the same thing. `entry` is the browser's correction:
- * the selection the entry should become, or `null` when it is already the one in
- * force. Writing it changes nothing the reader sees, which is what lets the
- * sentence outlive it.
+ * caller may use it — and the value a control patches in every field the read has
+ * answered for; the one field it may not have answered for yet, `scope`, stays
+ * the reader's own (see `chooseClipFilters`). `notice` is the sentence about the
+ * stored value, and reading it does not use it up — the stored value is still in
+ * the reader's hands, so the render after the correction says the same thing.
+ * `entry` is the browser's correction: the selection the entry should become, or
+ * `null` when it is already the one in force. Writing it changes nothing the
+ * reader sees, which is what lets the sentence outlive it.
  */
 export type ClipFiltersView = {
   /** The selection the server will answer: ask for the Clips with this. */
@@ -230,22 +237,26 @@ export function clipFiltersView(
 /**
  * The stored selection a control's change produces.
  *
- * The change patches the selection in force at the moment it is applied, and
- * only the fields in `patch` change. Which selection that is depends on whether
- * the read has an answer yet:
+ * The change patches the selection in force at the moment it is applied, field
+ * by field, and only the fields in `patch` change. Which selection that is, the
+ * read answers per field:
  *
- * - A caller not yet known has narrowed the request and corrected nothing, so
- *   the reader's own stored value is in force: a Project or tag pick leaves the
- *   fields it did not touch alone — an admin's `scope: "all"` among them — and
- *   the narrowing of a read still in flight cannot be written back as the
- *   reader's own.
- * - A caller the read has answered has a correction, the selection the browser's
- *   entry must become, and that is what a change patches from then on; a value
- *   the correction read past is not in hand to bring back.
+ * - `project`, `tag`: a value is called dead only against a *loaded* option
+ *   list, so this field is proved or left alone — the read has answered for it
+ *   whenever `filters` can differ from the reader's value. The change patches
+ *   the resolution's value, so a value a loaded list proved dead is left out and
+ *   stays out, and the sentence the read would have said about it cannot come
+ *   back over a change the surface made silently.
+ * - `scope`: answered only by `/api/me`. Until the Account is known, the request
+ *   narrows `all` to `mine` without proving anything, so the reader's own stored
+ *   value is in force and a Project or tag pick leaves an admin's `all` alone; a
+ *   non-admin's stale `all` is corrected by the read's own answer, never by a
+ *   change. Once the flag is known, the resolution's scope is in force and a
+ *   value the server would refuse cannot be carried back by a pick.
  *
- * Pure and total, so it is the pin the hook is built from: the next stored
- * selection is a function of the value in force and the patch, and of nothing a
- * render happened to hold.
+ * Pure and total — writing is `applyClipFilterChange`'s — so it is the decision
+ * the hook is built from: the next stored selection is a function of the value in
+ * force and the patch, and of nothing a render happened to hold.
  */
 export function chooseClipFilters(
   stored: ClipFilterSelection,
@@ -253,6 +264,36 @@ export function chooseClipFilters(
   options: ClipFilterOptions,
   patch: Partial<ClipFilterSelection>,
 ): ClipFilterSelection {
-  const { entry } = clipFiltersView(stored, caller, options);
-  return { ...(entry ?? stored), ...patch };
+  const { filters } = resolveClipFilters(stored, caller, options);
+  const inForce: ClipFilterSelection = {
+    project: filters.project,
+    tag: filters.tag,
+    // The one field the read may not have answered for: the request's narrowing
+    // of an unproved `all` is not a value to patch from.
+    scope: caller.isAdmin === null ? stored.scope : filters.scope,
+  };
+  return { ...inForce, ...patch };
+}
+
+/**
+ * The reader's change, applied to the value in force and written where the
+ * reader's value lives.
+ *
+ * This is the hook's `choose` in one call: `chooseClipFilters` decides the next
+ * selection and `saveStoredClipFilters` writes it, so a change persists what it
+ * produced — and the render effect has only the read's correction left to write,
+ * which is what keeps a browser whose reader never chose a filter from gaining
+ * an entry. Takes a storage so a test can stand in for `localStorage`, like the
+ * readers around it.
+ */
+export function applyClipFilterChange(
+  stored: ClipFilterSelection,
+  caller: ClipFilterCaller,
+  options: ClipFilterOptions,
+  patch: Partial<ClipFilterSelection>,
+  storage: WritableStorage | null = browserStorage(),
+): ClipFilterSelection {
+  const next = chooseClipFilters(stored, caller, options, patch);
+  saveStoredClipFilters(next, storage);
+  return next;
 }
