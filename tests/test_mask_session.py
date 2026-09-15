@@ -50,8 +50,11 @@ def _sitting(
     clip_ids: tuple[str, ...],
     *,
     frames: int = 2,
+    web_dist: Path | None = None,
 ) -> TestClient:
-    return authed_client(_settings_for(tmp_path, clip_ids, frames=frames))
+    return authed_client(
+        _settings_for(tmp_path, clip_ids, frames=frames), web_dist=web_dist
+    )
 
 
 def _authed_session(settings: Settings, session_manager: SessionManager) -> TestClient:
@@ -969,16 +972,26 @@ def test_undo_after_clear_mask_restores_that_cell(tmp_path: Path) -> None:
 
 
 def test_empty_undo_is_200_noop_and_there_is_no_redo(tmp_path: Path) -> None:
-    client = _sitting(tmp_path, ("CLIPA",))
-    _open(client)
-    before = client.get("/api/session", params={"frame_index": 0}).json()
+    # "There is no redo" must not depend on whether this host has built web/dist.
+    built_dist = tmp_path / "dist"
+    built_dist.mkdir()
+    (built_dist / "index.html").write_text(
+        '<!doctype html><div id="root"></div>', encoding="utf-8"
+    )
+    for world, web_dist in (
+        ("built desk", built_dist),
+        ("no desk", tmp_path / "no-such-dist"),
+    ):
+        client = _sitting(tmp_path / world, ("CLIPA",), web_dist=web_dist)
+        _open(client)
+        before = client.get("/api/session", params={"frame_index": 0}).json()
 
-    noop = _undo(client)
-    assert noop["undone"] is False
-    assert noop["session"] == before
+        noop = _undo(client)
+        assert noop["undone"] is False
+        assert noop["session"] == before
 
-    redo = client.post("/api/session/redo", json={"frame_index": 0})
-    assert redo.status_code == 404
+        redo = client.post("/api/session/redo", json={"frame_index": 0})
+        assert redo.status_code == 404, (world, redo.status_code)
 
 
 def test_undo_is_scoped_to_the_requested_frame(tmp_path: Path) -> None:
