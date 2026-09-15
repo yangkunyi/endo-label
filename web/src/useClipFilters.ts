@@ -8,12 +8,13 @@
  * reading; this hook feeds it the Account and the option lists and shows the
  * reader what it left behind.
  *
- * The corrected selection is the one source of truth: what the state holds is
- * what the surfaces render, what a later control changes (`chooseClipFilters`)
- * and what the browser's entry gets, so a value the correction dropped is not in
- * hand anywhere and cannot come back through a Project or tag pick. A reader is
- * told once: the sentence belongs to the read that finds the stored value stale,
- * and the resolution over the corrected selection has nothing left to say.
+ * The selection in force is the resolution's `filters`: it is what the surfaces
+ * render, what a control changes (`chooseClipFilters`) and what the browser's
+ * entry gets, so a value the correction dropped is not in hand anywhere and
+ * cannot come back through a Project or tag pick. The reader's stored value
+ * stays in state — the sentence is a fact about it, and a fact a human reads has
+ * to outlive the commit that writes the entry — so the sentence is still on the
+ * render after the correction, and it goes when the reader changes a filter.
  *
  * A browser leaves a stale entry behind every time; a list nobody can fix from
  * the UI is the defect this exists to prevent.
@@ -32,21 +33,25 @@ import {
 } from "./api";
 import {
   chooseClipFilters,
+  clipFiltersView,
   readStoredClipFilters,
-  resolveClipFilters,
   saveStoredClipFilters,
   type ClipFilterSelection,
 } from "./clipFilters";
 
-/** The selection to ask the server with, and how to change what is stored. */
+/** The selection to ask the server with, and how to change what is in force. */
 export type ClipFiltersHandle = {
-  /** The selection the server will answer: ask for the Clips with this. */
+  /** The selection in force: ask for the Clips with this, and patch this. */
   filters: ClipFilterSelection;
-  /** The sentence about a stored value that was not used; `null` when there is none. */
+  /**
+   * The sentence about a stored value that was not used; `null` when there is
+   * none. It belongs to the stored value, so it stays until the reader changes a
+   * filter — `choose` replaces that value and ends the sentence.
+   */
   notice: string | null;
   /** Whether this caller may choose the scope at all — `all` is the admin's. */
   canChooseScope: boolean;
-  /** Store a change, for a control that offers one. */
+  /** Store a change to the selection in force, for a control that offers one. */
   choose(patch: Partial<ClipFilterSelection>): void;
 };
 
@@ -54,45 +59,46 @@ export function useClipFilters(): ClipFiltersHandle {
   const { data: me } = useSWR(mePath(), getJson<Me>);
   const { data: projects } = useSWR(projectsPath(), getJson<ProjectsResponse>);
   const { data: tags } = useSWR(tagsPath(), getJson<TagsResponse>);
-  const [selection, setSelection] = useState<ClipFilterSelection>(readStoredClipFilters);
+  // The reader's own value, as the browser holds it: the sentence is about this,
+  // and only a change of theirs replaces it.
+  const [stored, setStored] = useState<ClipFilterSelection>(readStoredClipFilters);
 
-  const resolution = useMemo(
+  const view = useMemo(
     () =>
-      resolveClipFilters(
-        selection,
+      clipFiltersView(
+        stored,
         { isAdmin: me ? me.roles.admin : null },
         {
           projects: projects?.projects.map((row) => row.name),
           tags: tags?.tags,
         },
       ),
-    [me, projects, selection, tags],
+    [me, projects, stored, tags],
   );
+  const { entry, filters, notice } = view;
 
-  // The reader's own browser outlived the value: the corrected selection becomes
-  // the state — and the entry — in the commit the correction is found in, so the
-  // other surface and the next reload read a selection that still lists Clips.
-  // Every read after this one is a read of the corrected value: nothing left to
-  // correct, and nothing left to say.
-  const { corrected, filters, notice } = resolution;
+  // The correction goes into the browser's entry and never back into the state:
+  // the stored value the sentence is about stays in hand, so the sentence is
+  // still there on the render after this one. A change is what replaces it
+  // (see `choose`), and that is what ends the sentence.
   useEffect(() => {
-    if (!corrected) {
-      return;
+    if (entry) {
+      saveStoredClipFilters(entry);
     }
-    setSelection(filters);
-    saveStoredClipFilters(filters);
-  }, [corrected, filters]);
+  }, [entry]);
 
-  const choose = useCallback((patch: Partial<ClipFilterSelection>) => {
-    setSelection((previous) => {
-      // A control changes what the surface shows, and the surface shows the
-      // corrected selection: patching that value is what keeps a scope or filter
-      // the correction read past out of the browser's entry for good.
-      const next = chooseClipFilters(previous, patch);
+  const choose = useCallback(
+    (patch: Partial<ClipFilterSelection>) => {
+      // A control changes the selection in force — `filters`, not the stored
+      // value a correction read past — so a pick cannot carry a refused scope or
+      // a dead Project back into the browser's entry, whether the caller is
+      // known or `/api/me` has not answered yet.
+      const next = chooseClipFilters(filters, patch);
       saveStoredClipFilters(next);
-      return next;
-    });
-  }, []);
+      setStored(next);
+    },
+    [filters],
+  );
 
   return {
     filters,
