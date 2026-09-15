@@ -8,22 +8,31 @@
  * disabled controls is the server's own, so this file pins it to the payload rather than
  * to a second copy of the wording.
  *
- * The read has three answers, not two: `edit_labels` true, `edit_labels` false, and
- * `/api/me` not answered at all. The last is `unknown`, and this file pins that it is not
- * a refusal — no write starts on it, no sentence claims it, and the canvas holds a prompt
- * drawn under it as `checking` rather than turning the gesture away as `refused`.
+ * The read has four answers, not two: `edit_labels` true, `edit_labels` false, a
+ * `/api/me` that has not answered yet, and a read that ended without an answer at all.
+ * The third is `unknown`, and this file pins that it is not a refusal — no write starts
+ * on it, no sentence claims it, and the canvas holds a prompt drawn under it as
+ * `checking` rather than turning the gesture away as `refused`. The fourth is
+ * `unreadable` — the server's 404 for a (Clip, task type) pair with no item, or a
+ * request that failed — and this file pins that it is not the held `unknown`: it holds
+ * nothing, and the desk words its own line for it because no server sentence exists.
  */
 
 import { expect, test } from "vitest";
 import type { MyItem } from "../api";
 import {
+  MASK_READ_FAILED,
   MASK_VIEW_CONTROLS,
   MASK_WRITE_CONTROLS,
+  acceptsPointerInk,
+  heldPromptOnAnswer,
   maskControlStates,
   maskPointerGate,
+  maskReadFailure,
   maskWriteOf,
   mayUndo,
   type MaskBusy,
+  type MaskRead,
   type MaskWrite,
 } from "./maskControls";
 
@@ -32,6 +41,10 @@ const REFUSED = "This Clip's mask is assigned to alice: only alice writes its la
 const IDLE: MaskBusy = { job: false, predicting: false };
 const JOB: MaskBusy = { job: true, predicting: false };
 const PREDICTING: MaskBusy = { job: false, predicting: true };
+
+/** A read that settled with no `/api/me` answer: the server's 404 with no body, or a
+ * request that never arrived. */
+const FAILED: MaskRead = { asked: true, isLoading: false, error: new Error("Not Found") };
 
 function item(over: Partial<MyItem> = {}): MyItem {
   return {
@@ -62,6 +75,10 @@ const REFUSED_CELL = maskWriteOf(
 );
 /** The read in flight: no item payload yet. */
 const UNKNOWN = maskWriteOf(undefined);
+/** The read ended without an answer: `/api/me`'s 404, or a failed request. */
+const UNREADABLE = maskWriteOf(undefined, FAILED);
+/** No Clip open: no read was ever asked, so there is no failure to report. */
+const NO_CLIP = maskWriteOf(undefined, { asked: false, isLoading: false, error: null });
 
 test("the mapping covers every control it declares, and no Save", () => {
   const mapped = Object.keys(states(maskWriteOf(item()), IDLE)).sort();
@@ -116,6 +133,10 @@ test("the desk never words a refusal of its own", () => {
   // An unanswered read carries no sentence either — but it is not that refusal.
   expect(UNKNOWN).toEqual({ state: "unknown", writable: false, refusal: null });
   expect(UNKNOWN.state).not.toBe(noSentence.state);
+  // A failed read is not a refusal either: it carries no refusal sentence, and the one
+  // line the desk words for it is about the read, not about ownership.
+  expect(UNREADABLE).toEqual({ state: "unreadable", writable: false, refusal: null });
+  expect(UNREADABLE.refusal).toBeNull();
 });
 
 test("an unanswered read is unknown, not refused: no write, no sentence, looking stays", () => {
@@ -128,6 +149,43 @@ test("an unanswered read is unknown, not refused: no write, no sentence, looking
     expect(states(UNKNOWN)[control], control).toBe(true);
   }
   expect(UNKNOWN.refusal).toBeNull();
+  expect(maskReadFailure(UNKNOWN)).toBeNull();
+});
+
+test("a read that ended without an answer is unreadable, not a hanging unknown", () => {
+  // The 404 and the failed request are the same fact to the desk: `/api/me` will not
+  // answer, so the state must not stay `checking` for the rest of the session.
+  expect(UNREADABLE.state).toBe("unreadable");
+  expect(UNREADABLE.state).not.toBe(UNKNOWN.state);
+  expect(maskPointerGate(UNREADABLE, IDLE)).toBe("unreadable");
+  expect(maskPointerGate(UNREADABLE, IDLE)).not.toBe("checking");
+  expect(acceptsPointerInk(maskPointerGate(UNREADABLE, IDLE))).toBe(false);
+
+  // No write and no hold, and the panel has its own line to show.
+  for (const control of MASK_WRITE_CONTROLS) {
+    expect(states(UNREADABLE)[control], control).toBe(false);
+  }
+  for (const control of MASK_VIEW_CONTROLS) {
+    expect(states(UNREADABLE)[control], control).toBe(true);
+  }
+  expect(maskReadFailure(UNREADABLE)).toBe(MASK_READ_FAILED);
+
+  // The same state from a read that ended with no item and no error: the server's 404
+  // is a settled answer, not a read in flight.
+  const answered404 = maskWriteOf(undefined, { asked: true, isLoading: false, error: null });
+  expect(answered404).toEqual(UNREADABLE);
+
+  // No Clip open asks no question: that stays `unknown`, not a failure.
+  expect(NO_CLIP).toEqual(UNKNOWN);
+  expect(maskReadFailure(NO_CLIP)).toBeNull();
+});
+
+test("a failed read stays unreadable while a retry is in flight, until an answer lands", () => {
+  // SWR retries; the desk does not go back to holding a prompt for each retry.
+  const retrying = maskWriteOf(undefined, { asked: true, isLoading: true, error: new Error("Not Found") });
+  expect(retrying).toEqual(UNREADABLE);
+  // The answer that lands writable is what ends it.
+  expect(maskWriteOf(item({ capabilities: { edit_labels: true } }), FAILED)).toEqual(WRITABLE);
 });
 
 test("the canvas gate holds an unanswered read instead of turning it away", () => {
@@ -136,17 +194,48 @@ test("the canvas gate holds an unanswered read instead of turning it away", () =
   expect(maskPointerGate(WRITABLE, PREDICTING)).toBe("open");
   // The read in flight is not a refusal: the prompt is held for the answer.
   expect(maskPointerGate(UNKNOWN, IDLE)).toBe("checking");
-  // Only the server's own no turns the gesture away.
+  // Only the server's own no turns the gesture away as a refusal.
   expect(maskPointerGate(REFUSED_CELL, IDLE)).toBe("refused");
+  // A read that never answered is its own reason, not the refusal's.
+  expect(maskPointerGate(UNREADABLE, IDLE)).toBe("unreadable");
   // A Propagate Job owns the Clip whatever the permission says (story 86).
   expect(maskPointerGate(WRITABLE, JOB)).toBe("busy");
   expect(maskPointerGate(UNKNOWN, JOB)).toBe("busy");
   expect(maskPointerGate(REFUSED_CELL, JOB)).toBe("busy");
+  expect(maskPointerGate(UNREADABLE, JOB)).toBe("busy");
   // The gate is open exactly where the prompts control is live.
-  for (const write of [WRITABLE, REFUSED_CELL, UNKNOWN]) {
+  for (const write of [WRITABLE, REFUSED_CELL, UNKNOWN, UNREADABLE]) {
     for (const busy of [IDLE, PREDICTING, JOB]) {
       expect(maskPointerGate(write, busy) === "open").toBe(states(write, busy).prompts);
     }
+  }
+});
+
+test("a gate that turns mid-drag stops accepting ink: the canvas repaints without it", () => {
+  // A drag starts under one of these and its ink is drawn to the canvas; when the gate
+  // turns to one of the others the gesture is a write the desk may no longer make, and
+  // the half-drawn segment is discarded and repainted rather than left as ink on a
+  // canvas nothing repaints. This is the truth table the overlay's clear effect and its
+  // in-flight repaint guard are built from; the wiring is hand-verified.
+  expect(acceptsPointerInk("open")).toBe(true);
+  expect(acceptsPointerInk("checking")).toBe(true);
+  expect(acceptsPointerInk("busy")).toBe(false);
+  expect(acceptsPointerInk("refused")).toBe(false);
+  expect(acceptsPointerInk("unreadable")).toBe(false);
+});
+
+test("the answer that lands decides the held prompt: send, drop, or hold", () => {
+  // ADR 0030's middle, as a truth table the two held-prompt effects are built from.
+  expect(heldPromptOnAnswer(WRITABLE)).toBe("send");
+  expect(heldPromptOnAnswer(REFUSED_CELL)).toBe("drop");
+  expect(heldPromptOnAnswer(UNKNOWN)).toBe("hold");
+  // A read that never answered drops it: nothing is coming, so nothing is held.
+  expect(heldPromptOnAnswer(UNREADABLE)).toBe("drop");
+  // The decision agrees with the controls: `send` is exactly where the prompts control
+  // is live, and the canvas takes ink wherever the prompt is sent or still held.
+  for (const write of [WRITABLE, REFUSED_CELL, UNKNOWN, UNREADABLE]) {
+    expect(heldPromptOnAnswer(write) === "send").toBe(states(write, IDLE).prompts);
+    expect(acceptsPointerInk(maskPointerGate(write, IDLE))).toBe(heldPromptOnAnswer(write) !== "drop");
   }
 });
 
@@ -191,4 +280,7 @@ test("the undo chord is inert for a non-writable item while the Undo button is d
 
 test("a busy Clip an Account may not write is off for the same reason and the same shape", () => {
   expect(states(REFUSED_CELL, JOB)).toEqual(states(REFUSED_CELL, IDLE));
+  // A failed read is off under a Job for the Job's reason, like any other non-writable
+  // cell, so the panel's sentence does not change with the Job.
+  expect(states(UNREADABLE, JOB)).toEqual(states(UNREADABLE, IDLE));
 });
