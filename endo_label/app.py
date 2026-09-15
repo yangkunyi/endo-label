@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.responses import FileResponse
+from starlette.requests import Request
+from starlette.routing import Match, Route, get_route_path
 
 from endo_label.admin_router import router as admin_router
 from endo_label.auth import install_auth, router as auth_router
@@ -37,23 +39,49 @@ def _desk_file(dist: Path, relative: str) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+def _is_api_path(route_path: str) -> bool:
+    return route_path == "/api" or route_path.startswith("/api/")
+
+
+class _DeskRoute(Route):
+    """A desk route that never claims an API path, so the desk never decides API routing.
+
+    Starlette matches the route table by path before method, so a GET catch-all that
+    matches ``/api/…`` only partially turns an unmatched API path into a 405 when the
+    desk is built and a 404 when it is not. Refusing to match ``/api`` leaves that
+    answer to the router: 404 for a path no route claims, 405 only where a real
+    endpoint's path matched but its method did not.
+    """
+
+    def matches(self, scope):
+        match, child_scope = super().matches(scope)
+        if match is not Match.NONE and _is_api_path(get_route_path(scope)):
+            return Match.NONE, {}
+        return match, child_scope
+
+
 def _mount_built_desk(app: FastAPI, dist: Path) -> None:
     index = dist / "index.html"
     if not index.is_file():
         return
 
-    @app.get("/", include_in_schema=False)
-    def desk_root() -> FileResponse:
+    def desk_root(request: Request) -> FileResponse:
         return FileResponse(index)
 
-    @app.get("/{full_path:path}", include_in_schema=False)
-    def desk_spa(full_path: str) -> FileResponse:
-        if full_path == "api" or full_path.startswith("api/"):
-            raise HTTPException(status_code=404, detail="Not Found")
-        found = _desk_file(dist, full_path)
+    def desk_spa(request: Request) -> FileResponse:
+        found = _desk_file(dist, request.path_params["full_path"])
         if found is not None:
             return FileResponse(found)
         return FileResponse(index)
+
+    app.router.routes.append(
+        _DeskRoute("/", desk_root, methods=["GET"], include_in_schema=False)
+    )
+    app.router.routes.append(
+        _DeskRoute(
+            "/{full_path:path}", desk_spa, methods=["GET"], include_in_schema=False
+        )
+    )
 
 
 def create_app(

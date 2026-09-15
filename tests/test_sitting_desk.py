@@ -47,6 +47,22 @@ def _client(tmp_path: Path, *, web_dist: Path | None = None) -> TestClient:
     return authed_client(_settings(tmp_path), web_dist=dist)
 
 
+def _two_worlds(tmp_path: Path) -> tuple[TestClient, TestClient]:
+    """The same sitting, once with a built desk and once without one."""
+    built = _client(tmp_path / "built")
+    bare = _client(tmp_path / "bare", web_dist=tmp_path / "bare" / "no-such-dist")
+    return built, bare
+
+
+_UNMATCHED_API = (
+    "/api",
+    "/api/does-not-exist",
+    "/api/session/redo",
+    "/api/deeply/nested/missing",
+)
+_ANY_METHOD = ("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+
+
 def test_built_desk_is_served_at_root_and_api_stays_compose_http(tmp_path: Path) -> None:
     client = _client(tmp_path)
     desk = client.get("/")
@@ -83,6 +99,36 @@ def test_unknown_api_path_is_json_404_not_desk(tmp_path: Path) -> None:
     assert missing.status_code == 404
     assert "application/json" in missing.headers["content-type"]
     assert "root" not in missing.text
+
+
+def test_unmatched_api_path_answers_the_same_with_and_without_a_built_desk(
+    tmp_path: Path,
+) -> None:
+    """The invariant: building the desk adds the desk's routes and changes no API answer."""
+    with_desk, without_desk = _two_worlds(tmp_path)
+    for path in _UNMATCHED_API:
+        for method in _ANY_METHOD:
+            built = with_desk.request(method, path)
+            bare = without_desk.request(method, path)
+            assert built.status_code == bare.status_code, (method, path)
+            assert (
+                built.headers["content-type"] == bare.headers["content-type"]
+            ), (method, path)
+            assert built.status_code == 404, (method, path)
+            assert "application/json" in built.headers["content-type"]
+
+
+def test_wrong_method_on_a_real_api_path_does_not_become_404(tmp_path: Path) -> None:
+    """The decision: a real endpoint keeps answering 405 to a wrong method.
+
+    An all-method ``/api/{rest:path}`` catch-all would full-match the path ahead of the
+    real route's partial match and answer 404 here, in both worlds.
+    """
+    with_desk, without_desk = _two_worlds(tmp_path)
+    for client in (with_desk, without_desk):
+        wrong = client.post("/api/health")
+        assert wrong.status_code == 405, wrong.text
+        assert "application/json" in wrong.headers["content-type"]
 
 
 def test_sitting_without_built_desk_still_serves_api(tmp_path: Path) -> None:
