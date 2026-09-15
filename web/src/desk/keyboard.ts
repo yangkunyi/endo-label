@@ -1,5 +1,16 @@
+/**
+ * The mask desk's keydown rules, as plain decisions, and the Undo gate they share with
+ * the Undo button.
+ *
+ * `TimelinePanel`, `FrameControls` and `PlayerPanel` import `isEditableTarget` from
+ * here for a DOM question of their own, so this module reaches nothing that fetches:
+ * the import below is the permission's shape alone, erased at build
+ * (`verbatimModuleSyntax`), so no `useSWR` and no React enter a panel through this
+ * file. The value edge runs the other way — `maskControls` imports `mayUndo` from here,
+ * because the rule is pure and the module that fetches is not.
+ */
 import { isUndoKey, type UndoKeyEvent } from "../overlayCoords";
-import { mayUndo, type MaskBusy, type MaskWrite } from "./maskControls";
+import type { MaskBusy, MaskWrite } from "./maskControls";
 
 /** True when the given event target is a field the user is typing into. */
 export function isEditableTarget(target: EventTarget | null): boolean {
@@ -29,6 +40,25 @@ export type MaskChordState = {
   write: MaskWrite;
   busy: MaskBusy;
 };
+
+/**
+ * Whether Undo may run at all for one moment: the item is writable and nothing
+ * may be in flight.
+ *
+ * The Undo button and the undo chord are the same gate. The button waits on
+ * `canUndo` too (there is a Session snapshot to restore); the chord does not — it
+ * asks the server, which answers "Nothing to undo on this Frame". What they share
+ * is that a non-writable item is inert either way, so the keyboard cannot walk
+ * past a gate the click respects. The rule reads the flag rather than the cell,
+ * because the cell's identity is not what it decides on; `useMaskWrite` memoizes
+ * the cell on the read, so a caller may depend on either.
+ *
+ * It lives here rather than beside the controls it gates: it is a pure rule, and
+ * this is the side that fetches nothing.
+ */
+export function mayUndo(writable: boolean, busy: MaskBusy): boolean {
+  return writable && !busy.job && !busy.predicting;
+}
 
 /**
  * The mask desk's keydown rule, as a pure decision.

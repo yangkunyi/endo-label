@@ -57,11 +57,18 @@ test can carry"); this ticket only stops the claim from being unmarked.
 ## 3. The keyboard Undo path
 
 `runUndo`'s guard and the Undo button's `controls.undo` are now one predicate, `mayUndo(writable,
-busy)` (`web/src/desk/maskControls.ts`), which `maskControlStates` reads for `undo`. The keydown
-handler's rule moved out of the effect into `maskKeyAction(event, { editable, mayUndo })`
-(`web/src/desk/keyboard.ts`), so the chord's inertness for a non-writable item is a pinned
-decision rather than a guard a later refactor can drop: the chord returns `"ignore"` instead of
-`"undo"`, and the button is disabled by the same `mayUndo`.
+busy)`, which `maskControlStates` reads for `undo`. The keydown handler's rule moved out of the
+effect into `maskKeyAction(event, { editable, write, busy })` (`web/src/desk/keyboard.ts`), so the
+chord's inertness for a non-writable item is a pinned decision rather than a guard a later
+refactor can drop: the chord returns `"ignore"` instead of `"undo"`, and the button is disabled by
+the same `mayUndo`. Ticket 25 moved `mayUndo` itself to `keyboard.ts` — the side that fetches
+nothing — and `maskControls` imports it from there, so `isEditableTarget`'s callers
+(`TimelinePanel`, `FrameControls`, `PlayerPanel`) no longer reach `useSWR` through this file.
+
+Two of the decisions below were reversed by the rounds that followed, and now say what the code
+does: the chord derives `mayUndo` from the gate's own inputs rather than being handed the boolean
+(22), and `preventDefault` is the named decision `maskKeyConsumes` (22). Ticket 22's notes
+(`22-a-read-that-never-answers.md`) are where those landed.
 
 Decisions:
 
@@ -71,13 +78,18 @@ Decisions:
 2. **`predicting.current`, not `predictBusy`, in the chord's check.** The ref is the synchronous
    flag, so a chord cannot race the render that would turn `predictBusy` on. The button's mapping
    uses the state, as before.
-3. **Non-writable no longer calls `preventDefault`.** The old handler prevented default on any
-   ctrl/meta+Z and let `runUndo` bail; the new one only prevents default when it actually runs
-   Undo, so the chord is inert in the browser too. Editable targets are unaffected
-   (`isEditableTarget` returns before either).
-4. **`mayUndo` takes `writable`, not the `/api/me` cell.** `useMaskWrite` returns a fresh object
-   each render; taking the flag lets the chord's callbacks depend on `write.writable` instead of
-   the cell's identity, so the `document` keydown listener is not re-registered on every render.
+3. **An inert chord is left to the browser, never swallowed.** The old handler prevented default
+   on any ctrl/meta+Z and let `runUndo` bail; the chord now consumes only a key it acts on —
+   `maskKeyConsumes(action)` is true for `"undo"` alone — so a non-writable item's Ctrl/Cmd+Z,
+   and Escape, reach the browser instead of being swallowed by a desk that does nothing with
+   them. Editable targets are unaffected (`isEditableTarget` returns before either). Ticket 22
+   made this an explicit decision rather than a property of the branch it sat in.
+4. **`mayUndo` takes `writable`, not the `/api/me` cell, and the chord derives it.** Ticket 21
+   passed the boolean in from the call site; ticket 22 reversed that, so `maskKeyAction` computes
+   `mayUndo(state.write.writable, state.busy)` itself and no call site can hardcode a `true` the
+   disabled Undo button would not honour. Ticket 21 took the flag because `useMaskWrite` returned
+   a fresh object every render; ticket 22 memoizes that state on the read, so the `document`
+   keydown listener now depends on `write` itself and the flag is only the predicate's input.
 
 ## Verification
 

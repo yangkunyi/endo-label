@@ -161,6 +161,15 @@ function refusalText(html: string): string | null {
   return match[1].replace(/&#x27;/g, "'");
 }
 
+/** The desk's own read-failure line, or null when the panel shows none. This render
+ * cannot reach the `unreadable` arm that renders it (see the header), so what the pin
+ * asks is the negative: the sentence a failed read carries is not the sentence a refusal
+ * carries, and the two must never sit beside each other. */
+function readFailureText(html: string): string | null {
+  const match = html.match(/<p data-mask-read-failed=""[^>]*>(.*?)<\/p>/);
+  return match === null ? null : match[1];
+}
+
 test("a mask item this Account may not write disables every write control and says why", () => {
   const html = deskHtml(
     item({ capabilities: { edit_labels: false }, write_refusal: REFUSED }),
@@ -168,6 +177,9 @@ test("a mask item this Account may not write disables every write control and sa
 
   // The sentence is the server's own, shown before the click rather than after a 403.
   expect(refusalText(html)).toBe(REFUSED);
+  // And it is the only reason shown: a refusal is an answer, so the desk's own
+  // read-failure line — which a failed read would put in its place — must not appear.
+  expect(readFailureText(html)).toBeNull();
 
   for (const label of ["New Track", "Predict", "Undo", "Clear mask", "Propagate"]) {
     expect(disabled(button(html, label)), label).toBe(true);
@@ -189,6 +201,7 @@ test("a writable mask item shows no sentence and waits only on its own state", (
   const html = deskHtml(item({ capabilities: { edit_labels: true } }));
 
   expect(refusalText(html)).toBeNull();
+  expect(readFailureText(html)).toBeNull();
 
   // Editable: New Track, Propagate and the rename hint are live.
   expect(disabled(button(html, "New Track"))).toBe(false);
@@ -213,6 +226,8 @@ test("an unanswered item cell invents no sentence and offers no write", () => {
   const html = deskHtml(undefined);
 
   expect(refusalText(html)).toBeNull();
+  // The read is in flight, not failed: the desk's line for a failure would be wrong here.
+  expect(readFailureText(html)).toBeNull();
   for (const label of ["New Track", "Predict", "Undo", "Clear mask", "Propagate"]) {
     expect(disabled(button(html, label)), label).toBe(true);
   }

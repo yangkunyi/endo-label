@@ -44,13 +44,12 @@ import {
 } from "../overlayCoords";
 import { hasMaskHandoff, isProtectedState, propagateTargetFrames, trackState } from "../trackState";
 import { formatElapsed, workerLoadingToast } from "../workerStatus";
-import { isEditableTarget, maskKeyAction, maskKeyConsumes } from "./keyboard";
+import { isEditableTarget, maskKeyAction, maskKeyConsumes, mayUndo } from "./keyboard";
 import {
   heldPromptOnAnswer,
   maskControlStates,
   maskPointerGate,
   maskReadFailure,
-  mayUndo,
   useMaskWrite,
 } from "./maskControls";
 import { useTrackLaneVisibility } from "./maskLanes";
@@ -774,9 +773,10 @@ export function MaskPanel() {
         </p>
       ) : null}
       {readFailure ? (
-        // The other reason they are off, and not a refusal: `/api/me` never answered, so
+        // The other reason they are off, and not a refusal: `/api/me` has not answered, so
         // there is no server sentence to show and the desk says so in its own words. No
-        // prompt is held for that answer (it is not coming).
+        // prompt is held for that answer — SWR keeps retrying the 404, so one may still
+        // land and turn the controls back on, but the desk does not wait on it.
         <p
           data-mask-read-failed=""
           className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-200"
