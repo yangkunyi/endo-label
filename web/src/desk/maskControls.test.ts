@@ -20,6 +20,7 @@
 
 import { expect, test } from "vitest";
 import type { MyItem } from "../api";
+import { mayUndo } from "./keyboard";
 import {
   MASK_READ_FAILED,
   MASK_VIEW_CONTROLS,
@@ -30,7 +31,6 @@ import {
   maskPointerGate,
   maskReadFailure,
   maskWriteOf,
-  mayUndo,
   type MaskBusy,
   type MaskRead,
   type MaskWrite,
