@@ -4,6 +4,7 @@ import {
   CLIP_FILTERS_STORAGE_KEY,
   DEFAULT_CLIP_FILTERS,
   chooseClipFilters,
+  clipFiltersView,
   emptyClipsNotice,
   normalizeClipFilters,
   readStoredClipFilters,
@@ -170,7 +171,8 @@ test("the corrected selection is the one a later read gets", () => {
   });
   const first = resolveClipFilters(readStoredClipFilters(storage), { isAdmin: false }, {});
   expect(first.corrected).toBe(true);
-  // The stored value is named once, to the read that finds it stale.
+  // The stored value is named to the read that finds it stale; a reader whose
+  // entry is already the corrected selection has nothing left to be told.
   expect(first.notice).toContain("showing your own Clips");
   saveStoredClipFilters(first.filters, storage);
 
@@ -190,7 +192,7 @@ test("a choice is a patch of the corrected selection, so a dropped value cannot 
   const caller = { isAdmin: false };
   const options = { projects: ["West Study"], tags: ["west", "east"] };
 
-  // One source of truth: the corrected selection is what the state holds and
+  // One source of truth: the corrected selection is what the surfaces render and
   // what the entry gets, so the reader is no longer looking at `scope: "all"`.
   const shown = resolveClipFilters(readStoredClipFilters(storage), caller, options).filters;
   saveStoredClipFilters(shown, storage);
@@ -218,5 +220,65 @@ test("a choice is a patch of the corrected selection, so a dropped value cannot 
     filters: { project: "West Study", tag: "east", scope: "mine" },
     notice: null,
     corrected: false,
+  });
+});
+
+test("the sentence outlives the entry's correction, and a change ends it", () => {
+  const storage = fakeStorage({
+    [CLIP_FILTERS_STORAGE_KEY]: JSON.stringify(WEST_ALL),
+  });
+  const caller = { isAdmin: false };
+
+  // The hook's state: the reader's stored value, which only their own change
+  // replaces. The render corrects the request and says why.
+  const first = clipFiltersView(readStoredClipFilters(storage), caller, {});
+  expect(first.filters).toEqual({ project: "West Study", tag: "west", scope: "mine" });
+  expect(first.notice).toContain("showing your own Clips");
+
+  // The correction is the browser's entry, not the value in hand: writing it
+  // does not take the stored value out of the render, so the sentence the reader
+  // has not read yet is still there on the next one.
+  saveStoredClipFilters(first.entry!, storage);
+  expect(readStoredClipFilters(storage).scope).toBe("mine");
+  const again = clipFiltersView(WEST_ALL, caller, {});
+  expect(again.notice).toBe(first.notice);
+  expect(again.entry).not.toBeNull();
+
+  // Changing a filter patches the selection in force and replaces the stored
+  // value with it, so there is nothing left to correct and nothing left to say.
+  const chosen = chooseClipFilters(first.filters, { tag: "east" });
+  saveStoredClipFilters(chosen, storage);
+  const after = clipFiltersView(chosen, caller, {});
+  expect(after.notice).toBeNull();
+  expect(after.entry).toBeNull();
+  expect(readStoredClipFilters(storage)).toEqual({
+    project: "West Study",
+    tag: "east",
+    scope: "mine",
+  });
+});
+
+test("a pick while /api/me is unanswered patches the narrowed selection, not the stored one", () => {
+  const options = { projects: ["East Study"], tags: ["chole"] };
+  // The caller is not yet known: the request is narrowed field by field — `all`
+  // unprovable, both stored filters dead — and nothing is corrected or written.
+  const unknown = clipFiltersView(WEST_ALL, { isAdmin: null }, options);
+  expect(unknown.filters).toEqual({ project: "", tag: "", scope: "mine" });
+  expect(unknown.entry).toBeNull();
+  expect(unknown.notice).toBeNull();
+
+  // The pick's base is the selection the surface shows, so the refused scope and
+  // the dead Project are not in hand to write back.
+  expect(chooseClipFilters(unknown.filters, { tag: "chole" })).toEqual({
+    project: "",
+    tag: "chole",
+    scope: "mine",
+  });
+  // Where a patch of the stored value — the write-back this replaces — keeps
+  // both for the entry the reader's browser would keep.
+  expect(chooseClipFilters(WEST_ALL, { tag: "chole" })).toEqual({
+    project: "West Study",
+    tag: "chole",
+    scope: "all",
   });
 });
