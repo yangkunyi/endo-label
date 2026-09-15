@@ -13,7 +13,8 @@
  * One pin reads `useClipFilters.ts`'s source instead: the seam between the hook
  * and the step is a call, not a value, and nothing else here can see it. It fails
  * if `choose` goes back to a fold that drops the write — the regression that hid
- * behind 206 green tests before this ticket. What is still hand-verified is named
+ * behind 206 green tests before this ticket — and if the effect that writes the
+ * entry loses the key that makes it run. What is still hand-verified is named
  * in the hook's header and in
  * `.scratch/pilot-ux/notes/27-the-write-path-says-one-thing.md`.
  */
@@ -26,6 +27,7 @@ import {
   DEFAULT_CLIP_FILTERS,
   chooseClipFilters,
   clipFiltersChange,
+  clipFiltersEntryToWrite,
   clipFiltersView,
   emptyClipsNotice,
   normalizeClipFilters,
@@ -63,6 +65,15 @@ function writeEntry(step: ClipFiltersState, storage: ReturnType<typeof fakeStora
   if (step.entry !== null) {
     saveStoredClipFilters(step.entry, storage);
   }
+}
+
+/** The names `useClipFilters.ts` imports from `./clipFilters` — the seam that decides
+ * whether a change is ever written. Read from the source because the import is a value
+ * this DOM-less suite cannot reach through a render. */
+function hookImports(): string[] {
+  const source = readFileSync(new URL("./useClipFilters.ts", import.meta.url), "utf8");
+  const clause = /import\s*\{([^}]*)\}\s*from\s*"\.\/clipFilters"/.exec(source)?.[1] ?? "";
+  return clause.split(",").map((name) => name.trim().replace(/^type\s+/, ""));
 }
 
 test("no stored selection is the default: everything, no filters, mine", () => {
@@ -442,24 +453,58 @@ test("the sentence outlives the entry's correction, and a change ends it", () =>
   });
 });
 
-test("the hook applies a change with the step that carries the write, not a write-free fold", () => {
+test("the entry a render leaves is the correction when there is one, and the change's entry otherwise", () => {
+  // The read's correction wins: it is what a later read must find, and it carries the
+  // reader's change already (the change is part of `stored`, and the correction is
+  // resolved from `stored`), so the precedence can drop neither.
+  const change: ClipFilterSelection = { project: "West Study", tag: "east", scope: "mine" };
+  const correction: ClipFilterSelection = { project: "", tag: "", scope: "mine" };
+  expect(clipFiltersEntryToWrite(correction, change)).toEqual(correction);
+  // With no correction, the entry the last change produced is what the browser keeps.
+  expect(clipFiltersEntryToWrite(null, change)).toEqual(change);
+  // With neither — a reader who never chose a filter, and a read that corrected
+  // nothing — there is nothing to write, and the browser gains no entry.
+  expect(clipFiltersEntryToWrite(null, null)).toBeNull();
+});
+
+test("a correction that goes away leaves the reader's change in the entry, not nothing", () => {
+  // A read that answers after a change can correct the value that change committed ...
+  const stored: ClipFilterSelection = { project: "West Study", tag: "", scope: "mine" };
+  const changed = clipFiltersChange(held(stored), { isAdmin: true }, { projects: ["West Study"] }, {
+    tag: "east",
+  });
+  const corrected = clipFiltersView(changed.stored, { isAdmin: true }, { projects: [] });
+  expect(corrected.entry).not.toBeNull();
+  expect(clipFiltersEntryToWrite(corrected.entry, changed.entry)).toEqual(corrected.entry);
+  // ... and a read that answers again with the Project back in its list drops the
+  // correction: the entry falls back to the change, rather than leaving the browser
+  // holding a correction that no longer holds.
+  const back = clipFiltersView(changed.stored, { isAdmin: true }, { projects: ["West Study"] });
+  expect(back.entry).toBeNull();
+  expect(clipFiltersEntryToWrite(back.entry, changed.entry)).toEqual(changed.entry);
+});
+
+test("the hook writes through the step that carries the entry, in an effect keyed on the value", () => {
   // Nothing here can run the hook: no DOM, so no render and no effect. The seam
   // between the hook and the step is a call rather than a value, so this is the
   // one place a node test can pin it — by reading the file. It fails if `choose`
   // goes back to `setState((current) => chooseClipFilters(...))`, the fold that
   // drops the write and left 206 tests green.
-  const hook = readFileSync(new URL("./useClipFilters.ts", import.meta.url), "utf8");
-
-  // The change is the pure step over the state it lands on, and its whole answer
-  // — the next state and the entry to write — is what the updater returns.
-  expect(hook).toContain(
-    "setState((current) => clipFiltersChange(current, caller, options, patch))",
-  );
-  // The hook never calls the selection-only fold: that is the tell of a change
-  // that is decided but never persisted.
-  expect(hook).not.toContain("chooseClipFilters(");
-  // And the effect writes the entry the step answered with — the read's
-  // correction when there is one — which a fold that drops it would leave unused.
-  expect(hook).toContain("correction ?? state.entry");
-  expect(hook).toContain("saveStoredClipFilters(");
+  const source = readFileSync(new URL("./useClipFilters.ts", import.meta.url), "utf8");
+  const names = hookImports();
+  // `clipFiltersChange` is the step whose answer is the next state *and* the entry;
+  // `clipFiltersEntryToWrite` is the decision the effect writes by. A hook that went
+  // back to the selection-only fold would import `chooseClipFilters` instead — that is
+  // the tell of a change that is decided but never persisted. Imports rather than a call
+  // site so that a rename or a reflow in the hook is not read as a behaviour change.
+  expect(names).toContain("clipFiltersChange");
+  expect(names).toContain("clipFiltersEntryToWrite");
+  expect(names).not.toContain("chooseClipFilters");
+  // The effect is keyed on the value it writes. Dropping the key, or narrowing it to the
+  // read's correction alone, stops it running after a change commits and leaves the
+  // reader's own value unwritten — a regression no pure test can see, since the step's
+  // answer is unchanged and `writeEntry` above models the effect's write, not its trigger.
+  expect(source).toContain("const entryToWrite = clipFiltersEntryToWrite(correction, state.entry);");
+  expect(source).toContain("saveStoredClipFilters(entryToWrite)");
+  expect(source).toContain("}, [entryToWrite]);");
 });

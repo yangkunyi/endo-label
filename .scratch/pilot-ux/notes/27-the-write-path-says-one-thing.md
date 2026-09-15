@@ -22,23 +22,30 @@ changed no backend and no behaviour the earlier rounds pinned.
 - `web/src/useClipFilters.ts`
   - The hook holds `{ stored, entry }`. `choose` is
     `setState((current) => clipFiltersChange(current, caller, options, patch))` — a pure updater, no write.
-  - The entry write happens in the effect, after the commit: `const target = correction ?? state.entry` —
-    the read's correction when there is one (it is what a later read must find), otherwise the entry the
-    last change committed. The state is not touched in the effect, so there is no cascading render and
+  - The entry write happens in the effect, after the commit. What it writes is the pure decision
+    `clipFiltersEntryToWrite(correction, state.entry)` — the read's correction when there is one (it is
+    what a later read must find), otherwise the entry the last change committed, and nothing at all
+    when the render has neither. The effect is keyed on that value rather than on the state object, so
+    what runs it is the entry changing: a change committing a new one, or the read answering with a
+    correction. The state is not touched in the effect, so there is no cascading render and
     `oxlint` stays at its two pre-existing warnings.
   - The hook header states the rule and names exactly what the node suite does not reach: no render and no
-    effect run there, so `choose` and the entry effect are this file's wiring and are hand-verified; the
-    suite pins the pure decisions and reads this file's source to pin the call.
+    effect run there, so `choose` and the effect's timing are this file's wiring and are hand-verified;
+    the suite pins the pure decisions — including this one — and reads this file's source to pin the
+    call and the key.
 - `web/src/clipFilters.test.ts`
   - The tests that modelled a change now run through `clipFiltersChange` and write its `entry` through the
     stand-in storage (`writeEntry`), which is the half the hook's effect performs.
   - New/extended pins: the step's `entry` for a change by an unknown caller with a dead Project or tag
     carries neither value; the admin's `all` survives a Project pick during the window and is the entry; a
     change persists itself; the two-changes-in-one-event fold ends at the last change's entry.
-  - One source-reading pin (`the hook applies a change with the step that carries the write, not a
-    write-free fold`) asserts the hook's exact `setState((current) => clipFiltersChange(...))` call, that
-    the hook never calls `chooseClipFilters(`, and that the effect consumes `correction ?? state.entry`.
-    It was checked against the reverted fold and fails on it.
+  - One source-reading pin (`the hook writes through the step that carries the entry, in an effect keyed
+    on the value`) asserts that the hook imports `clipFiltersChange` and `clipFiltersEntryToWrite` from
+    the module and not `chooseClipFilters`, and that the effect is keyed on the value it writes. It was
+    checked against the reverted fold and against a dropped key, and fails on both. Reading imports
+    rather than a call site is deliberate: a rename or a reflow is not a behaviour change, and the
+    previous whole-file `not.toContain("chooseClipFilters(")` reddened on a comment. The two pure tests
+    beside it pin the precedence and the correction going away, which the source pin cannot see.
 - `.scratch/pilot-ux/notes/24-a-change-does-not-decide-an-unanswered-field.md` — marked superseded where
   it describes `applyClipFilterChange` and the write inside the `setStored` updater; note 24's decisions
   about the *rule* still stand.

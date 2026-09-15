@@ -329,3 +329,26 @@ export function clipFiltersChange(
   const stored = chooseClipFilters(state.stored, caller, options, patch);
   return { stored, entry: stored };
 }
+
+/**
+ * What one render leaves in the browser's entry, out of the two candidates it holds:
+ * the read's correction when there is one, and otherwise the entry the last change
+ * produced. `null` when the render has neither — a browser whose reader never chose a
+ * filter, and whose read corrected nothing, gains no entry.
+ *
+ * The correction wins because it is what a later read must find: the value the surfaces
+ * ask with this render. It carries the reader's change already (the change is part of
+ * `stored`, and the correction is resolved from `stored`), so the precedence cannot
+ * drop one.
+ *
+ * This is its own function because it is the whole of what the hook's effect writes,
+ * and the hook cannot be rendered here (no DOM): a node test can pin the precedence and
+ * the correction going away — when the read answers something new, the correction is
+ * recomputed, and this answers `entry` again rather than nothing.
+ */
+export function clipFiltersEntryToWrite(
+  correction: ClipFilterSelection | null,
+  entry: ClipFilterSelection | null,
+): ClipFilterSelection | null {
+  return correction ?? entry;
+}

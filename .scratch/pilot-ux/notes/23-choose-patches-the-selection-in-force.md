@@ -12,6 +12,15 @@ stored — the exact loss `resolveClipFilters` promises not to commit, and with 
 then. The same snapshot base made an event's second `choose` patch the value the callback was made
 with, losing the first patch.
 
+> **Superseded in part, twice.** `pilot-ux/24` replaced the *basis* this note reasons from below
+> (`entry ?? stored` became field by field), and `pilot-ux/27` replaced the *writer*: the
+> `applyClipFilterChange` named below no longer exists, and neither does the write inside the
+> `setStored` updater. The step is now the pure `clipFiltersChange` and the write is an effect keyed
+> on `clipFiltersEntryToWrite`. Each bullet below says which ticket reversed it; where a sentence
+> names either of those symbols as the code in the tree, it is history. The rule this note is about —
+> a change patches the value in force, never a snapshot — is unchanged. See
+> `27-the-write-path-says-one-thing.md`.
+
 ## The shape of the fix
 
 The change is a patch of the selection **in force**, applied as a function of the state the change
@@ -30,18 +39,23 @@ lands on, and never of the value a render captured.
   - The module header, `ClipFilterCaller`, `ClipFilterResolution.corrected`, `ClipFiltersView` and
     `chooseClipFilters` say what the write path now does.
 - `web/src/useClipFilters.ts`
-  - `choose` is `setStored((current) => applyClipFilterChange(current, caller, options, patch))`: a
+  - `choose` was `setStored((current) => applyClipFilterChange(current, caller, options, patch))`: a
     functional update, so an event's changes fold over what the previous one produced, and the
     closure's `filters` is not a base at all. **`pilot-ux/24` moved the call from a bare
     `chooseClipFilters` to `applyClipFilterChange`, which folds the change and then writes the
-    browser's entry** (`saveStoredClipFilters`), so the write is no longer a pure fold. `caller` and
+    browser's entry** (`saveStoredClipFilters`), so the write stopped being a pure fold; **`pilot-ux/27`
+    deleted that function**: `choose` folds with the pure `clipFiltersChange`, whose answer carries the
+    entry to write, and the write left the updater for an effect. `caller` and
     `options` are memoised so the view and the callback keep stable identities.
-  - The write effect is `saveStoredClipFilters(entry ?? stored)` — the browser's entry is the
+  - The write effect was `saveStoredClipFilters(entry ?? stored)` — the browser's entry is the
     correction when the read has one and the reader's value otherwise. A pick while `/api/me` is in
     flight therefore writes the patched stored value (`all` intact) instead of the read's narrowing.
     **`pilot-ux/24` made the effect write the read's `entry` and nothing else, and moved the write of
     a change into `applyClipFilterChange`**, so a browser whose reader never chooses a filter gains
-    no entry; the pick-while-in-flight outcome above is unchanged.
+    no entry; the pick-while-in-flight outcome above is unchanged. **`pilot-ux/27` then made the
+    effect write `clipFiltersEntryToWrite(correction, entry)` — the read's correction when there is
+    one, since that is what a later read must find, and otherwise the entry the last change
+    committed — and keyed it on that value.**
 - `web/src/clipFilters.test.ts` — the pick-while-unknown pin is rewritten to the new base, the
   /19 pins for the corrected caller and the sentence's lifetime are kept (with the new signature),
   and a pin for two changes in one event is added.
@@ -84,7 +98,9 @@ the entry write and ends when the reader's own change replaces the value it is a
   input to the pure function: a base that used the read's `filters` for an unknown caller fails it.
 - Two changes in one event both land: **`pilot-ux/24` moved this fold to `applyClipFilterChange`
   and the fake storage** — the seam the hook actually calls — so the pin also asserts that the
-  change wrote itself. Ticket 23's test folded `[{ tag }, { project }]` through `chooseClipFilters`
+  change wrote itself; **`pilot-ux/27` moved it once more, to `clipFiltersChange`**, whose answer is
+  the state and the entry, and today's pin runs that step and writes its entry through the fake
+  storage. Ticket 23's test folded `[{ tag }, { project }]` through `chooseClipFilters`
   (what the hook's functional `setStored` did) and showed the one-snapshot base losing the first
   change.
 - The sentence's lifetime and the corrected caller's pick stay as /19 pinned them.

@@ -9,12 +9,21 @@ it changes no behaviour.
 
 ## What landed
 
+> **Superseded in part, three times.** `pilot-ux/24` replaced the *basis* the bullets below quote
+> (`entry ?? stored` became field by field), and `pilot-ux/27` replaced the *writer*: the
+> `applyClipFilterChange` they name no longer exists, and the write left the `setStored` updater for
+> an effect keyed on `clipFiltersEntryToWrite`. Where a bullet below names either of those as the code
+> in the tree, it is history; the rule is not. See `27-the-write-path-says-one-thing.md`.
+
 - `.scratch/pilot-ux/notes/23-choose-patches-the-selection-in-force.md` — the "What landed" bullets
-  now state the write path in the tree and name `pilot-ux/24` where it superseded them: `choose`
+  then stated the write path in the tree and named `pilot-ux/24` where it superseded them: `choose`
   calls `applyClipFilterChange` (which writes the browser's entry), `chooseClipFilters`'s basis is
   field by field rather than `entry ?? stored`, the entry effect writes `entry` alone, and the
   two-changes pin folds through `applyClipFilterChange` and the fake storage. Ticket 23's record is
   kept; each reversed line says which ticket reversed it rather than contradicting `notes/24`.
+  **`pilot-ux/27` then deleted `applyClipFilterChange`, so those bullets named a symbol that no longer
+  existed** — the same defect this bullet was written to fix, one merge later. `notes/23` now carries
+  its own supersession banner, and each bullet names the ticket that reversed it a second time.
 - `web/e2e/clip-scope.spec.ts` — the header no longer reads as coverage the file does not have. It
   states the rule as `clipFilters.ts`'s module header does, says plainly that the rule is pinned
   in-process and where, says that this file never intercepts `/api/me` (so it does not run the

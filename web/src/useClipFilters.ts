@@ -38,7 +38,8 @@
  * file's source to pin that `choose` is that step and not a fold that drops the
  * write. Everything a render alone could get wrong is the owner's to check by
  * hand; `.scratch/pilot-ux/notes/27-the-write-path-says-one-thing.md` carries
- * the behaviour.
+ * the behaviour. The entry effect's own decision — which of the two entries a
+ * render leaves in the browser — is `clipFiltersEntryToWrite`, and it is pinned.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -54,6 +55,7 @@ import {
 } from "./api";
 import {
   clipFiltersChange,
+  clipFiltersEntryToWrite,
   clipFiltersView,
   readStoredClipFilters,
   saveStoredClipFilters,
@@ -121,19 +123,26 @@ export function useClipFilters(): ClipFiltersHandle {
 
   // The browser's entry, written here rather than in the updater that produced
   // the value: this runs after React has committed and shown it, so the entry can
-  // only ever hold a value that was committed. The read's correction wins when
-  // there is one — it is what a later read must find — and otherwise this writes
-  // the entry the last change committed; a browser whose reader never chose a
-  // filter has neither and gains no entry. The state is not touched here, so the
-  // sentence is still there on the render after this one, and a change is what
-  // replaces the value it is about. Hand-verified: no render in the node suite
-  // runs an effect.
+  // only ever hold a value that was committed. `clipFiltersEntryToWrite` decides
+  // which — the read's correction when there is one, it being what a later read
+  // must find, and otherwise the entry the last change committed; a browser whose
+  // reader never chose a filter has neither and gains no entry. The state is not
+  // touched here, so the sentence is still there on the render after this one, and
+  // a change is what replaces the value it is about.
+  //
+  // The effect is keyed on that decision rather than on the state object: what makes
+  // this run is the entry changing — a change committing a new one, or the read
+  // answering with a correction — and the value is one of the two this render already
+  // holds, so the key is stable across re-renders with the same answer. Keying it on
+  // a narrower expression (`correction` alone) would stop the effect running after a
+  // change commits, leaving the reader's own change unwritten. Hand-verified: no
+  // render in the node suite runs an effect; the decision itself is pinned.
+  const entryToWrite = clipFiltersEntryToWrite(correction, state.entry);
   useEffect(() => {
-    const target = correction ?? state.entry;
-    if (target !== null) {
-      saveStoredClipFilters(target);
+    if (entryToWrite !== null) {
+      saveStoredClipFilters(entryToWrite);
     }
-  }, [correction, state]);
+  }, [entryToWrite]);
 
   const choose = useCallback(
     (patch: Partial<ClipFilterSelection>) => {
