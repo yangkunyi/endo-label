@@ -18,13 +18,25 @@ import { CLIP_FILTERS_STORAGE_KEY } from "../src/clipFilters";
  * keeps (pilot-ux/17); the sentence about a dropped field belongs to the stored
  * value, which stays in the reader's hands until their own change replaces it
  * (pilot-ux/19), so it is read on the page rather than flashed for the one commit
- * that writes the entry. A change patches the selection in force at the moment it
- * is applied, field by field (pilot-ux/23, pilot-ux/24): while `/api/me` is still
- * in flight only `scope` is unproved, so a Project or tag pick keeps the reader's
- * stored `scope` — an admin's `all` — and cannot write the read's narrowing back
- * over it, while a Project or tag a loaded option list proved dead does not
- * survive the pick either, so the sentence after the answer names nothing the
- * surface did not show.
+ * that writes the entry.
+ *
+ * A change patches the selection in force field by field (pilot-ux/23, pilot-ux/24):
+ * `project`/`tag` from the resolution, `scope` from the reader's stored value until
+ * `/api/me` answers (see `../src/clipFilters.ts`'s module header for the rule). With no
+ * option list loaded the resolution equals the stored value, so a Project or tag pick is
+ * untouched then because the two values agree, not because a list proved it, and the
+ * stored `scope` survives the pick — an admin's `all` is not the browser's to lose. Once
+ * a list or the flag has answered, a value that answer proved dead does not survive the
+ * pick either, so the sentence after the answer names nothing the surface did not show.
+ * That rule is pinned in-process against the pure decision (`../src/clipFilters.test.ts`),
+ * not by this file.
+ *
+ * This file runs the surfaces the rule feeds: a stored scope the server would refuse,
+ * corrected; the sentence; the filters surviving a reload; and the rail agreeing with
+ * the page. It never intercepts `/api/me`, so it does not hold the read in flight and
+ * does not pin the two directions above; those are the owner's hand verification,
+ * listed in `.scratch/pilot-ux/notes/23-choose-patches-the-selection-in-force.md` and
+ * `.scratch/pilot-ux/notes/24-a-change-does-not-decide-an-unanswered-field.md`.
  */
 
 test.describe.configure({ mode: "serial" });

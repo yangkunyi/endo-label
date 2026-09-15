@@ -7,7 +7,10 @@
  * the import below is the permission's shape alone, erased at build
  * (`verbatimModuleSyntax`), so no `useSWR` and no React enter a panel through this
  * file. The value edge runs the other way — `maskControls` imports `mayUndo` from here,
- * because the rule is pure and the module that fetches is not.
+ * because the rule is pure and the module that fetches is not. `keyboard.test.ts` pins
+ * the direction from the source: it walks this file's value imports and fails on any that
+ * leads to a module with imports of its own, so a value import of `./maskControls` can
+ * not land quietly.
  */
 import { isUndoKey, type UndoKeyEvent } from "../overlayCoords";
 import type { MaskBusy, MaskWrite } from "./maskControls";

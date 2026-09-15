@@ -96,8 +96,9 @@ first four are ticket 20) and it changes no backend.
 2. **The failed read.** Make `/api/me?clip_id=…&task_type=mask` fail (stop the API, or open a Clip
    whose mask Assignment row was deleted by hand): the panel shows "Could not read this Clip's mask
    permission — mask writes are off until it loads.", the canvas is shut with no crosshair, and a
-   drag made before the failure is not held forever. The `data-mask-read-failed` paragraph is the
-   wiring no `renderToStaticMarkup` can reach (SWR's `fallback` seeds data, not an error).
+   drag made before the failure is not held forever. The paragraph's own rendering is pinned in
+   `maskPanel.test.ts` since ticket 26, which seeds the failed read into SWR's cache (the `fallback`
+   cannot carry an error); what stays by hand is the real request failing and the effects around it.
 3. **The mid-drag flip.** Start a drag as the assignee and, while the button is down, have the item
    turn refused (reassign it in another tab) or start a Propagate Job: the gesture does not commit,
    its ink goes off the canvas, and the panel says which of the two it is.
@@ -107,10 +108,11 @@ first four are ticket 20) and it changes no backend.
 
 ## Leftovers, deliberately out of this issue
 
-- **The `unreadable` arm has no render test.** SWR's `fallback` cannot seed an error and the fetch
-  is async, so the initial render in `maskPanel.test.ts` always has the item. The decision is pinned
-  in-process (`maskWriteOf`, `maskPointerGate`, `maskReadFailure`, `heldPromptOnAnswer`); the
-  paragraph is hand-verified (item 2 above).
+- **The `unreadable` arm has a render test since ticket 26.** SWR's `fallback` cannot seed an error,
+  so `maskPanel.test.ts` seeds it into the cache the config's `provider` returns, and the panel's
+  `data-mask-read-failed` paragraph asserts `MASK_READ_FAILED` exactly. The decision is still pinned
+  in-process too (`maskWriteOf`, `maskPointerGate`, `maskReadFailure`, `heldPromptOnAnswer`); what
+  stays by hand is the real request failing.
 - **`isEditableTarget` still has no in-process pin** (ticket 21's leftover, unchanged).
 - **The `/api/me` 404 could carry a better sentence** — the server's `_write_refusal(con, None, …)`
   already knows how to say "no mask item yet". This ticket keeps the desk's own line rather than
