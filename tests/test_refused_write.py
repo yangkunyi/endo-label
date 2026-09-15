@@ -185,7 +185,7 @@ def test_the_item_payload_carries_the_sentence_a_write_would_be_refused_with(
     desk never has to word it again — the sentence it shows beside a disabled
     control is byte for byte the one the refused call would have carried.
     """
-    _settings_obj, admin, alice, bob, carol = _world(tmp_path)
+    _settings_obj, admin, alice, bob, carol, _dan = _world(tmp_path)
     _drive(admin, alice, carol, state)
     client = {"alice": alice, "bob": bob}[actor]
 
@@ -201,7 +201,7 @@ def test_the_item_payload_carries_the_sentence_a_write_would_be_refused_with(
 
 def test_an_item_this_account_may_write_carries_no_refusal(tmp_path: Path) -> None:
     """A writable cell has nothing to explain, and the bystander's sentence names the holder."""
-    _settings_obj, admin, alice, bob, carol = _world(tmp_path)
+    _settings_obj, admin, alice, bob, carol, _dan = _world(tmp_path)
     _drive(admin, alice, carol, "Labeling")
 
     holder = alice.get(
@@ -223,7 +223,7 @@ def test_the_assigned_reviewer_reads_no_refusal_while_the_annotator_does(
     tmp_path: Path,
 ) -> None:
     """Review moves the write to the reviewer, and the read says so on both sides."""
-    _settings_obj, admin, alice, _bob, carol = _world(tmp_path)
+    _settings_obj, admin, alice, _bob, carol, _dan = _world(tmp_path)
     _drive(admin, alice, carol, "Reviewing")
 
     reviewer = carol.get(
@@ -242,7 +242,7 @@ def test_the_assigned_reviewer_reads_no_refusal_while_the_annotator_does(
 
 def test_a_mask_item_s_cell_carries_the_mask_sentence(tmp_path: Path) -> None:
     """The mask editor reads its own item's cell, so the sentence names mask."""
-    _settings_obj, admin, alice, bob, _carol = _world(tmp_path)
+    _settings_obj, admin, alice, bob, _carol, _dan = _world(tmp_path)
     assigned = admin.post("/api/items/CLIPA/mask/assign", json={"assignee": "alice"})
     assert assigned.status_code == 200, assigned.text
 
