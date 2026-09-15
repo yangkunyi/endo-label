@@ -16,23 +16,27 @@
  * shows as `checking` — a held prompt — and never as the refused `refused`, whose only
  * sentence is the server's.
  *
- * What this render cannot reach is the read that never answered (`unreadable`): SWR's
- * `fallback` can seed data but not an error, and the fetch that would produce one is
- * async, so the initial render always has the item. The decision is `maskWriteOf` on a
- * failed read, pinned in `maskControls.test.ts`; the panel's `data-mask-read-failed`
- * paragraph that renders it is *wiring* and is hand-verified (AGENTS.md → Verification;
- * the owner's list in `.scratch/pilot-ux/notes/22-a-read-that-never-answers.md`), so this
- * file must not be read as pinning it.
+ * The read that never answered (`unreadable`) is reachable too, by seeding the failure into
+ * SWR's cache rather than its `fallback`: `fallback` carries data and not an error, but the
+ * cache the config's `provider` returns is where the hook reads `error` from, so the panel
+ * renders its own `data-mask-read-failed` sentence and that arm is pinned here as well as in
+ * `maskControls.test.ts` (AGENTS.md → Verification). What stays hand-verified is the real
+ * fetch failing at runtime, not the paragraph it drives.
  */
 
 import { createElement, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SWRConfig } from "swr";
+import { SWRConfig, type Cache } from "swr";
 import { expect, test } from "vitest";
 import { mePath, type ClipMeta, type Me, type MyItem, type TrackRow } from "../api";
 import { MaskPanel, MaskSessionProvider, PlayerMaskOverlay } from "./MaskPanel";
 
 const REFUSED = "This Clip's mask is assigned to alice: only alice writes its labels.";
+
+/** `MASK_READ_FAILED`'s sentence, kept here as a literal so the render below pins the wording
+ * that reaches the paragraph and not only that the constant reached it. */
+const READ_FAILURE =
+  "Could not read this Clip's mask permission — mask writes are off until it loads.";
 
 const TRACKS: TrackRow[] = [{ track_id: 1, label: "track-1", color: "#4ade80", score: null }];
 
@@ -47,18 +51,25 @@ async function noop(): Promise<undefined> {
 
 function pause(): void {}
 
-/** The desk for one mask item cell — panel and canvas — as markup. */
-function deskHtml(item: MyItem | undefined): string {
+/** The desk for one mask item cell — panel and canvas — as markup.
+ *
+ * `failedRead` seeds the `/api/me` failure the `unreadable` arm renders instead of the
+ * fallback answer: SWR's `fallback` carries data and not an error, so the error goes into
+ * the cache the config's `provider` returns, which is what the hook reads. */
+function deskHtml(item: MyItem | undefined, failedRead = false): string {
   const me: Me = {
     username: "bob",
     roles: { admin: false, reviewer: false, annotator: true },
     capabilities: { admin: false, review: false, annotate: true },
     item,
   };
+  const key = mePath("CLIPA", "mask");
+  const failed: Cache = new Map([[key, { error: new Error("no mask item") }]]);
+  const swr = failedRead ? { provider: () => failed } : { fallback: { [key]: me } };
   return renderToStaticMarkup(
     createElement(
       SWRConfig,
-      { value: { fallback: { [mePath("CLIPA", "mask")]: me } } },
+      { value: swr },
       createElement(
         MaskSessionProvider,
         {
@@ -161,13 +172,14 @@ function refusalText(html: string): string | null {
   return match[1].replace(/&#x27;/g, "'");
 }
 
-/** The desk's own read-failure line, or null when the panel shows none. This render
- * cannot reach the `unreadable` arm that renders it (see the header), so what the pin
- * asks is the negative: the sentence a failed read carries is not the sentence a refusal
- * carries, and the two must never sit beside each other. */
+/** The desk's own read-failure line, or null when the panel shows none. Both arms are
+ * pinned: the failed-read render shows exactly `MASK_READ_FAILED`'s sentence (the test
+ * below), and the reachable ones deny it, because the sentence a failed read carries is
+ * not the sentence a refusal carries and the two must never sit beside each other. */
 function readFailureText(html: string): string | null {
   const match = html.match(/<p data-mask-read-failed=""[^>]*>(.*?)<\/p>/);
-  return match === null ? null : match[1];
+  // Markup escapes the apostrophe the desk's sentence carries.
+  return match === null ? null : match[1].replace(/&#x27;/g, "'");
 }
 
 test("a mask item this Account may not write disables every write control and says why", () => {
@@ -234,6 +246,24 @@ test("an unanswered item cell invents no sentence and offers no write", () => {
   expect(disabled(labelled(html, 'aria-label="Delete track-1"'))).toBe(true);
   // Only looking: Track selection and the Lane eye.
   expect(disabled(labelled(html, 'aria-label="Hide lane"'))).toBe(false);
+});
+
+test("a read that failed words the desk's own line, and never the server's refusal", () => {
+  const html = deskHtml(undefined, true);
+
+  // The positive arm: the exact sentence reaches the paragraph, so a reworded line or a
+  // payload that stopped reaching it fails here.
+  expect(readFailureText(html)).toBe(READ_FAILURE);
+  // A failed read is not a refusal: the server sent no sentence for it, so none is shown.
+  expect(refusalText(html)).toBeNull();
+  // And it is no more a licence to write than a refusal is: the same controls are off and
+  // the canvas is shut without a crosshair.
+  for (const label of ["New Track", "Predict", "Undo", "Clear mask", "Propagate"]) {
+    expect(disabled(button(html, label)), label).toBe(true);
+  }
+  expect(gate(html)).toBe("unreadable");
+  expect(canvas(html)).toContain("cursor-default");
+  expect(canvas(html)).not.toContain("cursor-crosshair");
 });
 
 test("the canvas holds a prompt drawn before `/api/me` answers, and never calls it refused", () => {

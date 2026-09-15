@@ -5,6 +5,14 @@ working record of what landed, the decisions the body left open, and what is lef
 hand-verification. It is the whole of the closeout review's two medium findings — one rule seen from
 its two sides — and it changes no backend.
 
+> **Superseded in part by `pilot-ux/27`.** The *rule* this note records still stands, and
+> `chooseClipFilters`'s per-field basis is unchanged. The *writer* it describes does not:
+> `applyClipFilterChange`, and the write inside the hook's `setStored` updater (Decision 2 below), are
+> gone. They are replaced by the pure step `clipFiltersChange` — whose answer is the next state and the
+> entry to write — and an effect that writes only after the commit. See
+> `27-the-write-path-says-one-thing.md` for the shape now in the tree; the places below that name
+> `applyClipFilterChange` or the updater write are history, not the code.
+
 ## What landed
 
 - `web/src/clipFilters.ts`

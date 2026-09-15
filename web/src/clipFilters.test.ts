@@ -1,22 +1,31 @@
 /**
  * The stored Clips selection's decisions, pinned in-process: node, no DOM.
  *
- * `useClipFilters` cannot be reached from here — this suite has no jsdom, so no
- * render and no effect — and the hook's own wiring is hand-verified: the entry
- * effect writes the read's correction and nothing else, and `choose` is the one
- * call that writes a change. What is pinned below is every decision those two are
- * built from, and the hook's header and
- * `.scratch/pilot-ux/notes/24-a-change-does-not-decide-an-unanswered-field.md`
- * say which behaviour is left to the owner's hand-verification.
+ * `useClipFilters` cannot be rendered here — this suite has no jsdom, so no render
+ * and no effect runs — so the hook's wiring (its `choose` call and the effect that
+ * writes the browser's entry) is hand-verified. What is pinned below is every
+ * decision that wiring is built from: `clipFiltersChange`, the pure step whose
+ * answer is the next state *and* the entry to write, and `clipFiltersView`, the
+ * read's correction. The step's `entry` is written here through a stand-in
+ * storage, modelling the effect; the effect itself is the part no node test can
+ * run.
+ *
+ * One pin reads `useClipFilters.ts`'s source instead: the seam between the hook
+ * and the step is a call, not a value, and nothing else here can see it. It fails
+ * if `choose` goes back to a fold that drops the write — the regression that hid
+ * behind 206 green tests before this ticket. What is still hand-verified is named
+ * in the hook's header and in
+ * `.scratch/pilot-ux/notes/27-the-write-path-says-one-thing.md`.
  */
 
+import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
 import { clipsPath } from "./api";
 import {
   CLIP_FILTERS_STORAGE_KEY,
   DEFAULT_CLIP_FILTERS,
-  applyClipFilterChange,
   chooseClipFilters,
+  clipFiltersChange,
   clipFiltersView,
   emptyClipsNotice,
   normalizeClipFilters,
@@ -25,6 +34,7 @@ import {
   saveStoredClipFilters,
   scopeForCaller,
   type ClipFilterSelection,
+  type ClipFiltersState,
 } from "./clipFilters";
 
 /** A stand-in for the browser's localStorage: one map, no DOM needed. */
@@ -37,6 +47,22 @@ function fakeStorage(seed: Record<string, string> = {}) {
       entries.set(key, value);
     },
   };
+}
+
+/** The hook's state before any change: a stored value and no entry to write. */
+function held(stored: ClipFilterSelection): ClipFiltersState {
+  return { stored, entry: null };
+}
+
+/**
+ * The write the hook's effect performs after a change commits: the entry the step
+ * answered with, handed to the real writer. The effect itself needs a DOM (see
+ * this file's header), so a test models its write at the seam the suite can hold.
+ */
+function writeEntry(step: ClipFiltersState, storage: ReturnType<typeof fakeStorage>): void {
+  if (step.entry !== null) {
+    saveStoredClipFilters(step.entry, storage);
+  }
 }
 
 test("no stored selection is the default: everything, no filters, mine", () => {
@@ -218,25 +244,25 @@ test("a pick while /api/me is unanswered does not write the read's narrowing bac
   // `all` is still there to be read again; a tag pick in the same window leaves it
   // there too. A base of the resolution's `filters` alone fails right here: its
   // scope is the unproved `mine`.
-  const pickedProject = applyClipFilterChange(
-    WEST_ALL,
+  const pickedProject = clipFiltersChange(
+    held(readStoredClipFilters(storage)),
     unknown,
     options,
     { project: "East Study" },
-    storage,
   );
-  expect(pickedProject).toEqual({ project: "East Study", tag: "west", scope: "all" });
-  expect(readStoredClipFilters(storage)).toEqual(pickedProject);
+  expect(pickedProject.stored).toEqual({ project: "East Study", tag: "west", scope: "all" });
+  // The step answers with the entry to write as well as the state to hold: this is
+  // the value the hook's effect writes once the change has committed, and it is
+  // what the next read — the admin's own, without any narrowing — gets.
+  expect(pickedProject.entry).toEqual(pickedProject.stored);
+  writeEntry(pickedProject, storage);
+  expect(readStoredClipFilters(storage)).toEqual(pickedProject.stored);
 
-  const pickedTag = applyClipFilterChange(
-    pickedProject,
-    unknown,
-    options,
-    { tag: "chole" },
-    storage,
-  );
-  expect(pickedTag).toEqual({ project: "East Study", tag: "chole", scope: "all" });
-  expect(readStoredClipFilters(storage)).toEqual(pickedTag);
+  const pickedTag = clipFiltersChange(pickedProject, unknown, options, { tag: "chole" });
+  expect(pickedTag.stored).toEqual({ project: "East Study", tag: "chole", scope: "all" });
+  expect(pickedTag.entry).toEqual(pickedTag.stored);
+  writeEntry(pickedTag, storage);
+  expect(readStoredClipFilters(storage)).toEqual(pickedTag.stored);
 
   // The flag answers admin: the browser kept a selection it may hold, and asks
   // with it as it stands — nothing left to correct and nothing left to say.
@@ -281,6 +307,11 @@ test("a change while the read is unanswered leaves behind a value a loaded list 
     tag: "chole",
     scope: "mine",
   });
+  // Through the step the hook applies: neither the state nor the entry the hook
+  // would write carries the dead Project back.
+  const deadProjectStep = clipFiltersChange(held(deadProject), unknown, options, { tag: "chole" });
+  expect(deadProjectStep.stored).toEqual({ project: "", tag: "chole", scope: "mine" });
+  expect(deadProjectStep.entry).toEqual(deadProjectStep.stored);
 
   // The same for a tag no loaded list carries, on a Project pick.
   const deadTag: ClipFilterSelection = { project: "East Study", tag: "west", scope: "mine" };
@@ -289,6 +320,9 @@ test("a change while the read is unanswered leaves behind a value a loaded list 
     tag: "",
     scope: "mine",
   });
+  const deadTagStep = clipFiltersChange(held(deadTag), unknown, options, { project: "East Study" });
+  expect(deadTagStep.stored).toEqual({ project: "East Study", tag: "", scope: "mine" });
+  expect(deadTagStep.entry).toEqual(deadTagStep.stored);
 });
 
 test("a change while the read is unanswered leaves nothing for the answer to name", () => {
@@ -303,15 +337,15 @@ test("a change while the read is unanswered leaves nothing for the answer to nam
 
   // The surface shows every Project; the reader changes the tag, and that is what
   // the change and the entry hold.
-  const picked = applyClipFilterChange(
-    readStoredClipFilters(storage),
+  const picked = clipFiltersChange(
+    held(readStoredClipFilters(storage)),
     { isAdmin: null },
     options,
     { tag: "east" },
-    storage,
   );
-  expect(picked).toEqual({ project: "", tag: "east", scope: "mine" });
-  expect(readStoredClipFilters(storage)).toEqual(picked);
+  expect(picked.stored).toEqual({ project: "", tag: "east", scope: "mine" });
+  writeEntry(picked, storage);
+  expect(readStoredClipFilters(storage)).toEqual(picked.stored);
 
   // When the read answers it has no sentence about a Project the surface never
   // showed: the dead value did not survive the change, so there is nothing left
@@ -333,33 +367,42 @@ test("a browser whose reader never chose a filter gains no stored entry", () => 
   expect(clipFiltersView(stored, { isAdmin: true }, { projects: [], tags: [] }).entry).toBeNull();
   expect(storage.entries.size).toBe(0);
 
-  // A change is the one thing that writes, and it writes what it produced.
-  const chosen = applyClipFilterChange(stored, { isAdmin: true }, {}, { tag: "east" }, storage);
+  // A change is the one thing that writes, and it writes what it produced: the
+  // step's answer carries the entry, and the effect writes it once committed.
+  const chosen = clipFiltersChange(held(stored), { isAdmin: true }, {}, { tag: "east" });
+  expect(chosen.entry).toEqual(chosen.stored);
+  writeEntry(chosen, storage);
   expect(storage.entries.size).toBe(1);
-  expect(readStoredClipFilters(storage)).toEqual(chosen);
+  expect(readStoredClipFilters(storage)).toEqual(chosen.stored);
 });
 
 test("an event's two changes are folded over the value in force, not one snapshot", () => {
   const storage = fakeStorage();
   const caller = { isAdmin: null };
   const options = { projects: ["E2E"], tags: ["east"] };
-  const change = (state: ClipFilterSelection, patch: Partial<ClipFilterSelection>) =>
-    applyClipFilterChange(state, caller, options, patch, storage);
+  const change = (state: ClipFiltersState, patch: Partial<ClipFilterSelection>) =>
+    clipFiltersChange(state, caller, options, patch);
 
-  // The hook's `choose` is this call over the state the change lands on
-  // (`setStored((current) => ...)`), so an event's changes are folded in order,
+  // The hook's `choose` is this step over the state the change lands on
+  // (`setState((current) => ...)`), so an event's changes are folded in order,
   // each over the value the previous one produced, and both land — including in
-  // the entry, which holds the last. (The `setStored` that supplies `current` is
-  // React's and the hook's body needs a DOM; the fold is what is pinned.)
-  const folded = [{ tag: "east" }, { project: "E2E" }].reduce(change, DEFAULT_CLIP_FILTERS);
-  expect(folded).toEqual({ project: "E2E", tag: "east", scope: "mine" });
-  expect(readStoredClipFilters(storage)).toEqual(folded);
+  // the entry, which the step answers with and the effect writes last. (The
+  // `setState` that supplies `current` is React's and the hook's body needs a DOM;
+  // the fold is what is pinned.)
+  const folded = [{ tag: "east" }, { project: "E2E" }].reduce(
+    change,
+    held(DEFAULT_CLIP_FILTERS),
+  );
+  expect(folded.stored).toEqual({ project: "E2E", tag: "east", scope: "mine" });
+  expect(folded.entry).toEqual(folded.stored);
+  writeEntry(folded, storage);
+  expect(readStoredClipFilters(storage)).toEqual(folded.stored);
 
   // A snapshot base — the value the callback captured — applies both to the same
   // value and loses the first change.
-  const snapshot = change(DEFAULT_CLIP_FILTERS, { project: "E2E" });
-  expect(snapshot).toEqual({ project: "E2E", tag: "", scope: "mine" });
-  expect(folded).not.toEqual(snapshot);
+  const snapshot = change(held(DEFAULT_CLIP_FILTERS), { project: "E2E" });
+  expect(snapshot.stored).toEqual({ project: "E2E", tag: "", scope: "mine" });
+  expect(folded.stored).not.toEqual(snapshot.stored);
 });
 
 test("the sentence outlives the entry's correction, and a change ends it", () => {
@@ -397,4 +440,26 @@ test("the sentence outlives the entry's correction, and a change ends it", () =>
     tag: "east",
     scope: "mine",
   });
+});
+
+test("the hook applies a change with the step that carries the write, not a write-free fold", () => {
+  // Nothing here can run the hook: no DOM, so no render and no effect. The seam
+  // between the hook and the step is a call rather than a value, so this is the
+  // one place a node test can pin it — by reading the file. It fails if `choose`
+  // goes back to `setState((current) => chooseClipFilters(...))`, the fold that
+  // drops the write and left 206 tests green.
+  const hook = readFileSync(new URL("./useClipFilters.ts", import.meta.url), "utf8");
+
+  // The change is the pure step over the state it lands on, and its whole answer
+  // — the next state and the entry to write — is what the updater returns.
+  expect(hook).toContain(
+    "setState((current) => clipFiltersChange(current, caller, options, patch))",
+  );
+  // The hook never calls the selection-only fold: that is the tell of a change
+  // that is decided but never persisted.
+  expect(hook).not.toContain("chooseClipFilters(");
+  // And the effect writes the entry the step answered with — the read's
+  // correction when there is one — which a fold that drops it would leave unused.
+  expect(hook).toContain("correction ?? state.entry");
+  expect(hook).toContain("saveStoredClipFilters(");
 });

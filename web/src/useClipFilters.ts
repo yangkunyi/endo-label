@@ -8,29 +8,37 @@
  * reading; this hook feeds it the Account and the option lists and shows the
  * reader what it left behind.
  *
- * The selection in force is the resolution's field by field, taking each field as
- * the read has answered for it: every `project`/`tag` a loaded option list has
- * proved or left alone, and the reader's own `scope` until `/api/me` answers for
- * it. The surfaces show `filters`, and a control changes the value in force
- * (`applyClipFilterChange`, one call over the state the change lands on), so a
- * value the correction dropped is not in hand anywhere and cannot come back
- * through a Project or tag pick, while a read still in flight cannot write its
- * unproved narrowing of `scope` over what the reader stored. That change is what
- * writes the browser's entry; the effect behind a render writes the read's
- * correction and nothing else, so a browser whose reader never chooses a filter
- * gains no entry. The reader's stored value stays in state — the sentence is a
- * fact about it, and a fact a human reads has to outlive the commit that writes
- * the entry — so the sentence is still on the render after the correction, and
- * it goes when the reader changes a filter.
+ * The selection in force is the resolution's field by field, by the module's one
+ * rule: a field the read has answered for is the resolution's, and a field it has
+ * not is the reader's. So `project` and `tag` are always the resolution's — a
+ * value a loaded option list proved dead is not in hand anywhere and cannot come
+ * back through a pick — while the reader's own `scope` holds until `/api/me`
+ * answers for it, so a read still in flight cannot narrow an admin's stored `all`
+ * away. The surfaces show `filters`, and a control changes the value in force
+ * through `clipFiltersChange`, the pure step over the state the change lands on,
+ * which answers with the next state *and* the entry to write.
+ *
+ * That write happens in the effect below, once the value has committed: never in
+ * a state updater, which must be pure and which React may run more than once or
+ * never commit. The effect writes the read's correction when there is one and
+ * otherwise the entry the last change produced, so either way the browser's entry
+ * holds a value that was committed and shown — and a browser whose reader never
+ * chooses a filter has neither and gains no entry. The reader's stored value
+ * stays in state — the sentence is a fact about it, and a fact a human reads has
+ * to outlive the commit that writes the entry — so the sentence is still on the
+ * render after the correction, and it goes when the reader changes a filter.
  *
  * A browser leaves a stale entry behind every time; a list nobody can fix from
  * the UI is the defect this exists to prevent.
  *
- * The wiring this file owns is hand-verified: this suite has no DOM, so no render
- * here runs `choose` or the effect. `clipFilters.test.ts` says so where it pins
- * the decisions underneath, and the owner's list in
- * `.scratch/pilot-ux/notes/24-a-change-does-not-decide-an-unanswered-field.md`
- * carries the behaviour.
+ * What the node suite does not reach: there is no DOM here, so no render in
+ * `clipFilters.test.ts` runs this hook. `choose` and the entry effect below are
+ * this file's wiring and are hand-verified; the suite pins the pure decisions
+ * they are built from (`clipFiltersChange`, `clipFiltersView`) and reads this
+ * file's source to pin that `choose` is that step and not a fold that drops the
+ * write. Everything a render alone could get wrong is the owner's to check by
+ * hand; `.scratch/pilot-ux/notes/27-the-write-path-says-one-thing.md` carries
+ * the behaviour.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -45,22 +53,24 @@ import {
   type TagsResponse,
 } from "./api";
 import {
-  applyClipFilterChange,
+  clipFiltersChange,
   clipFiltersView,
   readStoredClipFilters,
   saveStoredClipFilters,
   type ClipFilterCaller,
   type ClipFilterOptions,
   type ClipFilterSelection,
+  type ClipFiltersState,
 } from "./clipFilters";
 
 /** The selection to ask the server with, and how to change what is in force. */
 export type ClipFiltersHandle = {
   /**
    * The selection to ask the server with and to show: the stored value as the
-   * read has answered for it. A change patches this selection field by field,
-   * except for a `scope` the read has not answered for yet — that one stays the
-   * reader's own (see `chooseClipFilters`).
+   * read has answered for it, patched by a change in every field the read has
+   * answered for — `project` and `tag` always, `scope` once the caller is known.
+   * The one field the read may not have answered for yet, `scope` while
+   * `/api/me` is in flight, stays the reader's own (see `chooseClipFilters`).
    */
   filters: ClipFilterSelection;
   /**
@@ -72,10 +82,11 @@ export type ClipFiltersHandle = {
   /** Whether this caller may choose the scope at all — `all` is the admin's. */
   canChooseScope: boolean;
   /**
-   * Store a change to the selection in force, for a control that offers one, and
-   * write it to the browser's entry. The change is applied to the value in force
-   * at the moment it is applied, so a second change in the same event does not
-   * lose the first. Hand-verified: this needs a DOM to run.
+   * Store a change to the selection in force, for a control that offers one. The
+   * change is the pure step `clipFiltersChange` over the state it lands on, so a
+   * second change in the same event folds over what the first produced; the
+   * browser's entry is written by the effect above, once that state has
+   * committed. Hand-verified: this needs a DOM to run.
    */
   choose(patch: Partial<ClipFilterSelection>): void;
 };
@@ -95,36 +106,44 @@ export function useClipFilters(): ClipFiltersHandle {
     }),
     [projects, tags],
   );
-  // The reader's own value, as the browser holds it: the sentence is about this,
-  // and a change of theirs is what replaces it.
-  const [stored, setStored] = useState<ClipFilterSelection>(readStoredClipFilters);
+  // The reader's own value, as the browser holds it, and the entry the last
+  // change produced: the sentence is about `stored`, and a change of theirs is
+  // what replaces it.
+  const [state, setState] = useState<ClipFiltersState>(() => ({
+    stored: readStoredClipFilters(),
+    entry: null,
+  }));
   const view = useMemo(
-    () => clipFiltersView(stored, caller, options),
-    [caller, options, stored],
+    () => clipFiltersView(state.stored, caller, options),
+    [caller, options, state.stored],
   );
-  const { entry, filters, notice } = view;
+  const { entry: correction, filters, notice } = view;
 
-  // The browser's entry: the read's correction, and nothing else. A change of the
-  // reader's is written by `choose` itself, so this effect cannot put the value a
-  // render holds over what a change just stored, and a browser whose reader never
-  // chose a filter gains no entry from a read. The state is not touched here, so
-  // the sentence is still there on the render after this one, and a change is what
+  // The browser's entry, written here rather than in the updater that produced
+  // the value: this runs after React has committed and shown it, so the entry can
+  // only ever hold a value that was committed. The read's correction wins when
+  // there is one — it is what a later read must find — and otherwise this writes
+  // the entry the last change committed; a browser whose reader never chose a
+  // filter has neither and gains no entry. The state is not touched here, so the
+  // sentence is still there on the render after this one, and a change is what
   // replaces the value it is about. Hand-verified: no render in the node suite
   // runs an effect.
   useEffect(() => {
-    if (entry) {
-      saveStoredClipFilters(entry);
+    const target = correction ?? state.entry;
+    if (target !== null) {
+      saveStoredClipFilters(target);
     }
-  }, [entry]);
+  }, [correction, state]);
 
   const choose = useCallback(
     (patch: Partial<ClipFilterSelection>) => {
-      // The change is a function of the value in force at the moment it is
-      // applied — the state the change lands on, not the `filters` this render
-      // captured — so an event's second change lands on what the first produced,
-      // and a field the read has not answered for cannot be narrowed over. The
-      // write is inside the same call, so the entry holds what this fold produced.
-      setStored((current) => applyClipFilterChange(current, caller, options, patch));
+      // The change is the pure step over the state it lands on — the state the
+      // change lands on, not the `filters` this render captured — so an event's
+      // second change folds over what the first produced, and a field the read
+      // has not answered for cannot be narrowed over. The step's answer carries
+      // the entry to write, and the effect above writes it once this state has
+      // committed; nothing here writes.
+      setState((current) => clipFiltersChange(current, caller, options, patch));
     },
     [caller, options],
   );
