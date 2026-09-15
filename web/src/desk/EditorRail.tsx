@@ -13,6 +13,7 @@ import { Button } from "../components/ui/button";
 import { useDeskStore, type EditorKind } from "../deskStore";
 import { ClassEditor, OtherSummary, PhaseEditor, TripletEditor } from "./EditorCards";
 import { MaskPanel } from "./MaskPanel";
+import { LABEL_READ_FAILED, useItemWrite, writeReadFailure } from "./maskControls";
 import type { VocabControls } from "./vocabControls";
 
 /** The right rail: the mask panel, the Task type tabs and the focused Task
@@ -53,6 +54,15 @@ export function EditorRail({
   onToggleLane: (identity: string) => void;
 }) {
   const editorRailWidth = useDeskStore((s) => s.layout.editorRailWidth);
+  // The focused Task type's own item cell: phase, class and triplet are three items on
+  // the Clip, each assigned on its own, so which of them this Account may write is a
+  // question per tab. The server refuses a write with a sentence (`write_refusal`), and
+  // the desk shows that sentence before the click rather than after it — the mask panel's
+  // rule (ADR 0030), which the label editors used to be alone in not following.
+  const write = useItemWrite(clip?.id, focus);
+  // The desk's own line for the other reason the editors are off: `/api/me` ended
+  // without an answer, so there is no server sentence to show.
+  const readFailure = writeReadFailure(write, LABEL_READ_FAILED);
 
   return (
     <div
@@ -77,6 +87,24 @@ export function EditorRail({
           </Button>
         ))}
       </div>
+      {write.refusal ? (
+        // Why the editors below are off, in the server's own words: the sentence a write
+        // would be refused with. It names the way out — the admin assigns the item.
+        <p
+          data-label-refusal=""
+          className="shrink-0 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-200"
+        >
+          {write.refusal}
+        </p>
+      ) : null}
+      {readFailure ? (
+        <p
+          data-label-read-failed=""
+          className="shrink-0 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-200"
+        >
+          {readFailure}
+        </p>
+      ) : null}
       <div role="tabpanel" className="flex flex-col">
         {clip ? (
           focus === "class" ? (
@@ -92,6 +120,7 @@ export function EditorRail({
               laneVisible={laneVisible}
               onToggleLane={onToggleLane}
               controls={controls}
+              write={write}
             />
           ) : focus === "triplet" ? (
             <TripletEditor
@@ -106,6 +135,7 @@ export function EditorRail({
               laneVisible={laneVisible}
               onToggleLane={onToggleLane}
               controls={controls}
+              write={write}
             />
           ) : (
             <PhaseEditor
@@ -120,6 +150,7 @@ export function EditorRail({
               laneVisible={laneVisible}
               onToggleLane={onToggleLane}
               controls={controls}
+              write={write}
             />
           )
         ) : (

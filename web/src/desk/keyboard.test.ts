@@ -18,16 +18,20 @@
  * out of this file that leads to a module with imports would drag a fetcher into all
  * three. The pin is conservative — it fails on *any* value import in the closure, whether
  * or not the module fetches — because "fetches nothing" is not readable from a module
- * body this test does not parse.
+ * body this test does not parse. The closure is walked with the TypeScript compiler
+ * rather than a pattern over the text: what must not slip through is an edge that lands
+ * quietly, and a side-effect import, a re-export, a dynamic `import()` and a single-quoted
+ * specifier are value edges a pattern has to be taught about one at a time.
  */
 
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import * as ts from "typescript";
 import { expect, test } from "vitest";
 import { maskKeyAction, maskKeyConsumes } from "./keyboard";
-import type { MaskBusy, MaskWrite } from "./maskControls";
+import type { MaskBusy, ItemWrite } from "./maskControls";
 
 const CMD_Z = { key: "z", ctrlKey: false, metaKey: true, shiftKey: false };
 const CTRL_Z = { key: "z", ctrlKey: true, metaKey: false, shiftKey: false };
@@ -37,29 +41,88 @@ const IDLE: MaskBusy = { job: false, predicting: false };
 const PREDICTING: MaskBusy = { job: false, predicting: true };
 const JOB: MaskBusy = { job: true, predicting: false };
 
-const WRITABLE: MaskWrite = { state: "writable", writable: true, refusal: null };
-const REFUSED: MaskWrite = { state: "refused", writable: false, refusal: "assigned to alice" };
-const UNREADABLE: MaskWrite = { state: "unreadable", writable: false, refusal: null };
-const UNKNOWN: MaskWrite = { state: "unknown", writable: false, refusal: null };
+const WRITABLE: ItemWrite = { state: "writable", writable: true, refusal: null };
+const REFUSED: ItemWrite = { state: "refused", writable: false, refusal: "assigned to alice" };
+const UNREADABLE: ItemWrite = { state: "unreadable", writable: false, refusal: null };
+const UNKNOWN: ItemWrite = { state: "unknown", writable: false, refusal: null };
 
 const TYPING = { editable: true, write: WRITABLE, busy: IDLE };
 
 const DESK_DIR = dirname(fileURLToPath(import.meta.url));
 
-/** The imports one source file makes, with the specifier and whether the whole statement is
- * erased at build: an `import type` clause, or one whose specifiers are all `type`. */
+/** The module edges one source file declares, with the specifier and whether the whole
+ * statement is erased at build: an `import type` / `export type`, or one whose specifiers
+ * are all `type`. A side-effect import (`import "./x";`), a re-export (`export … from`),
+ * and a dynamic `import("./x")` are all value edges and are read as such; `require` does
+ * not exist in this tree and would not resolve its specifier to a module anyway.
+ *
+ * Parsed rather than pattern-matched, because the pin's claim is "no value edge out of
+ * this file", and the failure it must not miss is an edge that lands quietly. */
 function importsOf(path: string): { specifier: string; typeOnly: boolean }[] {
-  const source = readFileSync(path, "utf8");
+  const source = ts.createSourceFile(
+    path,
+    readFileSync(path, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+  );
   const imports: { specifier: string; typeOnly: boolean }[] = [];
-  for (const match of source.matchAll(
-    /^import\s+(?<clause>[^;]+?)\s+from\s+"(?<specifier>[^"]+)";/gm,
-  )) {
-    const clause = (match.groups?.clause ?? "").trim();
-    imports.push({
-      specifier: match.groups?.specifier ?? "",
-      typeOnly: clause.startsWith("type ") || /^\{\s*(?:type\s+[\w$]+\s*,?\s*)+\}$/.test(clause),
-    });
-  }
+  const add = (declare: ts.Node) => {
+    if (ts.isImportDeclaration(declare) && ts.isStringLiteral(declare.moduleSpecifier)) {
+      const clause = declare.importClause;
+      const named = clause?.namedBindings;
+      imports.push({
+        specifier: declare.moduleSpecifier.text,
+        typeOnly:
+          clause?.isTypeOnly === true ||
+          (named !== undefined &&
+            ts.isNamedImports(named) &&
+            named.elements.every((element) => element.isTypeOnly)),
+      });
+      return;
+    }
+    if (
+      ts.isExportDeclaration(declare) &&
+      declare.moduleSpecifier !== undefined &&
+      ts.isStringLiteral(declare.moduleSpecifier)
+    ) {
+      const clause = declare.exportClause;
+      imports.push({
+        specifier: declare.moduleSpecifier.text,
+        typeOnly:
+          declare.isTypeOnly ||
+          (clause !== undefined &&
+            ts.isNamedExports(clause) &&
+            clause.elements.every((element) => element.isTypeOnly)),
+      });
+      return;
+    }
+    if (
+      ts.isImportEqualsDeclaration(declare) &&
+      ts.isExternalModuleReference(declare.moduleReference) &&
+      declare.moduleReference.expression !== undefined &&
+      ts.isStringLiteral(declare.moduleReference.expression)
+    ) {
+      imports.push({
+        specifier: declare.moduleReference.expression.text,
+        typeOnly: declare.isTypeOnly,
+      });
+      return;
+    }
+    if (
+      ts.isCallExpression(declare) &&
+      declare.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      declare.arguments.length === 1 &&
+      ts.isStringLiteral(declare.arguments[0])
+    ) {
+      // A dynamic import is a value edge whatever its names are used for.
+      imports.push({ specifier: (declare.arguments[0] as ts.StringLiteral).text, typeOnly: false });
+    }
+  };
+  const visit = (node: ts.Node) => {
+    add(node);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
   return imports;
 }
 
@@ -117,6 +180,13 @@ test("an inert chord is left to the browser, not swallowed", () => {
 
 test("the module's value imports reach nothing that imports, so no fetcher enters a panel", () => {
   const entry = resolve(DESK_DIR, "keyboard.ts");
+  // The walk must have found the edge it exists to walk. A pin that passes because it saw
+  // nothing at all is exactly what it is here to prevent, and a walk whose reading stops
+  // finding edges looks the same as a module with no edges.
+  expect(
+    importsOf(entry).map((edge) => edge.specifier),
+    "the value import this pin walks",
+  ).toContain("../overlayCoords");
   const reached = new Set([entry]);
   // A Set visits entries added while it is iterated, so this walks the whole value closure.
   for (const path of reached) {

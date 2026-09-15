@@ -7,6 +7,11 @@ first four are ticket 20) and it changes no backend.
 
 ## What landed
 
+> **Renamed after this ticket.** The names below are the code's at the time; the cell is now
+> `ItemWrite` / `ItemRead` / `itemWriteOf` and `useMaskWrite` is a wrapper over
+> `useItemWrite(clipId, "mask")`, because the permission belongs to the (Clip, Task type) item and the
+> editor rail reads the same cell for phase, class and triplet. Nothing this note decides changes.
+
 - `web/src/desk/maskControls.ts` — the permission is now **four** states.
   - `useMaskWrite` reads SWR's `isLoading` and `error` (it destructured only `data` before) and
     hands them to `maskWriteOf` through a new `MaskRead` (`asked` / `isLoading` / `error`).

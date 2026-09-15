@@ -53,16 +53,21 @@ deletes and the picture prompts that would schedule a Predict. There is no Save 
   as a mapping and as the desk rendered from it — the panel's controls and the canvas's
   pointer gate): the write controls follow `edit_labels`,
   the view controls (Track selection, Lane eyes) do not, and a write in flight only ever
-  subtracts. The mask panel, the Track rail and the picture overlay all read it, so the desk
+  subtracts. The mask panel, the Track rail, the picture overlay and the editor rail's phase / class /
+  triplet editors all read it, so the desk
   has no second opinion about who may write.
 - A sentence the desk shows for a refusal comes from the server; the desk words no refusal of its
   own. One line is the desk's: a `/api/me` read that ended without an answer has no server sentence
-  to show, so the panel says it could not read the permission — a statement about the read, never
-  about ownership. The phase, class and triplet editors still show the 403's sentence in the notice
-  line — they can move to the same read without a server change.
+  to show, so the surface says it could not read the permission — a statement about the read, never
+  about ownership. The phase, class and triplet editors read the same cell — `useItemWrite(clipId,
+  focus)` in `web/src/desk/EditorRail.tsx` — and show the same sentence before the click, having been
+  the one place left that still learned the truth from its own 403; each surface words the read that
+  never answered in its own line (`MASK_READ_FAILED`, `LABEL_READ_FAILED`), which is the only thing
+  they do not share. Vocab and registry writes are a different gate: they follow the Project's
+  word-list capabilities, not this Clip's item.
 - The e2e harness assigns every Clip × Task type before it touches the desk (`ensureLabelingFor`), so
   issue 22's sitting states the decision rather than working around it.
-- The permission has four states, not two (`maskControls.ts`'s `MaskWrite`). `unknown` is an item cell
+- The permission has four states, not two (`maskControls.ts`'s `ItemWrite`). `unknown` is an item cell
   the desk has not read yet — no Clip open, or the read in flight — and it is not a false reading of a
   refusal: the editor renders off and explains nothing, the canvas holds the first prompt drawn while
   the read is out (its gate is `checking`, not `refused`), and the answer that lands writable is what

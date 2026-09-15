@@ -13,7 +13,7 @@
  * not land quietly.
  */
 import { isUndoKey, type UndoKeyEvent } from "../overlayCoords";
-import type { MaskBusy, MaskWrite } from "./maskControls";
+import type { MaskBusy, ItemWrite } from "./maskControls";
 
 /** True when the given event target is a field the user is typing into. */
 export function isEditableTarget(target: EventTarget | null): boolean {
@@ -40,7 +40,7 @@ export type MaskKeyAction = "dropPending" | "undo" | "ignore";
  */
 export type MaskChordState = {
   editable: boolean;
-  write: MaskWrite;
+  write: ItemWrite;
   busy: MaskBusy;
 };
 

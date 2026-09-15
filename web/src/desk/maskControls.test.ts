@@ -22,6 +22,7 @@ import { expect, test } from "vitest";
 import type { MyItem } from "../api";
 import { mayUndo } from "./keyboard";
 import {
+  LABEL_READ_FAILED,
   MASK_READ_FAILED,
   MASK_VIEW_CONTROLS,
   MASK_WRITE_CONTROLS,
@@ -30,10 +31,11 @@ import {
   maskControlStates,
   maskPointerGate,
   maskReadFailure,
-  maskWriteOf,
+  itemWriteOf,
+  writeReadFailure,
   type MaskBusy,
-  type MaskRead,
-  type MaskWrite,
+  type ItemRead,
+  type ItemWrite,
 } from "./maskControls";
 
 const REFUSED = "This Clip's mask is assigned to alice: only alice writes its labels.";
@@ -44,7 +46,7 @@ const PREDICTING: MaskBusy = { job: false, predicting: true };
 
 /** A read that settled with no `/api/me` answer: the server's 404 with no body, or a
  * request that never arrived. */
-const FAILED: MaskRead = { asked: true, isLoading: false, error: new Error("Not Found") };
+const FAILED: ItemRead = { asked: true, isLoading: false, error: new Error("Not Found") };
 
 function item(over: Partial<MyItem> = {}): MyItem {
   return {
@@ -65,23 +67,23 @@ function item(over: Partial<MyItem> = {}): MyItem {
 }
 
 /** One control's state, for a permission and a moment. */
-function states(write: MaskWrite, busy: MaskBusy = IDLE) {
+function states(write: ItemWrite, busy: MaskBusy = IDLE) {
   return maskControlStates(write, busy);
 }
 
-const WRITABLE = maskWriteOf(item({ capabilities: { edit_labels: true } }));
-const REFUSED_CELL = maskWriteOf(
+const WRITABLE = itemWriteOf(item({ capabilities: { edit_labels: true } }));
+const REFUSED_CELL = itemWriteOf(
   item({ capabilities: { edit_labels: false }, write_refusal: REFUSED }),
 );
 /** The read in flight: no item payload yet. */
-const UNKNOWN = maskWriteOf(undefined);
+const UNKNOWN = itemWriteOf(undefined);
 /** The read ended without an answer: `/api/me`'s 404, or a failed request. */
-const UNREADABLE = maskWriteOf(undefined, FAILED);
+const UNREADABLE = itemWriteOf(undefined, FAILED);
 /** No Clip open: no read was ever asked, so there is no failure to report. */
-const NO_CLIP = maskWriteOf(undefined, { asked: false, isLoading: false, error: null });
+const NO_CLIP = itemWriteOf(undefined, { asked: false, isLoading: false, error: null });
 
 test("the mapping covers every control it declares, and no Save", () => {
-  const mapped = Object.keys(states(maskWriteOf(item()), IDLE)).sort();
+  const mapped = Object.keys(states(itemWriteOf(item()), IDLE)).sort();
   expect(mapped).toEqual([...MASK_WRITE_CONTROLS, ...MASK_VIEW_CONTROLS].sort());
   // Every mask write lands on the edit, so the editor has no Save control to gate.
   expect(MASK_WRITE_CONTROLS as readonly string[]).not.toContain("save");
@@ -110,7 +112,7 @@ test("a refused cell turns every mask write control off and keeps looking on", (
 
 test("a review of someone else's item is refused like any other, in its own words", () => {
   // A Reviewing item: the annotator's cell, not the assigned reviewer's.
-  const write = maskWriteOf(
+  const write = itemWriteOf(
     item({
       state: "Reviewing",
       reviewer: "carol",
@@ -128,7 +130,7 @@ test("a review of someone else's item is refused like any other, in its own word
 test("the desk never words a refusal of its own", () => {
   // A refused cell whose payload carries no sentence disables the editor and says
   // nothing rather than inventing wording the server would not use.
-  const noSentence = maskWriteOf(item({ capabilities: { edit_labels: false } }));
+  const noSentence = itemWriteOf(item({ capabilities: { edit_labels: false } }));
   expect(noSentence).toEqual({ state: "refused", writable: false, refusal: null });
   // An unanswered read carries no sentence either — but it is not that refusal.
   expect(UNKNOWN).toEqual({ state: "unknown", writable: false, refusal: null });
@@ -172,7 +174,7 @@ test("a read that ended without an answer is unreadable, not a hanging unknown",
 
   // The same state from a read that ended with no item and no error: the server's 404
   // is a settled answer, not a read in flight.
-  const answered404 = maskWriteOf(undefined, { asked: true, isLoading: false, error: null });
+  const answered404 = itemWriteOf(undefined, { asked: true, isLoading: false, error: null });
   expect(answered404).toEqual(UNREADABLE);
 
   // No Clip open asks no question: that stays `unknown`, not a failure.
@@ -182,10 +184,32 @@ test("a read that ended without an answer is unreadable, not a hanging unknown",
 
 test("a failed read stays unreadable while a retry is in flight, until an answer lands", () => {
   // SWR retries; the desk does not go back to holding a prompt for each retry.
-  const retrying = maskWriteOf(undefined, { asked: true, isLoading: true, error: new Error("Not Found") });
+  const retrying = itemWriteOf(undefined, { asked: true, isLoading: true, error: new Error("Not Found") });
   expect(retrying).toEqual(UNREADABLE);
   // The answer that lands writable is what ends it.
-  expect(maskWriteOf(item({ capabilities: { edit_labels: true } }), FAILED)).toEqual(WRITABLE);
+  expect(itemWriteOf(item({ capabilities: { edit_labels: true } }), FAILED)).toEqual(WRITABLE);
+});
+
+test("the cell is the item's, so the label Task types read it in their own words", () => {
+  // One shape for the mask and the three label Task types. What the cell is built from is
+  // the payload (`capabilities.edit_labels`, `write_refusal`), not the Task type, which is
+  // what lets the editor rail show the refusal before the click as the panel does — the
+  // server refuses a class write with the same cell it refuses a mask write with.
+  expect(itemWriteOf(item({ task_type: "class" }))).toEqual(itemWriteOf(item({ task_type: "mask" })));
+  expect(itemWriteOf(item({ task_type: "class", write_refusal: REFUSED }))).toEqual(REFUSED_CELL);
+
+  // The one thing a surface owns is its own line for a read that never answered: there is
+  // no server sentence to show, so each says what it is turning off.
+  expect(writeReadFailure(UNREADABLE, LABEL_READ_FAILED)).toBe(LABEL_READ_FAILED);
+  expect(writeReadFailure(UNREADABLE, MASK_READ_FAILED)).toBe(MASK_READ_FAILED);
+  expect(maskReadFailure(UNREADABLE)).toBe(writeReadFailure(UNREADABLE, MASK_READ_FAILED));
+
+  // Nothing else has one of those lines to show: a refusal is the server's sentence and
+  // rides on the cell, a read still in flight claims nothing, and a writable item has
+  // nothing to explain.
+  expect(writeReadFailure(REFUSED_CELL, LABEL_READ_FAILED)).toBeNull();
+  expect(writeReadFailure(UNKNOWN, LABEL_READ_FAILED)).toBeNull();
+  expect(writeReadFailure(WRITABLE, LABEL_READ_FAILED)).toBeNull();
 });
 
 test("the canvas gate holds an unanswered read instead of turning it away", () => {
@@ -260,7 +284,7 @@ test("a write in flight only ever subtracts: prompts queue under a Predict", () 
 });
 
 test("the undo chord is inert for a non-writable item while the Undo button is disabled", () => {
-  const refused = maskWriteOf(
+  const refused = itemWriteOf(
     item({ capabilities: { edit_labels: false }, write_refusal: REFUSED }),
   );
   // The chord's own guard and the button's `controls.undo` are one predicate:
@@ -270,7 +294,7 @@ test("the undo chord is inert for a non-writable item while the Undo button is d
 
   // Writable, idle, and the two agree the other way; a write in flight subtracts
   // from both, as the mapping's other controls do.
-  const writable = maskWriteOf(item({ capabilities: { edit_labels: true } }));
+  const writable = itemWriteOf(item({ capabilities: { edit_labels: true } }));
   expect(mayUndo(writable.writable, IDLE)).toBe(true);
   expect(states(writable, IDLE).undo).toBe(true);
   expect(mayUndo(writable.writable, PREDICTING)).toBe(false);

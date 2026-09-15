@@ -4,15 +4,20 @@ import { getJson, mePath, type Me, type MyItem } from "../api";
 import { mayUndo } from "./keyboard";
 
 /**
- * What the open Clip's mask item allows, and which controls follow it.
+ * What the open Clip's item allows, and which controls follow it.
  *
- * The server refuses every mask write on the item's Assignment
- * (`mask/http.py` → `require_label_assignee`, whose cell is `capabilities.edit_labels`),
- * and `/api/me` hands the desk that same cell for the mask item: the permission, and
- * `write_refusal` — the sentence a refused write would carry. The desk has no second
+ * One cell per (Clip, Task type) pair: the server refuses every label write on the
+ * item's Assignment (`require_label_assignee`, whose cell is `capabilities.edit_labels`),
+ * and `/api/me?clip_id=…&task_type=…` hands the desk that same cell — the permission,
+ * and `write_refusal`, the sentence a refused write would carry. The desk has no second
  * opinion, so a control it disables and a call the server refuses cannot disagree (ADR
  * 0030). There is no Save control to gate: the Annotation is written on each successful
  * edit (ADR 0025).
+ *
+ * Two surfaces read it, which is why the cell is named for the item and not for either:
+ * the mask panel (`useMaskWrite`) and the editor rail's Task type editors
+ * (`useItemWrite`), each showing the sentence in its own words. There is one mask Task
+ * type and three label ones, and they share this shape because they share the server's.
  *
  * The permission has four states, not two. `unknown` is a `/api/me` that has not
  * answered *yet* — no Clip open, or the read in flight — and it is not the fact
@@ -61,7 +66,7 @@ export type MaskBusy = { job: boolean; predicting: boolean };
  * no Clip is open and no read was made at all — a desk with no Clip has not failed to
  * read anything.
  */
-export type MaskRead = {
+export type ItemRead = {
   asked: boolean;
   isLoading: boolean;
   error: unknown;
@@ -78,13 +83,14 @@ export type MaskRead = {
  *   write guard asks for; `refused` is false and carries the server's own sentence
  *   (`null` when the payload carried none). Neither state invents the other.
  * - `unreadable` — a read that ended without an answer. No write, no held prompt, and
- *   no refusal claimed: the server sent no sentence, so the panel says the desk could
- *   not read the permission (`MASK_READ_FAILED`).
+ *   no refusal claimed: the server sent no sentence, so the surface says the desk could
+ *   not read the permission (`MASK_READ_FAILED` for the panel, `LABEL_READ_FAILED` for
+ *   the editors).
  *
  * `writable` is false for `unknown`, `refused` and `unreadable` alike, so no guard has
  * to learn the difference, and no write starts on a cell the server has not answered.
  */
-export type MaskWrite =
+export type ItemWrite =
   | { state: "unknown"; writable: false; refusal: null }
   | { state: "writable"; writable: true; refusal: null }
   | { state: "refused"; writable: false; refusal: string | null }
@@ -96,8 +102,13 @@ export type MaskWrite =
 export const MASK_READ_FAILED =
   "Could not read this Clip's mask permission — mask writes are off until it loads.";
 
+/** The editor rail's line for the same fact about a label item. Same office as
+ * `MASK_READ_FAILED`: the desk's own sentence, never one the server might have sent. */
+export const LABEL_READ_FAILED =
+  "Could not read this Clip's label permission — label writes are off until it loads.";
+
 /** A read the desk never made: no Clip open, nothing in flight, nothing failed. */
-const NOT_ASKED: MaskRead = { asked: false, isLoading: false, error: null };
+const NOT_ASKED: ItemRead = { asked: false, isLoading: false, error: null };
 
 /**
  * The item's cell as a permission, from the item and the `/api/me` read that produced
@@ -105,7 +116,7 @@ const NOT_ASKED: MaskRead = { asked: false, isLoading: false, error: null };
  * and no error is `unreadable` when it was asked (the server's 404) and `unknown` when
  * it never was (no Clip open).
  */
-export function maskWriteOf(item: MyItem | undefined, read: MaskRead = NOT_ASKED): MaskWrite {
+export function itemWriteOf(item: MyItem | undefined, read: ItemRead = NOT_ASKED): ItemWrite {
   if (item !== undefined) {
     if (item.capabilities?.edit_labels === true) {
       // A writable item has nothing to explain.
@@ -151,7 +162,7 @@ export function maskWriteOf(item: MyItem | undefined, read: MaskRead = NOT_ASKED
  * off for the same reason and holds nothing. Looking is not writing and never waits
  * on the answer, so the view half comes from `MASK_VIEW_CONTROLS` itself.
  */
-export function maskControlStates(write: MaskWrite, busy: MaskBusy): MaskControlStates {
+export function maskControlStates(write: ItemWrite, busy: MaskBusy): MaskControlStates {
   const readyForPrompts = write.writable && !busy.job;
   const ready = readyForPrompts && !busy.predicting;
   const view = {} as Record<MaskViewControl, boolean>;
@@ -191,7 +202,7 @@ export function acceptsPointerInk(gate: MaskPointerGate): boolean {
  * everything else is open — including under a Predict, whose prompts are queued by the
  * debounce. `open` is exactly where `maskControlStates(...).prompts` is live; the other
  * four are the reasons it is not. */
-export function maskPointerGate(write: MaskWrite, busy: MaskBusy): MaskPointerGate {
+export function maskPointerGate(write: ItemWrite, busy: MaskBusy): MaskPointerGate {
   if (busy.job) {
     return "busy";
   }
@@ -217,7 +228,7 @@ export type HeldPromptAnswer = "send" | "drop" | "hold";
  * read still in flight holds it (`"hold"`). The effects that run this are wiring a node
  * test cannot reach; this function is the decision they are built from.
  */
-export function heldPromptOnAnswer(write: MaskWrite): HeldPromptAnswer {
+export function heldPromptOnAnswer(write: ItemWrite): HeldPromptAnswer {
   if (write.writable) {
     return "send";
   }
@@ -227,27 +238,41 @@ export function heldPromptOnAnswer(write: MaskWrite): HeldPromptAnswer {
   return "drop";
 }
 
-/** The desk's own sentence for a read that never answered, or null when there is no such
- * failure. The panel shows it where a refusal's sentence would go: both answer "why are
- * these controls off", and only one of them is the server's. */
-export function maskReadFailure(write: MaskWrite): string | null {
-  return write.state === "unreadable" ? MASK_READ_FAILED : null;
+/** The desk's own sentence for a read that never answered — in the words of the surface
+ * that shows it — or null when there is no such failure. Each surface shows it where a
+ * refusal's sentence would go: both answer "why are these controls off", and only one of
+ * them is the server's. */
+export function writeReadFailure(write: ItemWrite, whenUnreadable: string): string | null {
+  return write.state === "unreadable" ? whenUnreadable : null;
 }
 
-/** The open Clip's mask item cell: the same read the editor renders from and the server
- * refuses on. SWR's `isLoading`/`error` choose the state — a read still out is
- * `unknown`, a read that ended without an item (the 404, or a failed request) is
+/** The mask panel's wording of `writeReadFailure`. */
+export function maskReadFailure(write: ItemWrite): string | null {
+  return writeReadFailure(write, MASK_READ_FAILED);
+}
+
+/** The open Clip's item cell for one Task type: the same read the surface renders from
+ * and the server refuses on. SWR's `isLoading`/`error` choose the state — a read still
+ * out is `unknown`, a read that ended without an item (the 404, or a failed request) is
  * `unreadable` — so neither is dropped into `unknown` for good.
  *
  * The result is memoized on the read's own values: the state is a plain object, and the
  * chord's listener and the held-prompt effect depend on it, so a re-render with the same
  * answer must not hand them a new identity. */
-export function useMaskWrite(clipId: string | undefined): MaskWrite {
-  const { data, error, isLoading } = useSWR(clipId ? mePath(clipId, "mask") : null, getJson<Me>);
+export function useItemWrite(clipId: string | undefined, taskType: string): ItemWrite {
+  const { data, error, isLoading } = useSWR(
+    clipId ? mePath(clipId, taskType) : null,
+    getJson<Me>,
+  );
   const asked = clipId !== undefined;
   const item = data?.item;
   return useMemo(
-    () => maskWriteOf(item, { asked, isLoading, error }),
+    () => itemWriteOf(item, { asked, isLoading, error }),
     [asked, error, isLoading, item],
   );
+}
+
+/** The mask panel's cell: the Task type with a canvas of its own. */
+export function useMaskWrite(clipId: string | undefined): ItemWrite {
+  return useItemWrite(clipId, "mask");
 }

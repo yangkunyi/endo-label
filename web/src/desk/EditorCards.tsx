@@ -32,6 +32,7 @@ import { libraryRowSemanticStyle, nowEmptyText, nowFillStyle } from "../editorCa
 import { cn } from "../lib/utils";
 import { labelColor } from "../timeline";
 import { AddVocabRow, LibraryList } from "./VocabLibrary";
+import type { ItemWrite } from "./maskControls";
 import { pickerItemFor, type VocabControls } from "./vocabControls";
 import { tripleIdentity } from "./lanes";
 
@@ -75,6 +76,7 @@ export function ClassEditor({
   laneVisible,
   onToggleLane,
   controls,
+  write,
 }
 : {
   clipId: string;
@@ -88,6 +90,8 @@ export function ClassEditor({
   laneVisible: (name: string) => boolean;
   onToggleLane: (name: string) => void;
   controls: VocabControls;
+  /** The class item's write cell: this Account may edit this Clip's class labels. */
+  write: ItemWrite;
 }) {
   const [error, setError] = useState<string | null>(null);
   const current = frameClassTags(classFrames, frameIndex);
@@ -95,6 +99,12 @@ export function ClassEditor({
   const toggleBrush = useDeskStore((s) => s.toggleBrush);
 
   async function writeTags(tags: string[]) {
+    // The cell is the gate, not the click: the server would refuse this write, and the
+    // rail has already shown why. A cell still unanswered (`unknown`) writes nothing
+    // either — no write starts on an answer the server has not sent.
+    if (!write.writable) {
+      return;
+    }
     setError(null);
     try {
       const doc = await sendJson<ClassDoc>(
@@ -149,7 +159,7 @@ export function ClassEditor({
           brushIdentity={(name) => ({ kind: "class", name })}
           laneVisible={laneVisible}
           onToggleLane={onToggleLane}
-          disabled={frameCount <= 0}
+          disabled={frameCount <= 0 || !write.writable}
           listName="class_tags"
           renameLabel="Rename class tag"
           deleteLabel={(name) => `Delete class tag ${name}`}
@@ -191,6 +201,7 @@ export function PhaseEditor({
   laneVisible,
   onToggleLane,
   controls,
+  write,
 }
 : {
   clipId: string;
@@ -204,6 +215,8 @@ export function PhaseEditor({
   laneVisible: (name: string) => boolean;
   onToggleLane: (name: string) => void;
   controls: VocabControls;
+  /** The phase item's write cell: this Account may edit this Clip's phase labels. */
+  write: ItemWrite;
 }) {
   const [error, setError] = useState<string | null>(null);
   const current = framePhaseName(phaseFrames, frameIndex);
@@ -211,6 +224,9 @@ export function PhaseEditor({
   const toggleBrush = useDeskStore((s) => s.toggleBrush);
 
   async function writePhase(phase: string | null) {
+    if (!write.writable) {
+      return;
+    }
     setError(null);
     try {
       const doc = await sendJson<PhaseDoc>(
@@ -269,7 +285,7 @@ export function PhaseEditor({
           brushIdentity={(name) => ({ kind: "phase", name })}
           laneVisible={laneVisible}
           onToggleLane={onToggleLane}
-          disabled={frameCount <= 0}
+          disabled={frameCount <= 0 || !write.writable}
           listName="phases"
           renameLabel="Rename phase"
           deleteLabel={(name) => `Delete phase ${name}`}
@@ -316,6 +332,7 @@ export function TripletEditor({
   laneVisible,
   onToggleLane,
   controls,
+  write,
 }
 : {
   clipId: string;
@@ -329,6 +346,8 @@ export function TripletEditor({
   laneVisible: (key: string) => boolean;
   onToggleLane: (key: string) => void;
   controls: VocabControls;
+  /** The triplet item's write cell: this Account may edit this Clip's triplet labels. */
+  write: ItemWrite;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState({ instrument: "", verb: "", target: "" });
@@ -359,7 +378,7 @@ export function TripletEditor({
   const targetWords = uniqueTripleWords(triples, "target");
 
   async function toggleRow(row: VocabTriple) {
-    if (frameCount <= 0) {
+    if (frameCount <= 0 || !write.writable) {
       return;
     }
     setError(null);
@@ -625,7 +644,7 @@ export function TripletEditor({
                                 : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
                             )}
                             style={libraryRowSemanticStyle(labelColor(key), lit)}
-                            disabled={frameCount <= 0}
+                            disabled={frameCount <= 0 || !write.writable}
                             aria-label={key}
                             aria-pressed={lit}
                             data-label-color={labelColor(key)}

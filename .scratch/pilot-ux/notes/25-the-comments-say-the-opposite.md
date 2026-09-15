@@ -7,6 +7,10 @@ behaviour changed, in `web/src/desk/` and the notes only.
 
 ## What landed
 
+> **Renamed after this ticket.** The cell's type is now `ItemWrite` (not `MaskWrite`) and the factory
+> `itemWriteOf`; the shape and the four states this note is about are unchanged, and the import
+> direction it argues for is unchanged with them.
+
 - `web/src/desk/keyboard.ts` — `mayUndo(writable, busy)` now lives here, with the module's own
   header saying why: `TimelinePanel`, `FrameControls` and `PlayerPanel` import `isEditableTarget`
   for a DOM question, so this side must fetch nothing. The only line it has into
