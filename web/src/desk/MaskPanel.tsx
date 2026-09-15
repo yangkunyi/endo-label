@@ -44,8 +44,15 @@ import {
 } from "../overlayCoords";
 import { hasMaskHandoff, isProtectedState, propagateTargetFrames, trackState } from "../trackState";
 import { formatElapsed, workerLoadingToast } from "../workerStatus";
-import { isEditableTarget, maskKeyAction } from "./keyboard";
-import { maskControlStates, maskPointerGate, mayUndo, useMaskWrite } from "./maskControls";
+import { isEditableTarget, maskKeyAction, maskKeyConsumes } from "./keyboard";
+import {
+  heldPromptOnAnswer,
+  maskControlStates,
+  maskPointerGate,
+  maskReadFailure,
+  mayUndo,
+  useMaskWrite,
+} from "./maskControls";
 import { useTrackLaneVisibility } from "./maskLanes";
 import { MaskSessionContext, useMaskSession, type MaskSession } from "./maskSession";
 import type { DeskNotice } from "./notice";
@@ -110,6 +117,12 @@ export function MaskSessionProvider({
   const busy = { job: jobRunning, predicting: predictBusy };
   const controls = maskControlStates(write, busy);
   const pointerGate = maskPointerGate(write, busy);
+  // What the current answer does to a prompt the canvas held for it. `write` is
+  // memoized on the read, so this only changes when the answer does.
+  const heldPrompt = heldPromptOnAnswer(write);
+  // The desk's own line for a read that never answered; the server's sentence for a
+  // refusal rides on `write.refusal`.
+  const readFailure = maskReadFailure(write);
   // Ticket 09: the Job blocks, so the desk shows an indeterminate state with
   // elapsed time — the whole span streams inside the first poll, so no honest
   // per-frame number exists (maintainer decision: no async).
@@ -322,27 +335,32 @@ export function MaskSessionProvider({
     }, PREDICT_DEBOUNCE_MS);
   }, [clearPredictTimer]);
 
-  // The canvas holds a prompt drawn while `/api/me` was still in flight, and the answer
-  // that lands writable is what sends it. Only the permission is a reason to run this:
-  // `schedulePredict` keeps one identity, so a re-render cannot re-arm a debounce a mark
-  // already has.
+  // The canvas holds a prompt drawn while `/api/me` was still in flight. ADR 0030's
+  // middle: the answer that lands writable is what sends it; an answer that lands
+  // unwritable — the server's refusal, or a read that never answered — takes it beside
+  // the panel's sentence. Only the answer is a reason to run either effect: `schedulePredict`
+  // keeps one identity, so a re-render cannot re-arm a debounce a mark already has.
+  //
+  // `heldPromptOnAnswer` is the decision both are built from, pinned in
+  // `maskControls.test.ts`. *These effects* are the wiring, and they are hand-verified
+  // (AGENTS.md → Verification): vitest here is node and `renderToStaticMarkup` runs no
+  // effects, so no in-process test runs them. They are on the owner's list in
+  // `.scratch/pilot-ux/notes/22-a-read-that-never-answers.md`.
   useEffect(() => {
-    if (!write.writable || pendingRef.current.length === 0) {
+    if (heldPrompt !== "send" || pendingRef.current.length === 0) {
       return;
     }
     schedulePredict();
-  }, [schedulePredict, write.writable]);
+  }, [heldPrompt, schedulePredict]);
 
-  // A refused answer takes the held prompt with it: the write it waited on will never
-  // happen, and the panel already shows the server's sentence for it.
   useEffect(() => {
-    if (write.state !== "refused" || pendingRef.current.length === 0) {
+    if (heldPrompt !== "drop" || pendingRef.current.length === 0) {
       return;
     }
     clearPredictTimer();
     pendingRef.current = [];
     setPending([]);
-  }, [clearPredictTimer, write.state]);
+  }, [clearPredictTimer, heldPrompt]);
 
   const onClickPoint = useCallback((point: PendingPoint) => {
     setActiveTrackId((current) => nextActiveTrack(current, { kind: "picture" }));
@@ -593,15 +611,24 @@ export function MaskSessionProvider({
     // one server-side, so do not close it here.
   }, [clearPredictTimer, clipId, stopJobPolling]);
   // Escape drops pending marks that never Predict-ed; the undo chord restores
-  // this Frame's last committed edit.
+  // this Frame's last committed edit. The chord's gate is derived inside
+  // `maskKeyAction` from the item's cell and the writes in flight, so the call site
+  // cannot hand it a `mayUndo` the disabled Undo button would not honour; the
+  // listener's own attachment is hand-verified (AGENTS.md → Verification).
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const action = maskKeyAction(event, {
         editable: isEditableTarget(event.target),
+        write,
         // `predicting.current` is the synchronous flag; the chord must not race
         // the render that would turn `predictBusy` on.
-        mayUndo: mayUndo(write.writable, { job: jobRunning, predicting: predicting.current }),
+        busy: { job: jobRunning, predicting: predicting.current },
       });
+      // Only a chord the desk acts on is consumed (maskKeyConsumes); an inert chord
+      // is left to the browser's own Ctrl+Z rather than swallowed by a no-op.
+      if (maskKeyConsumes(action)) {
+        event.preventDefault();
+      }
       if (action === "dropPending") {
         clearPredictTimer();
         if (pendingRef.current.length > 0) {
@@ -611,13 +638,12 @@ export function MaskSessionProvider({
         return;
       }
       if (action === "undo") {
-        event.preventDefault();
         void runUndo();
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [clearPredictTimer, jobRunning, runUndo, write.writable]);
+  }, [clearPredictTimer, jobRunning, runUndo, write]);
 
   const session: MaskSession = {
     tracks,
@@ -629,6 +655,7 @@ export function MaskSessionProvider({
     activeTrackId,
     canUndo: (sessionSnapshot?.tracks.length ?? 0) > 0,
     refusal: write.refusal,
+    readFailure,
     controls,
     pointerGate,
     predicting: predictBusy,
@@ -694,6 +721,7 @@ export function MaskPanel() {
     predicting,
     canPropagate,
     refusal,
+    readFailure,
     controls,
     frameMasks,
     frameKept,
@@ -743,6 +771,17 @@ export function MaskPanel() {
           className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-200"
         >
           {refusal}
+        </p>
+      ) : null}
+      {readFailure ? (
+        // The other reason they are off, and not a refusal: `/api/me` never answered, so
+        // there is no server sentence to show and the desk says so in its own words. No
+        // prompt is held for that answer (it is not coming).
+        <p
+          data-mask-read-failed=""
+          className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs text-amber-200"
+        >
+          {readFailure}
         </p>
       ) : null}
       <div className="flex items-center justify-between gap-2">

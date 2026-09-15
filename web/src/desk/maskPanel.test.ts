@@ -15,6 +15,14 @@
  * gate does with a pointer. `data-mask-gate` carries the answer, so the read in flight
  * shows as `checking` — a held prompt — and never as the refused `refused`, whose only
  * sentence is the server's.
+ *
+ * What this render cannot reach is the read that never answered (`unreadable`): SWR's
+ * `fallback` can seed data but not an error, and the fetch that would produce one is
+ * async, so the initial render always has the item. The decision is `maskWriteOf` on a
+ * failed read, pinned in `maskControls.test.ts`; the panel's `data-mask-read-failed`
+ * paragraph that renders it is *wiring* and is hand-verified (AGENTS.md → Verification;
+ * the owner's list in `.scratch/pilot-ux/notes/22-a-read-that-never-answers.md`), so this
+ * file must not be read as pinning it.
  */
 
 import { createElement, Fragment } from "react";

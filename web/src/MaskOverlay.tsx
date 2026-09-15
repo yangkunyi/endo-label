@@ -16,7 +16,7 @@ import {
   type Point,
 } from "./overlayCoords";
 import { decodeRle } from "./rle";
-import type { MaskPointerGate } from "./desk/maskControls";
+import { acceptsPointerInk, type MaskPointerGate } from "./desk/maskControls";
 
 const POSITIVE_INK = "#16a34a";
 const NEGATIVE_INK = "#dc2626";
@@ -123,10 +123,25 @@ export function MaskOverlay({
   const drag = useRef<{ start: Point; last: Point; samples: Point[]; label: 0 | 1 } | null>(null);
   const [layoutGen, setLayoutGen] = useState(0);
   // `checking` stays open: a prompt drawn while the mask item's write permission is
-  // still in flight is held for the answer, not dropped the way a refused one is.
-  const inputEnabled = gate === "open" || gate === "checking";
+  // still in flight is held for the answer, not dropped the way a refused one is. The
+  // decision is `acceptsPointerInk`, pinned in `maskControls.test.ts`.
+  const inputEnabled = acceptsPointerInk(gate);
 
   const bump = useCallback(() => setLayoutGen((n) => n + 1), []);
+
+  // A gate that turns while a drag is in flight — a permission that lands refused, or a
+  // Job that starts — makes the gesture a write the desk may no longer make. The gesture
+  // may not commit (the pointer handlers check `inputEnabled`) and its half-drawn ink may
+  // not stay: `drag.current` is dropped and the canvas repainted without it.
+  // `acceptsPointerInk` is the decision, pinned in `maskControls.test.ts`; this effect and
+  // the pointer handlers are the wiring and are hand-verified (AGENTS.md → Verification).
+  useEffect(() => {
+    if (inputEnabled || drag.current === null) {
+      return;
+    }
+    drag.current = null;
+    bump();
+  }, [bump, inputEnabled]);
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current;
@@ -162,9 +177,10 @@ export function MaskOverlay({
         drawInk(ctx, mark.points, dest, mark.label, mark.width);
       }
     }
-    // A mid-drag repaint redraws the partial ink instead of erasing it.
+    // A mid-drag repaint redraws the partial ink instead of erasing it — while the gate
+    // still accepts the gesture. Once it does not, the ink is gone.
     const live = drag.current;
-    if (live) {
+    if (live && inputEnabled) {
       drawInk(ctx, live.samples, dest, live.label, width);
     }
     const pendingPoints = pending.filter((mark): mark is PendingPoint => !isPendingStroke(mark));
@@ -177,7 +193,7 @@ export function MaskOverlay({
       ctx.strokeStyle = point.label === 1 ? "#16a34a" : "#dc2626";
       ctx.stroke();
     }
-  }, [layoutGen, leftover, masks, pending, tracks, videoRef, width]);
+  }, [inputEnabled, layoutGen, leftover, masks, pending, tracks, videoRef, width]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -240,7 +256,7 @@ export function MaskOverlay({
   }
 
   function onPointerMove(event: PointerEvent<HTMLCanvasElement>) {
-    if (!drag.current) {
+    if (!drag.current || !inputEnabled) {
       return;
     }
     const rect = imageRect();
@@ -267,8 +283,10 @@ export function MaskOverlay({
       return;
     }
     // A permission or a Job can turn while a drag is in flight; then the gesture is a write
-    // the desk may no longer make, and the panel already says which of the two it is.
+    // the desk may no longer make, and the ink it drew is wiped with it (the effect above
+    // already dropped `drag.current`; `bump` covers the event that lands before it runs).
     if (!inputEnabled) {
+      bump();
       return;
     }
     const commit = dragCommit(gesture.start, gesture.last, gesture.samples, gesture.label, width);

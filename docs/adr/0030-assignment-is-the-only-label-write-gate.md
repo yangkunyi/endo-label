@@ -55,17 +55,20 @@ deletes and the picture prompts that would schedule a Predict. There is no Save 
   the view controls (Track selection, Lane eyes) do not, and a write in flight only ever
   subtracts. The mask panel, the Track rail and the picture overlay all read it, so the desk
   has no second opinion about who may write.
-- A sentence the desk shows comes from the server; the desk stops wording refusals of its own. The
-  phase, class and triplet editors still show the 403's sentence in the notice line — they can move to
-  the same read without a server change.
+- A sentence the desk shows for a refusal comes from the server; the desk words no refusal of its
+  own. One line is the desk's: a `/api/me` read that ended without an answer has no server sentence
+  to show, so the panel says it could not read the permission — a statement about the read, never
+  about ownership. The phase, class and triplet editors still show the 403's sentence in the notice
+  line — they can move to the same read without a server change.
 - The e2e harness assigns every Clip × Task type before it touches the desk (`ensureLabelingFor`), so
   issue 22's sitting states the decision rather than working around it.
-- One arm has no sentence to show: an item cell the desk has not read yet — no Clip open, the read in
-  flight, or a (Clip, Task type) pair `/api/me` answers 404 for, which is what a mask Assignment row
-  deleted by hand looks like. The editor renders off and explains nothing, because the desk will not
-  word a refusal the server never sent. That arm is a third permission state, not a false
-  reading of the second (`maskControls.ts`'s `MaskWrite`): the canvas holds the first prompt
-  drawn while the read is out — its gate is `checking`, not `refused` — and the answer that
-  lands writable is what sends it. Registration creates all four rows per Clip
-  (`coordination._ensure_assignment_rows`), so the 404 arm is a hand-made store's shape, not the state
-  machine's.
+- The permission has four states, not two (`maskControls.ts`'s `MaskWrite`). `unknown` is an item cell
+  the desk has not read yet — no Clip open, or the read in flight — and it is not a false reading of a
+  refusal: the editor renders off and explains nothing, the canvas holds the first prompt drawn while
+  the read is out (its gate is `checking`, not `refused`), and the answer that lands writable is what
+  sends it. `unreadable` is a read that ended without an answer — a (Clip, Task type) pair `/api/me`
+  answers 404 for, which is what a mask Assignment row deleted by hand looks like, or a request that
+  failed — and it is not the held `unknown`: no answer is coming, so nothing is held for one and the
+  editor says in its own words that it could not read the permission. Registration creates all four
+  rows per Clip (`coordination._ensure_assignment_rows`), so the 404 arm is a hand-made store's shape,
+  not the state machine's.
