@@ -6,6 +6,12 @@
  * of an element the guard reads. The elements below are hand-built in that
  * shape, which is what lets a repo with no DOM test environment pin "clicking
  * the words beside the checkbox releases the checkbox".
+ *
+ * The predicate is what this file pins. The handler that runs it — the desk
+ * `<main>`'s `onPointerUp` — is hand-verified, not asserted here: a node test
+ * cannot render `<main>`, so a refactor that drops the prop would leave these
+ * tests green. See AGENTS.md → Verification and the owner's list in
+ * `.scratch/pilot-ux/notes/21-the-pins-this-range-still-owes.md`.
  */
 
 import { expect, test } from "vitest";

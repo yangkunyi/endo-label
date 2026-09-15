@@ -15,6 +15,7 @@ import {
   MASK_WRITE_CONTROLS,
   maskControlStates,
   maskWriteOf,
+  mayUndo,
   type MaskBusy,
   type MaskWrite,
 } from "./maskControls";
@@ -131,6 +132,25 @@ test("a write in flight only ever subtracts: prompts queue under a Predict", () 
   }
   expect(job.selectTrack).toBe(true);
   expect(job.laneVisibility).toBe(true);
+});
+
+test("the undo chord is inert for a non-writable item while the Undo button is disabled", () => {
+  const refused = maskWriteOf(
+    item({ capabilities: { edit_labels: false }, write_refusal: REFUSED }),
+  );
+  // The chord's own guard and the button's `controls.undo` are one predicate:
+  // `mayUndo` gates both, so the keyboard cannot walk past the disabled button.
+  expect(mayUndo(refused.writable, IDLE)).toBe(false);
+  expect(states(refused, IDLE).undo).toBe(false);
+
+  // Writable, idle, and the two agree the other way; a write in flight subtracts
+  // from both, as the mapping's other controls do.
+  const writable = maskWriteOf(item({ capabilities: { edit_labels: true } }));
+  expect(mayUndo(writable.writable, IDLE)).toBe(true);
+  expect(states(writable, IDLE).undo).toBe(true);
+  expect(mayUndo(writable.writable, PREDICTING)).toBe(false);
+  expect(mayUndo(writable.writable, JOB)).toBe(false);
+  expect(states(writable, JOB).undo).toBe(false);
 });
 
 test("a busy Clip an Account may not write is off for the same reason and the same shape", () => {
