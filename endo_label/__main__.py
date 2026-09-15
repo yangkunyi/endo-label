@@ -53,6 +53,16 @@ def main(argv: list[str] | None = None) -> None:
         default=7880,
         help="Bind port (default: 7880). Playwright e2e uses 7881.",
     )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help=(
+            "Bind address (default: 127.0.0.1, this machine only). A non-loopback "
+            "address serves the desk — and its mask writes — to everyone who can "
+            "reach it, so it is a deliberate choice for a demo or a pilot on a "
+            "trusted network, not a default."
+        ),
+    )
     args = parser.parse_args(argv)
     if args.port <= 0 or args.port > 65535:
         print(f"invalid --port {args.port}", file=sys.stderr)
@@ -62,7 +72,7 @@ def main(argv: list[str] | None = None) -> None:
     except ConfigError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1) from exc
-    uvicorn.run(create_app(settings), host="127.0.0.1", port=args.port, workers=1)
+    uvicorn.run(create_app(settings), host=args.host, port=args.port, workers=1)
 
 
 def _create_admin(argv: list[str]) -> None:

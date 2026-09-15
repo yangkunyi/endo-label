@@ -37,7 +37,9 @@ uv run python -m endo_label
 # uv run python -m endo_label --config /path/to/config.yaml
 ```
 
-Binds `127.0.0.1:7880` (override with `--port`), one uvicorn worker. CORS allows only `http://127.0.0.1:5173` and `http://localhost:5173`.
+Binds `127.0.0.1:7880` (override with `--port`, and the address with `--host`), one uvicorn worker. CORS allows only `http://127.0.0.1:5173` and `http://localhost:5173`.
+
+The default address is loopback on purpose: the desk writes labels and runs GPU inference, so `--host 0.0.0.0` serves it to everyone who can reach the port and is a deliberate choice for a demo or a pilot on a trusted network. Login is required either way.
 
 Sitting (one process, after a frontend build): `cd web && npm run build`, then `uv run python -m endo_label`. Desk is `http://127.0.0.1:7880/` (same origin as `/api`). Refresh on `/clips/<clipId>` still shows the desk. Vite is not required. Missing `web/dist`: `/api` still runs.
 
