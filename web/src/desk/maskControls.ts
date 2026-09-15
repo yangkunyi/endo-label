@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import useSWR from "swr";
 import { getJson, mePath, type Me, type MyItem } from "../api";
+import { mayUndo } from "./keyboard";
 
 /**
  * What the open Clip's mask item allows, and which controls follow it.
@@ -18,8 +19,10 @@ import { getJson, mePath, type Me, type MyItem } from "../api";
  * "unwritable": the canvas holds the first prompt until the read lands rather than
  * dropping it, and the panel words no refusal the server never sent. `unreadable` is a
  * read that ended without an answer — `/api/me`'s 404 for a (Clip, task type) pair with
- * no item, or a request that failed outright — and it is not `unknown`: no answer is
- * coming, so nothing is held for one and the panel says so in its own words.
+ * no item, or a request that failed outright — and it is not `unknown`: nothing is held
+ * for an answer that has not landed, and the panel says so in its own words. It is not
+ * final — SWR retries a 404 indefinitely, so an answer may still land and turn the state
+ * writable or refused; a failure only means the desk stops holding in the meantime.
  */
 
 /** The mask controls whose usability is the item's write permission. */
@@ -115,7 +118,13 @@ export function maskWriteOf(item: MyItem | undefined, read: MaskRead = NOT_ASKED
   if (read.error != null) {
     // The read landed without an answer — the server's 404, or the request failed.
     // Once it has failed the state stays unreadable until an answer lands, so a SWR
-    // retry in flight does not put the desk back to holding for one.
+    // retry in flight does not put the desk back to holding for one; that ordering is
+    // why this arm is checked before `isLoading`.
+    //
+    // It does not consult `asked`, and does not need to: `useMaskWrite` keys SWR on the
+    // Clip, so a read it never made — `asked` false, no Clip open — cannot carry an
+    // error. The arm is not a second way into `unreadable` for an unasked read; it is
+    // the failure that decides whatever `asked` says.
     return { state: "unreadable", writable: false, refusal: null };
   }
   if (read.isLoading) {
@@ -128,21 +137,6 @@ export function maskWriteOf(item: MyItem | undefined, read: MaskRead = NOT_ASKED
   return read.asked
     ? { state: "unreadable", writable: false, refusal: null }
     : { state: "unknown", writable: false, refusal: null };
-}
-
-/**
- * Whether Undo may run at all for one moment: the item is writable and nothing
- * may be in flight.
- *
- * The Undo button and the undo chord are the same gate. The button waits on
- * `canUndo` too (there is a Session snapshot to restore); the chord does not — it
- * asks the server, which answers "Nothing to undo on this Frame". What they share
- * is that a non-writable item is inert either way, so the keyboard cannot walk
- * past a gate the click respects. The flag is passed on its own so the chord's
- * callbacks can depend on `write.writable` rather than the cell's identity.
- */
-export function mayUndo(writable: boolean, busy: MaskBusy): boolean {
-  return writable && !busy.job && !busy.predicting;
 }
 
 /**
