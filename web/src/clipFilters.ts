@@ -11,7 +11,9 @@
  *
  * The server's rule is not softened here: a non-admin asking for `all` is still
  * refused. What changes is which selection the browser asks with — and, once
- * the caller is known, which selection the browser keeps.
+ * the caller is known, which selection the browser's entry keeps. The stored
+ * value itself stays in the reader's hands until they change a filter, because
+ * the sentence about it is theirs to read.
  */
 
 import type { ClipScope } from "./api";
@@ -111,9 +113,12 @@ export type ClipFilterResolution = {
   /** What the reader must be told about the stored value, or `null` for nothing. */
   notice: string | null;
   /**
-   * The stored entry is stale: `filters` is what should replace it — in the
-   * selection the surfaces hold and in the browser's entry alike. Never true for
-   * a caller not yet known, whose stored selection is nobody's to correct yet.
+   * The stored selection is stale: `filters` is the selection in force and what
+   * the browser's entry should become. It is not written back over the stored
+   * value the reader has in hand — a change is what replaces that (see
+   * `chooseClipFilters`) — so the sentence about it can be read after the
+   * correction. Never true for a caller not yet known, whose stored selection is
+   * nobody's to correct yet.
    */
   corrected: boolean;
 };
@@ -186,14 +191,43 @@ export function resolveClipFilters(
 }
 
 /**
+ * One render of the stored selection, as the hook hands it to its surfaces.
+ *
+ * `filters` is the selection in force: what the surfaces render and what a
+ * control patches. `notice` is the sentence about the stored value, and reading
+ * it does not use it up — the stored value is still in the reader's hands, so
+ * the render after the correction says the same thing. `entry` is the browser's
+ * correction: the selection the entry should become, or `null` when it is
+ * already the one in force. Writing it changes nothing the reader sees, which is
+ * what lets the sentence outlive it.
+ */
+export type ClipFiltersView = {
+  /** The selection in force: ask the server with this, and patch this. */
+  filters: ClipFilterSelection;
+  /** The sentence about the stored value, or `null` when there is none. */
+  notice: string | null;
+  /** What the browser's entry must become, or `null` when it is already right. */
+  entry: ClipFilterSelection | null;
+};
+
+export function clipFiltersView(
+  stored: ClipFilterSelection,
+  caller: ClipFilterCaller,
+  options: ClipFilterOptions = {},
+): ClipFiltersView {
+  const { corrected, filters, notice } = resolveClipFilters(stored, caller, options);
+  return { filters, notice, entry: corrected ? filters : null };
+}
+
+/**
  * The selection a control's change produces.
  *
- * `shown` is the selection the surfaces render, which is the corrected one: what
- * the state holds and what the browser's entry gets, so the two agree about the
- * same value. A change is a patch of that and of nothing else — a scope or a
- * filter the resolution has already read past is not in hand to bring back, and
- * nothing here decides who may hold what: `resolveClipFilters` reads the result
- * on the next render, options and caller unchanged.
+ * `shown` is the selection the surfaces render, which is the resolution's
+ * `filters`: a scope or filter the resolution has already read past is not in
+ * it, so a patch of it cannot bring that value back, and nothing here decides
+ * who may hold what — `resolveClipFilters` reads the result on the next render,
+ * options and caller unchanged. The result is the selection in force from here
+ * on, held by the hook and written to the browser's entry.
  */
 export function chooseClipFilters(
   shown: ClipFilterSelection,

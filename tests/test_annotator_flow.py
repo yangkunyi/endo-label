@@ -37,8 +37,10 @@ _ITEMS = {
     "Done": ("CLIPA", "mask"),
 }
 
-# Roles per Account. alice annotates, carol reviews and becomes the item's assigned
-# reviewer, erin reviews too but is never assigned this item, dave holds no role.
+# Roles per Account. alice annotates, carol reviews and becomes the first item's
+# assigned reviewer, frank annotates and becomes the second Done item's assigned
+# reviewer without holding the reviewer flag, erin reviews too but is never
+# assigned anything, dave holds no role.
 _ROLES = {
     "admin": {"admin": True, "reviewer": False, "annotator": False},
     "alice": {"admin": False, "reviewer": False, "annotator": True},
@@ -46,6 +48,7 @@ _ROLES = {
     "carol": {"admin": False, "reviewer": True, "annotator": False},
     "dave": {"admin": False, "reviewer": False, "annotator": False},
     "erin": {"admin": False, "reviewer": True, "annotator": False},
+    "frank": {"admin": False, "reviewer": False, "annotator": True},
 }
 
 
@@ -57,7 +60,11 @@ def caps(*actions: str) -> dict[str, bool]:
 # role x state -> each action. The item is alice's to label and carol's to
 # review (she becomes the assigned reviewer from Reviewing on). erin holds the
 # reviewer flag without ever holding this item, so she is false in every cell:
-# the flag alone decides no action, Done included.
+# the flag alone decides no action, Done included. Done is walked twice, on two
+# items, because one assigned reviewer is not enough to tell the two rules
+# apart: carol carries the flag, frank (assigned to the second item) does not.
+# Under the assignment rule both re-open their own Done item; under the role
+# flag carol does and frank does not, and erin's cell flips the other way.
 _MATRIX: dict[str, dict[str, dict[str, bool]]] = {
     "Unassigned": {
         "admin": caps("assign"),
@@ -98,8 +105,19 @@ _MATRIX: dict[str, dict[str, dict[str, bool]]] = {
         "carol": caps("reject", "re_review"),
         "dave": caps(),
         "erin": caps(),
+        "frank": caps("reject", "re_review"),
     },
 }
+
+# Done's second item, and the Account whose cell is asked about it: the assigned
+# reviewer without the reviewer role flag. Every other (state, actor) reads the
+# state's one item from `_ITEMS`.
+_DONE_ITEMS = (("CLIPA", "mask"), ("CLIPB", "class"))
+_ITEM_OF = {("Done", "frank"): _DONE_ITEMS[1]}
+
+
+def _item_for(state: str, actor: str) -> tuple[str, str]:
+    return _ITEM_OF.get((state, actor), _ITEMS[state])
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -138,10 +156,19 @@ def _clients(tmp_path: Path) -> dict[str, TestClient]:
     return clients
 
 
-def _build_state(clients: dict[str, TestClient], state: str) -> tuple[str, str]:
-    """Drive the item for `state` into it with the public transitions."""
-    admin, alice, carol = clients["admin"], clients["alice"], clients["carol"]
-    clip_id, task_type = _ITEMS[state]
+def _build_state(
+    clients: dict[str, TestClient],
+    state: str,
+    item: tuple[str, str] | None = None,
+    reviewer: str = "carol",
+) -> tuple[str, str]:
+    """Drive the item for `state` into it with the public transitions.
+
+    `item` overrides the state's one item and `reviewer` names the Account the
+    admin hands it to, so Done's second item can ride the same walk.
+    """
+    admin, alice = clients["admin"], clients["alice"]
+    clip_id, task_type = item if item is not None else _ITEMS[state]
     if state == "Unassigned":
         return clip_id, task_type
     assigned = admin.post(
@@ -155,12 +182,12 @@ def _build_state(clients: dict[str, TestClient], state: str) -> tuple[str, str]:
     if state == "Submitted":
         return clip_id, task_type
     reviewing = admin.post(
-        f"/api/items/{clip_id}/{task_type}/reviewer", json={"reviewer": "carol"}
+        f"/api/items/{clip_id}/{task_type}/reviewer", json={"reviewer": reviewer}
     )
     assert reviewing.status_code == 200, reviewing.text
     if state == "Reviewing":
         return clip_id, task_type
-    passed = carol.post(f"/api/items/{clip_id}/{task_type}/pass")
+    passed = clients[reviewer].post(f"/api/items/{clip_id}/{task_type}/pass")
     assert passed.status_code == 200, passed.text
     return clip_id, task_type
 
@@ -171,11 +198,14 @@ def test_me_capability_matrix_is_role_by_state(
     clients = _clients(tmp_path)
     for state in _ITEMS:
         _build_state(clients, state)
+    # Done's second item: the same walk, its reviewer an Account without the
+    # reviewer role flag (the widening ticket 27 did not pin).
+    _build_state(clients, "Done", _DONE_ITEMS[1], reviewer="frank")
 
     seen: set[tuple[str, str]] = set()
     for state, actors in _MATRIX.items():
-        clip_id, task_type = _ITEMS[state]
         for actor, expected in actors.items():
+            clip_id, task_type = _item_for(state, actor)
             client = clients[actor]
             response = client.get(
                 "/api/me", params={"clip_id": clip_id, "task_type": task_type}

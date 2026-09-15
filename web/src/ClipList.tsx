@@ -23,9 +23,8 @@ import { useClipFilters } from "./useClipFilters";
  * Account that is asking and corrects one that would strand the list — a scope
  * the server refuses this Account, a `project`/`tag` no option list carries — so
  * the page renders from the corrected selection and changes that same value.
- * The notice below is what the read that found the stored value stale had to
- * say; a read of the corrected selection has nothing to correct, and so nothing
- * to say.
+ * The notice below is what the read of the stored value had to say; it stays for
+ * as long as that value is in hand, and goes when the reader changes a filter.
  */
 export function ClipList() {
   const { filters, notice, canChooseScope, choose } = useClipFilters();

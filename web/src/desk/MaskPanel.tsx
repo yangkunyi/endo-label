@@ -35,7 +35,6 @@ import {
   activeTrackOrNull,
   clampScribbleWidth,
   dropPendingOnFrameChange,
-  isUndoKey,
   leftoverPinsForActive,
   nextActiveTrack,
   splitPendingMarks,
@@ -45,8 +44,8 @@ import {
 } from "../overlayCoords";
 import { hasMaskHandoff, isProtectedState, propagateTargetFrames, trackState } from "../trackState";
 import { formatElapsed, workerLoadingToast } from "../workerStatus";
-import { isEditableTarget } from "./keyboard";
-import { maskControlStates, maskPointerGate, useMaskWrite } from "./maskControls";
+import { isEditableTarget, maskKeyAction } from "./keyboard";
+import { maskControlStates, maskPointerGate, mayUndo, useMaskWrite } from "./maskControls";
 import { useTrackLaneVisibility } from "./maskLanes";
 import { MaskSessionContext, useMaskSession, type MaskSession } from "./maskSession";
 import type { DeskNotice } from "./notice";
@@ -414,7 +413,9 @@ export function MaskSessionProvider({
   }, [activeTrackId, clearPredictTimer, clipId, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn, notify, write.writable]);
 
   const runUndo = useCallback(async () => {
-    if (!clipId || !write.writable || predicting.current || jobRunning) {
+    // The chord's own guard, the same predicate the Undo button's `controls.undo`
+    // comes from: a non-writable item is inert to both.
+    if (!clipId || !mayUndo(write.writable, { job: jobRunning, predicting: predicting.current })) {
       return;
     }
     predicting.current = true;
@@ -595,10 +596,13 @@ export function MaskSessionProvider({
   // this Frame's last committed edit.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (isEditableTarget(event.target)) {
-        return;
-      }
-      if (event.key === "Escape") {
+      const action = maskKeyAction(event, {
+        editable: isEditableTarget(event.target),
+        // `predicting.current` is the synchronous flag; the chord must not race
+        // the render that would turn `predictBusy` on.
+        mayUndo: mayUndo(write.writable, { job: jobRunning, predicting: predicting.current }),
+      });
+      if (action === "dropPending") {
         clearPredictTimer();
         if (pendingRef.current.length > 0) {
           pendingRef.current = [];
@@ -606,14 +610,14 @@ export function MaskSessionProvider({
         }
         return;
       }
-      if (isUndoKey(event)) {
+      if (action === "undo") {
         event.preventDefault();
         void runUndo();
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [clearPredictTimer, runUndo]);
+  }, [clearPredictTimer, jobRunning, runUndo, write.writable]);
 
   const session: MaskSession = {
     tracks,

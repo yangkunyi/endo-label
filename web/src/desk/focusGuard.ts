@@ -19,6 +19,12 @@
  * pinned in a vitest test although this repo has no DOM test environment: an
  * `HTMLElement` satisfies `GuardedElement` as it stands, and the desk hands the
  * click's own target in.
+ *
+ * What this file does not carry is the wiring: `ClipDesk.tsx` attaches the rule
+ * as the desk `<main>`'s `onPointerUp`, and no node test can render `<main>`. That
+ * attachment is hand-verified (AGENTS.md → Verification; the owner's list in
+ * `.scratch/pilot-ux/notes/21-the-pins-this-range-still-owes.md`), so the unit
+ * test below must not be read as pinning it.
  */
 
 /** As much of an element as the guard reads. An `HTMLElement` satisfies this as it is. */

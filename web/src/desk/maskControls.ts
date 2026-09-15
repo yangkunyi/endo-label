@@ -83,6 +83,21 @@ export function maskWriteOf(item: MyItem | undefined): MaskWrite {
 }
 
 /**
+ * Whether Undo may run at all for one moment: the item is writable and nothing
+ * may be in flight.
+ *
+ * The Undo button and the undo chord are the same gate. The button waits on
+ * `canUndo` too (there is a Session snapshot to restore); the chord does not — it
+ * asks the server, which answers "Nothing to undo on this Frame". What they share
+ * is that a non-writable item is inert either way, so the keyboard cannot walk
+ * past a gate the click respects. The flag is passed on its own so the chord's
+ * callbacks can depend on `write.writable` rather than the cell's identity.
+ */
+export function mayUndo(writable: boolean, busy: MaskBusy): boolean {
+  return writable && !busy.job && !busy.predicting;
+}
+
+/**
  * Which mask controls are usable right now.
  *
  * A prompt while a Predict runs is queued rather than dropped (`PREDICT_DEBOUNCE_MS`
@@ -104,7 +119,7 @@ export function maskControlStates(write: MaskWrite, busy: MaskBusy): MaskControl
     prompts: readyForPrompts,
     newTrack: ready,
     predict: ready,
-    undo: ready,
+    undo: mayUndo(write.writable, busy),
     clear: ready,
     propagate: ready,
     renameTrack: ready,
