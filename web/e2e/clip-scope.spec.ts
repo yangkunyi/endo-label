@@ -19,9 +19,12 @@ import { CLIP_FILTERS_STORAGE_KEY } from "../src/clipFilters";
  * value, which stays in the reader's hands until their own change replaces it
  * (pilot-ux/19), so it is read on the page rather than flashed for the one commit
  * that writes the entry. A change patches the selection in force at the moment it
- * is applied (pilot-ux/23): while `/api/me` is still in flight that is the
- * reader's stored value, so a Project or tag pick cannot write the read's
- * narrowing back over it.
+ * is applied, field by field (pilot-ux/23, pilot-ux/24): while `/api/me` is still
+ * in flight only `scope` is unproved, so a Project or tag pick keeps the reader's
+ * stored `scope` — an admin's `all` — and cannot write the read's narrowing back
+ * over it, while a Project or tag a loaded option list proved dead does not
+ * survive the pick either, so the sentence after the answer names nothing the
+ * surface did not show.
  */
 
 test.describe.configure({ mode: "serial" });
