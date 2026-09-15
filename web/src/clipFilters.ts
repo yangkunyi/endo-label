@@ -11,9 +11,14 @@
  *
  * The server's rule is not softened here: a non-admin asking for `all` is still
  * refused. What changes is which selection the browser asks with — and, once
- * the caller is known, which selection the browser's entry keeps. The stored
- * value itself stays in the reader's hands until they change a filter, because
- * the sentence about it is theirs to read.
+ * the caller is known, which selection the browser's entry keeps.
+ *
+ * A change of the reader's patches the selection in force at the moment it is
+ * applied: the stored value while the Account is not yet known, whose read is
+ * only a narrowing of the request, and the read's `filters` once it is, whose
+ * correction is what the browser's entry becomes. Only the fields the reader
+ * touched change, so an admin's `scope: "all"` is not lost by a Project or tag
+ * pick made while `/api/me` is in flight.
  */
 
 import type { ClipScope } from "./api";
@@ -96,7 +101,7 @@ export function emptyClipsNotice(scope: ClipScope): string {
  *
  * `null` is a caller not yet known: `/api/me` has not answered, so no admin
  * flag can be claimed and none denied — the safe request is made, and nothing
- * is read into the browser's own entry (see `resolveClipFilters`).
+ * the reader stored is corrected yet (see `resolveClipFilters`).
  */
 export type ClipFilterCaller = { isAdmin: boolean | null };
 
@@ -113,12 +118,12 @@ export type ClipFilterResolution = {
   /** What the reader must be told about the stored value, or `null` for nothing. */
   notice: string | null;
   /**
-   * The stored selection is stale: `filters` is the selection in force and what
-   * the browser's entry should become. It is not written back over the stored
-   * value the reader has in hand — a change is what replaces that (see
-   * `chooseClipFilters`) — so the sentence about it can be read after the
-   * correction. Never true for a caller not yet known, whose stored selection is
-   * nobody's to correct yet.
+   * The stored selection is stale: `filters` is what the browser must ask with,
+   * and what its entry should become. The correction is not written back over
+   * the stored value in the reader's hands — it goes to the entry, and a change
+   * of the reader's is what replaces that value — so the sentence about it can
+   * be read after the correction. Never true for a caller not yet known, whose
+   * stored selection is nobody's to correct yet.
    */
   corrected: boolean;
 };
@@ -157,7 +162,9 @@ function quoted(value: string): string {
  * request leaves out what cannot be proved (`mine` for `all`, or a value no loaded
  * list carries), while `corrected` stays false and `notice` stays null. An admin's
  * own stored `all` is not the browser's to lose while `/api/me` is in flight, and a
- * value found dead in that window is found dead again once the flag answers.
+ * value found dead in that window is found dead again once the flag answers. A pick
+ * made in that window is a patch of the stored value and not of this read (see
+ * `chooseClipFilters`), so the window cannot turn this narrowing into a loss.
  */
 export function resolveClipFilters(
   stored: ClipFilterSelection,
@@ -193,16 +200,17 @@ export function resolveClipFilters(
 /**
  * One render of the stored selection, as the hook hands it to its surfaces.
  *
- * `filters` is the selection in force: what the surfaces render and what a
- * control patches. `notice` is the sentence about the stored value, and reading
- * it does not use it up — the stored value is still in the reader's hands, so
- * the render after the correction says the same thing. `entry` is the browser's
- * correction: the selection the entry should become, or `null` when it is
- * already the one in force. Writing it changes nothing the reader sees, which is
- * what lets the sentence outlive it.
+ * `filters` is the selection the surfaces ask with — the stored value as this
+ * caller may use it — and, once the caller is known, the selection a control
+ * patches. `notice` is the sentence about the stored value, and reading it does
+ * not use it up — the stored value is still in the reader's hands, so the render
+ * after the correction says the same thing. `entry` is the browser's correction:
+ * the selection the entry should become, or `null` when it is already the one in
+ * force. Writing it changes nothing the reader sees, which is what lets the
+ * sentence outlive it.
  */
 export type ClipFiltersView = {
-  /** The selection in force: ask the server with this, and patch this. */
+  /** The selection the server will answer: ask for the Clips with this. */
   filters: ClipFilterSelection;
   /** The sentence about the stored value, or `null` when there is none. */
   notice: string | null;
@@ -220,18 +228,31 @@ export function clipFiltersView(
 }
 
 /**
- * The selection a control's change produces.
+ * The stored selection a control's change produces.
  *
- * `shown` is the selection the surfaces render, which is the resolution's
- * `filters`: a scope or filter the resolution has already read past is not in
- * it, so a patch of it cannot bring that value back, and nothing here decides
- * who may hold what — `resolveClipFilters` reads the result on the next render,
- * options and caller unchanged. The result is the selection in force from here
- * on, held by the hook and written to the browser's entry.
+ * The change patches the selection in force at the moment it is applied, and
+ * only the fields in `patch` change. Which selection that is depends on whether
+ * the read has an answer yet:
+ *
+ * - A caller not yet known has narrowed the request and corrected nothing, so
+ *   the reader's own stored value is in force: a Project or tag pick leaves the
+ *   fields it did not touch alone — an admin's `scope: "all"` among them — and
+ *   the narrowing of a read still in flight cannot be written back as the
+ *   reader's own.
+ * - A caller the read has answered has a correction, the selection the browser's
+ *   entry must become, and that is what a change patches from then on; a value
+ *   the correction read past is not in hand to bring back.
+ *
+ * Pure and total, so it is the pin the hook is built from: the next stored
+ * selection is a function of the value in force and the patch, and of nothing a
+ * render happened to hold.
  */
 export function chooseClipFilters(
-  shown: ClipFilterSelection,
+  stored: ClipFilterSelection,
+  caller: ClipFilterCaller,
+  options: ClipFilterOptions,
   patch: Partial<ClipFilterSelection>,
 ): ClipFilterSelection {
-  return { ...shown, ...patch };
+  const { entry } = clipFiltersView(stored, caller, options);
+  return { ...(entry ?? stored), ...patch };
 }

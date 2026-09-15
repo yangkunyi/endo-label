@@ -14,11 +14,14 @@ import { CLIP_FILTERS_STORAGE_KEY } from "../src/clipFilters";
  * (pilot-ux/13): the browser outlives an admin flag, and neither surface may
  * answer with a refusal sentence over a list nobody can fix.
  *
- * The correction is the selection the surfaces render and the entry the browser
- * keeps (pilot-ux/17), so a dropped value cannot come back through a later
- * choice; the sentence about it belongs to the stored value, which stays in the
- * reader's hands until they change a filter (pilot-ux/19), so it is read on the
- * page rather than flashed for the one commit that writes the entry.
+ * The correction is the selection the surfaces ask with and the entry the browser
+ * keeps (pilot-ux/17); the sentence about a dropped field belongs to the stored
+ * value, which stays in the reader's hands until their own change replaces it
+ * (pilot-ux/19), so it is read on the page rather than flashed for the one commit
+ * that writes the entry. A change patches the selection in force at the moment it
+ * is applied (pilot-ux/23): while `/api/me` is still in flight that is the
+ * reader's stored value, so a Project or tag pick cannot write the read's
+ * narrowing back over it.
  */
 
 test.describe.configure({ mode: "serial" });

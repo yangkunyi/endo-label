@@ -185,42 +185,78 @@ test("the corrected selection is the one a later read gets", () => {
   expect(clipsPath(next.filters)).toBe("/api/clips?project=West+Study&tag=west&scope=mine");
 });
 
-test("a choice is a patch of the corrected selection, so a dropped value cannot come back", () => {
+test("a pick while /api/me is unanswered does not write the read's narrowing back", () => {
   const storage = fakeStorage({
     [CLIP_FILTERS_STORAGE_KEY]: JSON.stringify(WEST_ALL),
   });
-  const caller = { isAdmin: false };
-  const options = { projects: ["West Study"], tags: ["west", "east"] };
+  const options = { projects: ["West Study", "East Study"], tags: ["west", "chole"] };
+  const unknown = { isAdmin: null };
 
-  // One source of truth: the corrected selection is what the surfaces render and
-  // what the entry gets, so the reader is no longer looking at `scope: "all"`.
-  const shown = resolveClipFilters(readStoredClipFilters(storage), caller, options).filters;
-  saveStoredClipFilters(shown, storage);
-  expect(shown).toEqual({ project: "West Study", tag: "west", scope: "mine" });
+  // The caller not yet known: the read narrows the request — `all` cannot be
+  // proved without the flag, so it asks as `mine` — and corrects nothing, so the
+  // stored value is still the reader's, whole.
+  const view = clipFiltersView(readStoredClipFilters(storage), unknown, options);
+  expect(view.filters).toEqual({ project: "West Study", tag: "west", scope: "mine" });
+  expect(view.entry).toBeNull();
+  expect(view.notice).toBeNull();
 
-  // Picking a tag changes one field of that selection. The scope the correction
-  // dropped is not in hand, so it is not written back to the browser's entry.
-  const chosen = chooseClipFilters(shown, { tag: "east" });
-  saveStoredClipFilters(chosen, storage);
+  // The pick patches the stored selection, not the read's narrowing: only the
+  // Project changes, so the admin's `all` is still there to be read again. A tag
+  // pick in the same window leaves it there too.
+  const pickedProject = chooseClipFilters(WEST_ALL, unknown, options, { project: "East Study" });
+  expect(pickedProject).toEqual({ project: "East Study", tag: "west", scope: "all" });
+
+  const pickedTag = chooseClipFilters(pickedProject, unknown, options, { tag: "chole" });
+  expect(pickedTag).toEqual({ project: "East Study", tag: "chole", scope: "all" });
+  saveStoredClipFilters(pickedTag, storage);
   expect(readStoredClipFilters(storage)).toEqual({
-    project: "West Study",
-    tag: "east",
-    scope: "mine",
-  });
-  // Where a patch of the stored value — the resurrection this replaces — writes
-  // the refused scope straight back into the entry.
-  expect(chooseClipFilters(WEST_ALL, { tag: "east" })).toEqual({
-    project: "West Study",
-    tag: "east",
+    project: "East Study",
+    tag: "chole",
     scope: "all",
   });
 
-  // And the next read of what was stored has nothing left to correct.
-  expect(resolveClipFilters(readStoredClipFilters(storage), caller, options)).toEqual({
+  // The flag answers admin: the browser kept a selection it may hold, and asks
+  // with it as it stands — nothing left to correct and nothing left to say.
+  expect(clipFiltersView(readStoredClipFilters(storage), { isAdmin: true }, options)).toEqual({
+    filters: { project: "East Study", tag: "chole", scope: "all" },
+    notice: null,
+    entry: null,
+  });
+});
+
+test("a change by a caller the read has answered patches the correction, so a dropped value cannot come back", () => {
+  const caller = { isAdmin: false };
+  const options = { projects: ["West Study"], tags: ["west", "east"] };
+
+  // The read has answered: the stored `all` reads as `mine` and is named, and a
+  // pick patches that selection — not the stored value the read passed over — so
+  // the scope the correction dropped is not written back.
+  const chosen = chooseClipFilters(WEST_ALL, caller, options, { tag: "east" });
+  expect(chosen).toEqual({ project: "West Study", tag: "east", scope: "mine" });
+  expect(clipFiltersView(chosen, caller, options)).toEqual({
     filters: { project: "West Study", tag: "east", scope: "mine" },
     notice: null,
-    corrected: false,
+    entry: null,
   });
+});
+
+test("an event's two changes are folded over the value in force, not one snapshot", () => {
+  const caller = { isAdmin: null };
+  const options = { projects: ["E2E"], tags: ["east"] };
+  const change = (state: ClipFilterSelection, patch: Partial<ClipFilterSelection>) =>
+    chooseClipFilters(state, caller, options, patch);
+
+  // The hook applies a change to the state the change lands on
+  // (`setStored((current) => ...)`), so an event's changes are folded in order,
+  // each over the value the previous one produced, and both land. A snapshot
+  // base — the value the callback captured — applies both to the same value and
+  // loses the first change.
+  const folded = [{ tag: "east" }, { project: "E2E" }].reduce(change, DEFAULT_CLIP_FILTERS);
+  expect(folded).toEqual({ project: "E2E", tag: "east", scope: "mine" });
+
+  const snapshot = change(DEFAULT_CLIP_FILTERS, { project: "E2E" });
+  expect(snapshot).toEqual({ project: "E2E", tag: "", scope: "mine" });
+  expect(folded).not.toEqual(snapshot);
 });
 
 test("the sentence outlives the entry's correction, and a change ends it", () => {
@@ -228,10 +264,11 @@ test("the sentence outlives the entry's correction, and a change ends it", () =>
     [CLIP_FILTERS_STORAGE_KEY]: JSON.stringify(WEST_ALL),
   });
   const caller = { isAdmin: false };
+  const options = { projects: ["West Study"], tags: ["west", "east"] };
 
   // The hook's state: the reader's stored value, which only their own change
   // replaces. The render corrects the request and says why.
-  const first = clipFiltersView(readStoredClipFilters(storage), caller, {});
+  const first = clipFiltersView(readStoredClipFilters(storage), caller, options);
   expect(first.filters).toEqual({ project: "West Study", tag: "west", scope: "mine" });
   expect(first.notice).toContain("showing your own Clips");
 
@@ -240,45 +277,21 @@ test("the sentence outlives the entry's correction, and a change ends it", () =>
   // has not read yet is still there on the next one.
   saveStoredClipFilters(first.entry!, storage);
   expect(readStoredClipFilters(storage).scope).toBe("mine");
-  const again = clipFiltersView(WEST_ALL, caller, {});
+  const again = clipFiltersView(WEST_ALL, caller, options);
   expect(again.notice).toBe(first.notice);
   expect(again.entry).not.toBeNull();
 
-  // Changing a filter patches the selection in force and replaces the stored
-  // value with it, so there is nothing left to correct and nothing left to say.
-  const chosen = chooseClipFilters(first.filters, { tag: "east" });
+  // Changing a filter patches the selection in force — the correction — and
+  // replaces the stored value with it, so there is nothing left to correct and
+  // nothing left to say.
+  const chosen = chooseClipFilters(WEST_ALL, caller, options, { tag: "east" });
   saveStoredClipFilters(chosen, storage);
-  const after = clipFiltersView(chosen, caller, {});
+  const after = clipFiltersView(chosen, caller, options);
   expect(after.notice).toBeNull();
   expect(after.entry).toBeNull();
   expect(readStoredClipFilters(storage)).toEqual({
     project: "West Study",
     tag: "east",
     scope: "mine",
-  });
-});
-
-test("a pick while /api/me is unanswered patches the narrowed selection, not the stored one", () => {
-  const options = { projects: ["East Study"], tags: ["chole"] };
-  // The caller is not yet known: the request is narrowed field by field — `all`
-  // unprovable, both stored filters dead — and nothing is corrected or written.
-  const unknown = clipFiltersView(WEST_ALL, { isAdmin: null }, options);
-  expect(unknown.filters).toEqual({ project: "", tag: "", scope: "mine" });
-  expect(unknown.entry).toBeNull();
-  expect(unknown.notice).toBeNull();
-
-  // The pick's base is the selection the surface shows, so the refused scope and
-  // the dead Project are not in hand to write back.
-  expect(chooseClipFilters(unknown.filters, { tag: "chole" })).toEqual({
-    project: "",
-    tag: "chole",
-    scope: "mine",
-  });
-  // Where a patch of the stored value — the write-back this replaces — keeps
-  // both for the entry the reader's browser would keep.
-  expect(chooseClipFilters(WEST_ALL, { tag: "chole" })).toEqual({
-    project: "West Study",
-    tag: "chole",
-    scope: "all",
   });
 });
