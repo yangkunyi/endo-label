@@ -1,21 +1,28 @@
 /**
- * The mask panel as the reader meets it: the mapping in `maskControls.ts` wired to real
- * controls, rendered to static markup.
+ * The mask desk as the reader meets it: the mapping in `maskControls.ts` wired to the
+ * real surfaces — the panel's controls and the canvas on the picture — rendered to
+ * static markup.
  *
- * This repo has no DOM test environment, so the panel is rendered on the server with the
+ * This repo has no DOM test environment, so the desk is rendered on the server with the
  * mask item's `/api/me` cell already answered from the SWR fallback. That is what makes
  * the rendering worth asserting on: a correct pure mapping that the panel forgot to read
  * would pass `maskControls.test.ts` and still hand a non-assignee a working Predict. The
  * render is the promise ticket 23's finding asked for — no usable mask write, and the
  * server's own sentence sitting where the click used to fail.
+ *
+ * The canvas is in the same render on purpose: `inputEnabled` used to be wired from the
+ * panel's own read, and only a render that includes `PlayerMaskOverlay` can say what the
+ * gate does with a pointer. `data-mask-gate` carries the answer, so the read in flight
+ * shows as `checking` — a held prompt — and never as the refused `refused`, whose only
+ * sentence is the server's.
  */
 
-import { createElement } from "react";
+import { createElement, Fragment } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SWRConfig } from "swr";
 import { expect, test } from "vitest";
 import { mePath, type ClipMeta, type Me, type MyItem, type TrackRow } from "../api";
-import { MaskPanel, MaskSessionProvider } from "./MaskPanel";
+import { MaskPanel, MaskSessionProvider, PlayerMaskOverlay } from "./MaskPanel";
 
 const REFUSED = "This Clip's mask is assigned to alice: only alice writes its labels.";
 
@@ -30,8 +37,10 @@ async function noop(): Promise<undefined> {
   return undefined;
 }
 
-/** The panel for one mask item cell, as markup. */
-function panelHtml(item: MyItem | undefined): string {
+function pause(): void {}
+
+/** The desk for one mask item cell — panel and canvas — as markup. */
+function deskHtml(item: MyItem | undefined): string {
   const me: Me = {
     username: "bob",
     roles: { admin: false, reviewer: false, annotator: true },
@@ -42,17 +51,25 @@ function panelHtml(item: MyItem | undefined): string {
     createElement(
       SWRConfig,
       { value: { fallback: { [mePath("CLIPA", "mask")]: me } } },
-      createElement(MaskSessionProvider, {
-        clipId: "CLIPA",
-        clip: CLIP,
-        frameIndex: 0,
-        tracks: TRACKS,
-        frameMasks: FRAME_MASKS,
-        mutateAnnotation: noop,
-        mutateFrameAnn: noop,
-        notify: () => {},
-        children: createElement(MaskPanel),
-      }),
+      createElement(
+        MaskSessionProvider,
+        {
+          clipId: "CLIPA",
+          clip: CLIP,
+          frameIndex: 0,
+          tracks: TRACKS,
+          frameMasks: FRAME_MASKS,
+          mutateAnnotation: noop,
+          mutateFrameAnn: noop,
+          notify: () => {},
+          children: createElement(
+            Fragment,
+            null,
+            createElement(MaskPanel),
+            createElement(PlayerMaskOverlay, { videoRef: { current: null }, onPause: pause }),
+          ),
+        },
+      ),
     ),
   );
 }
@@ -102,6 +119,24 @@ function maxFrames(html: string): string {
   return match[0];
 }
 
+/** The mask canvas on the picture, as markup. */
+function canvas(html: string): string {
+  const match = html.match(/<canvas[^>]*data-mask-overlay=""[^>]*>/);
+  if (match === null) {
+    throw new Error("no mask canvas");
+  }
+  return match[0];
+}
+
+/** What the canvas would do with a pointer: the gate the session handed it. */
+function gate(html: string): string {
+  const match = canvas(html).match(/data-mask-gate="([^"]+)"/);
+  if (match === null) {
+    throw new Error("the mask canvas carries no gate");
+  }
+  return match[1];
+}
+
 /** React renders a disabled control as `disabled=""`; every button's class list also
  * carries `disabled:` variants, so the attribute is what is asked for. */
 function disabled(markup: string): boolean {
@@ -119,7 +154,7 @@ function refusalText(html: string): string | null {
 }
 
 test("a mask item this Account may not write disables every write control and says why", () => {
-  const html = panelHtml(
+  const html = deskHtml(
     item({ capabilities: { edit_labels: false }, write_refusal: REFUSED }),
   );
 
@@ -136,10 +171,14 @@ test("a mask item this Account may not write disables every write control and sa
   expect(html).not.toContain("Double-click to rename");
   // Looking stays: the Track is still there to select and its eye still toggles.
   expect(disabled(labelled(html, 'aria-label="Hide lane"'))).toBe(false);
+  // The canvas is shut for the same reason, and not with a crosshair.
+  expect(gate(html)).toBe("refused");
+  expect(canvas(html)).toContain("cursor-default");
+  expect(canvas(html)).not.toContain("cursor-crosshair");
 });
 
 test("a writable mask item shows no sentence and waits only on its own state", () => {
-  const html = panelHtml(item({ capabilities: { edit_labels: true } }));
+  const html = deskHtml(item({ capabilities: { edit_labels: true } }));
 
   expect(refusalText(html)).toBeNull();
 
@@ -156,10 +195,14 @@ test("a writable mask item shows no sentence and waits only on its own state", (
   expect(disabled(button(html, "Predict"))).toBe(true);
   expect(disabled(button(html, "Undo"))).toBe(true);
   expect(disabled(button(html, "Clear mask"))).toBe(true);
+
+  // The canvas takes prompts.
+  expect(gate(html)).toBe("open");
+  expect(canvas(html)).toContain("cursor-crosshair");
 });
 
 test("an unanswered item cell invents no sentence and offers no write", () => {
-  const html = panelHtml(undefined);
+  const html = deskHtml(undefined);
 
   expect(refusalText(html)).toBeNull();
   for (const label of ["New Track", "Predict", "Undo", "Clear mask", "Propagate"]) {
@@ -168,4 +211,13 @@ test("an unanswered item cell invents no sentence and offers no write", () => {
   expect(disabled(labelled(html, 'aria-label="Delete track-1"'))).toBe(true);
   // Only looking: Track selection and the Lane eye.
   expect(disabled(labelled(html, 'aria-label="Hide lane"'))).toBe(false);
+});
+
+test("the canvas holds a prompt drawn before `/api/me` answers, and never calls it refused", () => {
+  const html = deskHtml(undefined);
+
+  // `checking`, not `refused`: the gesture is kept for the answer instead of being
+  // turned away as a write the server never refused.
+  expect(gate(html)).toBe("checking");
+  expect(canvas(html)).toContain("cursor-crosshair");
 });

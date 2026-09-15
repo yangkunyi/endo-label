@@ -16,6 +16,7 @@ import {
   type Point,
 } from "./overlayCoords";
 import { decodeRle } from "./rle";
+import type { MaskPointerGate } from "./desk/maskControls";
 
 const POSITIVE_INK = "#16a34a";
 const NEGATIVE_INK = "#dc2626";
@@ -100,7 +101,7 @@ export function MaskOverlay({
   leftover,
   pending,
   width,
-  inputEnabled,
+  gate,
   onPause,
   onClickPoint,
   onStroke,
@@ -112,7 +113,7 @@ export function MaskOverlay({
   leftover: LeftoverPoint[];
   pending: PendingMark[];
   width: number;
-  inputEnabled: boolean;
+  gate: MaskPointerGate;
   onPause: () => void;
   onClickPoint: (point: PendingPoint) => void;
   onStroke: (stroke: PendingStroke) => void;
@@ -121,6 +122,9 @@ export function MaskOverlay({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drag = useRef<{ start: Point; last: Point; samples: Point[]; label: 0 | 1 } | null>(null);
   const [layoutGen, setLayoutGen] = useState(0);
+  // `checking` stays open: a prompt drawn while the mask item's write permission is
+  // still in flight is held for the answer, not dropped the way a refused one is.
+  const inputEnabled = gate === "open" || gate === "checking";
 
   const bump = useCallback(() => setLayoutGen((n) => n + 1), []);
 
@@ -213,7 +217,8 @@ export function MaskOverlay({
   }
 
   function onPointerDown(event: PointerEvent<HTMLCanvasElement>) {
-    // Geometry input is off while a Propagate Job runs (story 86).
+    // Geometry input is off while a Propagate Job runs (story 86), and off for a write
+    // the server has refused; an unanswered read is neither.
     if (!inputEnabled) {
       return;
     }
@@ -261,6 +266,11 @@ export function MaskOverlay({
     if (!gesture) {
       return;
     }
+    // A permission or a Job can turn while a drag is in flight; then the gesture is a write
+    // the desk may no longer make, and the panel already says which of the two it is.
+    if (!inputEnabled) {
+      return;
+    }
     const commit = dragCommit(gesture.start, gesture.last, gesture.samples, gesture.label, width);
     if (isPendingStroke(commit)) {
       onStroke(commit);
@@ -285,6 +295,7 @@ export function MaskOverlay({
       ref={canvasRef}
       slot="gestures-chrome"
       data-mask-overlay=""
+      data-mask-gate={gate}
       aria-label="Mask overlay"
       className={`absolute inset-0 h-full w-full touch-none ${inputEnabled ? "cursor-crosshair" : "cursor-default"}`}
       onPointerDown={onPointerDown}
