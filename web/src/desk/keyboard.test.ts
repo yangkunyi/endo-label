@@ -12,7 +12,18 @@
  * decision is that a chord the desk does not act on is left to the browser's own
  * Ctrl+Z — inert, never swallowed. The listener's attachment is hand-verified
  * (AGENTS.md → Verification).
+ *
+ * The last test pins the module's import direction from its own source: `TimelinePanel`,
+ * `FrameControls` and `PlayerPanel` import `isEditableTarget` from here, so a value edge
+ * out of this file that leads to a module with imports would drag a fetcher into all
+ * three. The pin is conservative — it fails on *any* value import in the closure, whether
+ * or not the module fetches — because "fetches nothing" is not readable from a module
+ * body this test does not parse.
  */
+
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { expect, test } from "vitest";
 import { maskKeyAction, maskKeyConsumes } from "./keyboard";
@@ -32,6 +43,42 @@ const UNREADABLE: MaskWrite = { state: "unreadable", writable: false, refusal: n
 const UNKNOWN: MaskWrite = { state: "unknown", writable: false, refusal: null };
 
 const TYPING = { editable: true, write: WRITABLE, busy: IDLE };
+
+const DESK_DIR = dirname(fileURLToPath(import.meta.url));
+
+/** The imports one source file makes, with the specifier and whether the whole statement is
+ * erased at build: an `import type` clause, or one whose specifiers are all `type`. */
+function importsOf(path: string): { specifier: string; typeOnly: boolean }[] {
+  const source = readFileSync(path, "utf8");
+  const imports: { specifier: string; typeOnly: boolean }[] = [];
+  for (const match of source.matchAll(
+    /^import\s+(?<clause>[^;]+?)\s+from\s+"(?<specifier>[^"]+)";/gm,
+  )) {
+    const clause = (match.groups?.clause ?? "").trim();
+    imports.push({
+      specifier: match.groups?.specifier ?? "",
+      typeOnly: clause.startsWith("type ") || /^\{\s*(?:type\s+[\w$]+\s*,?\s*)+\}$/.test(clause),
+    });
+  }
+  return imports;
+}
+
+/** The file a relative specifier names, or null for a bare package specifier. */
+function modulePath(from: string, specifier: string): string | null {
+  if (!specifier.startsWith(".")) {
+    return null;
+  }
+  const base = resolve(dirname(from), specifier);
+  for (const candidate of [`${base}.ts`, `${base}.tsx`, resolve(base, "index.ts")]) {
+    try {
+      readFileSync(candidate);
+      return candidate;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  throw new Error(`no module at ${specifier} (from ${from})`);
+}
 
 test("the undo chord runs Undo on a writable item", () => {
   expect(maskKeyAction(CTRL_Z, { editable: false, write: WRITABLE, busy: IDLE })).toBe("undo");
@@ -66,6 +113,32 @@ test("an inert chord is left to the browser, not swallowed", () => {
   // Escape is a drop, not a chord the desk claims from the browser either.
   expect(maskKeyConsumes("dropPending")).toBe(false);
   expect(maskKeyConsumes("ignore")).toBe(false);
+});
+
+test("the module's value imports reach nothing that imports, so no fetcher enters a panel", () => {
+  const entry = resolve(DESK_DIR, "keyboard.ts");
+  const reached = new Set([entry]);
+  // A Set visits entries added while it is iterated, so this walks the whole value closure.
+  for (const path of reached) {
+    for (const { specifier, typeOnly } of importsOf(path)) {
+      if (typeOnly) {
+        continue;
+      }
+      const next = modulePath(path, specifier);
+      // A bare specifier is a package (`swr`, `react`, …) whose imports this pin cannot
+      // inspect; none exists today, and adding one is exactly the edit this catches.
+      if (next === null) {
+        throw new Error(`${path} value-imports ${specifier}`);
+      }
+      reached.add(next);
+    }
+  }
+  // Every module a value edge reaches is itself import-free, so none of them can fetch.
+  for (const path of reached) {
+    if (path !== entry) {
+      expect(importsOf(path), path).toHaveLength(0);
+    }
+  }
 });
 
 test("a field being typed in swallows both keys", () => {

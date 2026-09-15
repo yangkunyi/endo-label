@@ -84,14 +84,16 @@ behaviour changed, in `web/src/desk/` and the notes only.
 2. **The failed read.** Make `/api/me?clip_id=…&task_type=mask` fail (stop the API, or delete the
    item's Assignment row): the panel shows "Could not read this Clip's mask permission — mask
    writes are off until it loads." while the read is unreadable, and if a retry lands the controls
-   come back and that line goes. The paragraph's own rendering is as hand-verified as ticket 22
-   left it.
+   come back and that line goes. The paragraph's own rendering is pinned in `maskPanel.test.ts`
+   since ticket 26 (the failed read is seeded into SWR's cache, which the `fallback` cannot carry);
+   what stays by hand is the retry landing.
 
 ## Leftovers, deliberately out of this issue
 
-- **Nothing pins the import direction.** The claim "keyboard.ts fetches nothing" is now a header
-  comment and an erased type import, not a lint boundary (`no-restricted-imports` or `import/no-cycle`
-  would live in `web/.oxlintrc.json`, outside this ticket's fence of `web/src/desk/` and the notes).
+- **The import direction is pinned in `keyboard.test.ts` since ticket 26.** That test walks
+  `keyboard.ts`'s value imports from the source and fails on any that reaches a module with imports;
+  what it does not replace is a lint boundary (`no-restricted-imports` or `import/no-cycle`, which
+  would live in `web/.oxlintrc.json`), and it watches imports rather than module bodies.
 - **`isEditableTarget` still has no in-process pin** (tickets 21 and 22's leftover, unchanged).
 - **`web/src/desk/maskSession.ts` and the other "never answered" shorthands** still use that phrase
   for the unreadable state; it names the read, not the future, so this ticket did not touch them.
