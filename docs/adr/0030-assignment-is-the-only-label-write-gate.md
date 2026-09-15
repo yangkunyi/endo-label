@@ -50,7 +50,8 @@ deletes and the picture prompts that would schedule a Predict. There is no Save 
 - `_write_allowed`'s hardcoded `admin=False, reviewer=False` stands as the decision, not as a
   placeholder for a bypass.
 - The desk's gate is one pure mapping (`web/src/desk/maskControls.ts`, pinned by vitest both
-  as a mapping and as the panel rendered from it): the write controls follow `edit_labels`,
+  as a mapping and as the desk rendered from it — the panel's controls and the canvas's
+  pointer gate): the write controls follow `edit_labels`,
   the view controls (Track selection, Lane eyes) do not, and a write in flight only ever
   subtracts. The mask panel, the Track rail and the picture overlay all read it, so the desk
   has no second opinion about who may write.
@@ -62,6 +63,9 @@ deletes and the picture prompts that would schedule a Predict. There is no Save 
 - One arm has no sentence to show: an item cell the desk has not read yet — no Clip open, the read in
   flight, or a (Clip, Task type) pair `/api/me` answers 404 for, which is what a mask Assignment row
   deleted by hand looks like. The editor renders off and explains nothing, because the desk will not
-  word a refusal the server never sent. Registration creates all four rows per Clip
+  word a refusal the server never sent. That arm is a third permission state, not a false
+  reading of the second (`maskControls.ts`'s `MaskWrite`): the canvas holds the first prompt
+  drawn while the read is out — its gate is `checking`, not `refused` — and the answer that
+  lands writable is what sends it. Registration creates all four rows per Clip
   (`coordination._ensure_assignment_rows`), so the 404 arm is a hand-made store's shape, not the state
   machine's.

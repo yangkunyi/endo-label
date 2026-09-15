@@ -46,7 +46,7 @@ import {
 import { hasMaskHandoff, isProtectedState, propagateTargetFrames, trackState } from "../trackState";
 import { formatElapsed, workerLoadingToast } from "../workerStatus";
 import { isEditableTarget } from "./keyboard";
-import { maskControlStates, useMaskWrite } from "./maskControls";
+import { maskControlStates, maskPointerGate, useMaskWrite } from "./maskControls";
 import { useTrackLaneVisibility } from "./maskLanes";
 import { MaskSessionContext, useMaskSession, type MaskSession } from "./maskSession";
 import type { DeskNotice } from "./notice";
@@ -108,7 +108,9 @@ export function MaskSessionProvider({
   // (ADR 0030): every mask write is the assignee's, and this is where the desk reads
   // that — permission, the sentence a refusal would carry, and the controls it leaves.
   const write = useMaskWrite(clipId);
-  const controls = maskControlStates(write, { job: jobRunning, predicting: predictBusy });
+  const busy = { job: jobRunning, predicting: predictBusy };
+  const controls = maskControlStates(write, busy);
+  const pointerGate = maskPointerGate(write, busy);
   // Ticket 09: the Job blocks, so the desk shows an indeterminate state with
   // elapsed time — the whole span streams inside the first poll, so no honest
   // per-frame number exists (maintainer decision: no async).
@@ -305,13 +307,43 @@ export function MaskSessionProvider({
     }
   }, [activeTrackId, clearPredictTimer, clipId, ensureSession, frameIndex, jobRunning, loadSessionFrame, mutateAnnotation, mutateFrameAnn, notify, write.writable]);
 
+  // The debounce reads Predict through a ref, so `schedulePredict` keeps one identity: it
+  // is a dependency of the permission effect below, and a callback that changed every
+  // render would re-arm the debounce for marks that already had one.
+  const predictNow = useRef(runPredict);
+  useEffect(() => {
+    predictNow.current = runPredict;
+  });
+
   const schedulePredict = useCallback(() => {
     clearPredictTimer();
     debounceRef.current = window.setTimeout(() => {
       debounceRef.current = null;
-      void runPredict();
+      void predictNow.current();
     }, PREDICT_DEBOUNCE_MS);
-  }, [clearPredictTimer, runPredict]);
+  }, [clearPredictTimer]);
+
+  // The canvas holds a prompt drawn while `/api/me` was still in flight, and the answer
+  // that lands writable is what sends it. Only the permission is a reason to run this:
+  // `schedulePredict` keeps one identity, so a re-render cannot re-arm a debounce a mark
+  // already has.
+  useEffect(() => {
+    if (!write.writable || pendingRef.current.length === 0) {
+      return;
+    }
+    schedulePredict();
+  }, [schedulePredict, write.writable]);
+
+  // A refused answer takes the held prompt with it: the write it waited on will never
+  // happen, and the panel already shows the server's sentence for it.
+  useEffect(() => {
+    if (write.state !== "refused" || pendingRef.current.length === 0) {
+      return;
+    }
+    clearPredictTimer();
+    pendingRef.current = [];
+    setPending([]);
+  }, [clearPredictTimer, write.state]);
 
   const onClickPoint = useCallback((point: PendingPoint) => {
     setActiveTrackId((current) => nextActiveTrack(current, { kind: "picture" }));
@@ -594,6 +626,7 @@ export function MaskSessionProvider({
     canUndo: (sessionSnapshot?.tracks.length ?? 0) > 0,
     refusal: write.refusal,
     controls,
+    pointerGate,
     predicting: predictBusy,
     canPropagate: frameMasks.length > 0,
     frameKept,
@@ -637,7 +670,7 @@ export function PlayerMaskOverlay({
       leftover={session.leftover}
       pending={session.pending}
       width={session.scribbleWidth}
-      inputEnabled={session.controls.prompts}
+      gate={session.pointerGate}
       onPause={onPause}
       onClickPoint={session.onClickPoint}
       onStroke={session.onClickStroke}
