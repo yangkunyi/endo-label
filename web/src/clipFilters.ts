@@ -13,17 +13,26 @@
  * refused. What changes is which selection the browser asks with — and, once
  * the caller is known, which selection the browser's entry keeps.
  *
- * A change of the reader's patches the selection in force at the moment it is
- * applied, field by field, and only in the fields it names. A field the read has
- * answered for is the resolution's: a Project or tag is narrowed only against a
- * loaded option list, so the read has answered for it whenever its answer can
- * differ from the reader's value, and a value such a list proved dead cannot
- * survive the change. A field the read has not answered for stays the reader's:
- * while `/api/me` is in flight, `scope` is narrowed to `mine` for the request and
- * never proved, so a Project or tag pick keeps the stored `scope`, and an admin's
- * `all` is not the browser's to lose. The change is also what writes the
- * browser's entry, so a browser whose reader never chooses a filter gains none;
- * the read's own correction is all the render after it has left to write
+ * A change of the reader's patches the value in force at the moment it is
+ * applied, field by field, and only in the fields it names. One rule decides
+ * every field: a field the read has answered for is the resolution's — the
+ * change patches what `resolveClipFilters` returned — and a field it has not
+ * answered for is the reader's, patched from the value they stored.
+ *
+ * `project` and `tag` are always the read's. A value is called dead only against
+ * a *loaded* option list, so when no list has loaded the resolution's value and
+ * the reader's are the same and the choice cannot matter, and when one has loaded
+ * its verdict holds whatever caller is asking; a value such a list proved dead
+ * therefore cannot survive a change. `scope` is the one field the read can answer
+ * differently by caller: only `/api/me` proves it, so while `/api/me` is in
+ * flight the request narrows `all` to `mine` without proving anything, and the
+ * reader's own stored `scope` is what a change patches — an admin's `all` is not
+ * the browser's to lose.
+ *
+ * The change's answer is the next state *and* the entry to write
+ * (`clipFiltersChange`), and the hook writes that entry only after the value has
+ * committed (`useClipFilters`). So a browser whose reader never chooses a filter
+ * gains no entry, and the read's own correction is all a render has left to write
  * (`clipFiltersView`'s `entry`).
  */
 
@@ -168,9 +177,13 @@ function quoted(value: string): string {
  * request leaves out what cannot be proved (`mine` for `all`, or a value no loaded
  * list carries), while `corrected` stays false and `notice` stays null. An admin's
  * own stored `all` is not the browser's to lose while `/api/me` is in flight, and a
- * value found dead in that window is found dead again once the flag answers. A pick
- * made in that window is a patch of the stored value and not of this read (see
- * `chooseClipFilters`), so the window cannot turn this narrowing into a loss.
+ * value found dead in that window is found dead again once the flag answers. The
+ * field-by-field rule shows here too — a field this read has answered for is the
+ * resolution's, a field it has not is the reader's: a change patches `project`
+ * and `tag` from this answer even for a caller not yet known, so neither value
+ * survives a change — while `scope`, the one field this answer cannot give while
+ * the caller is unknown, stays the reader's until `/api/me` answers (see
+ * `chooseClipFilters`).
  */
 export function resolveClipFilters(
   stored: ClipFilterSelection,
@@ -208,10 +221,12 @@ export function resolveClipFilters(
  *
  * `filters` is the selection the surfaces ask with — the stored value as this
  * caller may use it — and the value a control patches in every field the read has
- * answered for; the one field it may not have answered for yet, `scope`, stays
- * the reader's own (see `chooseClipFilters`). `notice` is the sentence about the
- * stored value, and reading it does not use it up — the stored value is still in
- * the reader's hands, so the render after the correction says the same thing.
+ * answered for: `project` and `tag` always, and `scope` once the caller is known.
+ * The one field the read may not have answered for yet, `scope` while `/api/me`
+ * is in flight, stays the reader's own (see `chooseClipFilters`). `notice` is the
+ * sentence about the stored value, and reading it does not use it up — the stored
+ * value is still in the reader's hands, so the render after the correction says
+ * the same thing.
  * `entry` is the browser's correction: the selection the entry should become, or
  * `null` when it is already the one in force. Writing it changes nothing the
  * reader sees, which is what lets the sentence outlive it.
@@ -237,9 +252,10 @@ export function clipFiltersView(
 /**
  * The stored selection a control's change produces.
  *
- * The change patches the selection in force at the moment it is applied, field
- * by field, and only the fields in `patch` change. Which selection that is, the
- * read answers per field:
+ * The change patches the value in force at the moment it is applied, field by
+ * field, and only the fields in `patch` change. One rule decides each field: a
+ * field the read has answered for is the resolution's, and a field it has not is
+ * the reader's. Which is which, the read answers per field:
  *
  * - `project`, `tag`: a value is called dead only against a *loaded* option
  *   list, so this field is proved or left alone — the read has answered for it
@@ -254,9 +270,10 @@ export function clipFiltersView(
  *   change. Once the flag is known, the resolution's scope is in force and a
  *   value the server would refuse cannot be carried back by a pick.
  *
- * Pure and total — writing is `applyClipFilterChange`'s — so it is the decision
- * the hook is built from: the next stored selection is a function of the value in
- * force and the patch, and of nothing a render happened to hold.
+ * Pure and total, and no write: `clipFiltersChange` carries this answer into the
+ * state the hook holds, and the hook writes the entry that change committed once
+ * that state has committed. The next stored selection is a function of the value
+ * in force and the patch, and of nothing a render happened to hold.
  */
 export function chooseClipFilters(
   stored: ClipFilterSelection,
@@ -276,24 +293,39 @@ export function chooseClipFilters(
 }
 
 /**
- * The reader's change, applied to the value in force and written where the
- * reader's value lives.
+ * The hook's state: the reader's stored selection, and the entry a change made.
  *
- * This is the hook's `choose` in one call: `chooseClipFilters` decides the next
- * selection and `saveStoredClipFilters` writes it, so a change persists what it
- * produced — and the render effect has only the read's correction left to write,
- * which is what keeps a browser whose reader never chose a filter from gaining
- * an entry. Takes a storage so a test can stand in for `localStorage`, like the
- * readers around it.
+ * `stored` is the reader's own value — what every read is resolved from, and what
+ * a sentence about a stale value is about. `entry` is the entry the last change
+ * produced: the hook writes it in an effect after the commit that produced it,
+ * which is what keeps the browser's entry to values that were committed and
+ * shown. It is `null` until a change is made, so a browser whose reader never
+ * chooses a filter gains none.
  */
-export function applyClipFilterChange(
-  stored: ClipFilterSelection,
+export type ClipFiltersState = {
+  /** The reader's stored selection: the value every read resolves and a change patches. */
+  stored: ClipFilterSelection;
+  /** The entry the last change produced, or `null` before any change. */
+  entry: ClipFilterSelection | null;
+};
+
+/**
+ * The reader's change as one pure step: the state to hold, and what to persist.
+ *
+ * `chooseClipFilters` decides the next selection from the reader's own value in
+ * `state.stored` and the patch, and the answer carries it twice — as the state the
+ * hook holds, and as the entry to write. A change is what persists the reader's
+ * own selection, so `entry` is the value the change produced; the read's
+ * correction is a different entry, on `clipFiltersView`. Returning the write
+ * instead of performing it is what makes this step pure and lets the hook write
+ * only after the commit that produced the value.
+ */
+export function clipFiltersChange(
+  state: ClipFiltersState,
   caller: ClipFilterCaller,
   options: ClipFilterOptions,
   patch: Partial<ClipFilterSelection>,
-  storage: WritableStorage | null = browserStorage(),
-): ClipFilterSelection {
-  const next = chooseClipFilters(stored, caller, options, patch);
-  saveStoredClipFilters(next, storage);
-  return next;
+): ClipFiltersState {
+  const stored = chooseClipFilters(state.stored, caller, options, patch);
+  return { stored, entry: stored };
 }
