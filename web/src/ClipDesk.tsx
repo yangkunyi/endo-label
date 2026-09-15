@@ -24,6 +24,12 @@ import { foldCoverage } from "./timeline";
  * `controlToBlur` is that rule, over the click's *effective* control — the rail's
  * scope toggle is a `<label>` around its checkbox, so a click on its words is a
  * click on the checkbox. Keyboard users who Tab to a control keep Space/Enter.
+ *
+ * The predicate is pinned in `web/src/desk/focusGuard.test.ts`. The *wiring* —
+ * this handler attached to the desk's `<main>` — is hand-verified, not pinned:
+ * a node test has no DOM to render `<main>`, so a refactor that drops the prop
+ * leaves that unit test green. It is on the owner's list (AGENTS.md →
+ * Verification; `.scratch/pilot-ux/notes/21-the-pins-this-range-still-owes.md`).
  */
 function releaseFocus(event: ReactPointerEvent<HTMLElement>) {
   const target = event.target;
@@ -78,6 +84,8 @@ export function ClipDesk() {  const { clipId } = useParams();
     [clip?.frame_count, desk.classDoc, desk.phaseDoc, desk.tripletDoc, taskFocus],
   );
 
+  // `onPointerUp={releaseFocus}` below is the hand-verified wiring; the rule it
+  // runs is pinned in `focusGuard.test.ts` (see the comment above `releaseFocus`).
   return (
     <main
       className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground"
